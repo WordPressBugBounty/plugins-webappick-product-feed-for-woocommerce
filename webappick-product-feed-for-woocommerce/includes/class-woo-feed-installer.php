@@ -126,7 +126,7 @@ class Woo_Feed_installer {
 		wp_clear_scheduled_hook( 'woo_feed_cleanup_logs' );
 		wp_clear_scheduled_hook( 'woo_feed_update' );
 		// Schedule Cron jobs
-		wp_schedule_event( time(), 'woo_feed_corn', 'woo_feed_update' );
+		//wp_schedule_event( time(), 'woo_feed_corn', 'woo_feed_update' );
 		wp_schedule_event( time() + ( 3 * HOUR_IN_SECONDS ), 'daily', 'woo_feed_cleanup_logs' );
 	}
 

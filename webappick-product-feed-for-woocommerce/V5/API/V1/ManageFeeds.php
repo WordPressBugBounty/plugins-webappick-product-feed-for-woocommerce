@@ -468,7 +468,7 @@ class ManageFeeds extends RestController {
 					add_filter( 'cron_schedules', 'Woo_Feed_installer::cron_schedules' ); // phpcs:ignore
 				}
 
-				wp_schedule_event( time(), 'woo_feed_corn', 'woo_feed_update' );
+				//wp_schedule_event( time(), 'woo_feed_corn', 'woo_feed_update' );
 
 				$response['status'] = 1; // success.
 			} else {
