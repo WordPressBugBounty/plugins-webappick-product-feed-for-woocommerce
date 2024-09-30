@@ -5,7 +5,7 @@ Tags: WooCommerce Product Feed, Google Shopping feed,Facebook Catalog feed, XML 
 Requires at least: 4.4
 Tested Up To: 6.5
 Requires PHP: 5.6
-Stable tag: 6.5.22
+Stable tag: 6.5.23
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -439,9 +439,12 @@ Currently, there aren’t any issues or bugs. We regularly update both the free 
 
 == Changelog ==
 
+= 6.5.23 (2024-09-30) =
+* Updated: Compatibility code refactor
+
 = 6.5.22 (2024-09-24) =
 * Fixed: Cron event created for all feed issue
-* Fixed: Glami Template loading issue
+* Fixed: Template loading issue
 
 = 6.5.21 (2024-09-23) =
 * Fixed: Feed type appear issue in edit
