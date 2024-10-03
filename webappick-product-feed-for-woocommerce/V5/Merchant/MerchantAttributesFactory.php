@@ -865,6 +865,7 @@ class MerchantAttributesFactory {
 						'link_template'               => 'Link Template [link_template]',
 						'mobile_link_template'        => 'Mobile Link Template [mobile_link_template]',
 						'mobile_pickup_link_template' => 'Mobile Pickup Link Template [mobile_pickup_link_template]',
+						'local_shipping_label'		  => 'Local shipping label [local_shipping_label]'
 					),
 				),
 				18 => array(

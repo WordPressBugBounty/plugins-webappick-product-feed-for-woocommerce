@@ -161,6 +161,7 @@ class MerchantAttributeReplaceFactory {
 					'link_template'                       => array( 'g:link_template', true ),
 					'mobile_link_template'                => array( 'g:mobile_link_template', true ),
 					'mobile_pickup_link_template'         => array( 'g:mobile_pickup_link_template', true ),
+					'local_shipping_label'         		  => array( 'g:local_shipping_label', true ),
 					'certification'         			  => array( 'g:certification', true ),
 					'capacity'         			  		  => array( 'g:capacity', true ),
 					'google_funded_promotion_eligibility' => array(
@@ -286,6 +287,7 @@ class MerchantAttributeReplaceFactory {
 					'link_template'                       => array( 'link template', true ),
 					'mobile_link_template'                => array( 'mobile link template', true ),
 					'mobile_pickup_link_template'         => array( 'mobile pickup link template', true ),
+					'local_shipping_label'         		  => array( 'g:local_shipping_label', true ),
 					'google_funded_promotion_eligibility' => array(
 						'google funded promotion eligibility',
 						false,
