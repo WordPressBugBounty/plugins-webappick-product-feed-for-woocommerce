@@ -49,7 +49,8 @@ class VariableProductPrice implements PriceInterface {
 	 * @return float|int
 	 */
 	public function sale_price() {
-		return $this->variation_price_by_type( 'sale_price' );
+		$sale_price = $this->variation_price_by_type( 'sale_price' );
+		return apply_filters( 'woo_feed_parent_product_sale_price', $sale_price, $this->product, $this->config, false, 'sale_price' );
 	}
 
 	/**
@@ -62,6 +63,10 @@ class VariableProductPrice implements PriceInterface {
 		$price         = '';
 		$min_max_first = $this->config->variable_price;
 		$prices        = $this->product->get_variation_prices( true );
+
+		if ( $price_type === 'sale_price' && $prices['sale_price'] === $prices['regular_price'] ) {
+			return $price;
+		}
 
 		if ( empty( $prices[ $price_type ] ) ) {
 			return $price;
