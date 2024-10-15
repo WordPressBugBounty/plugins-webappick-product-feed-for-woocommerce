@@ -50,6 +50,7 @@ class TRP_Translate_PressCompatibility {
 			include_once WP_PLUGIN_DIR . '/translatepress-multilingual/includes/class-translation-render.php';
 			include_once WP_PLUGIN_DIR . '/translatepress-multilingual/includes/class-url-converter.php';
 			include_once WP_PLUGIN_DIR . '/translatepress-multilingual/includes/queries/class-query.php';
+			include_once WP_PLUGIN_DIR . '/translatepress-multilingual/includes/class-upgrade.php';
 		}
 
 		$settings = ( new \TRP_Settings )->get_settings();

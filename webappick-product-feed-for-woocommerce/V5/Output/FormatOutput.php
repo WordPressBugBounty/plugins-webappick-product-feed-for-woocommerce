@@ -253,9 +253,8 @@ class FormatOutput {
 //				$parent_id = woo_feed_pll_get_original_post_id( $id );
 				$parent_id = CommonHelper::woo_feed_pll_get_original_post_id( $id );
 			}
-
 			//get attribute value of parent language post id
-			if ( ! empty( $parent_id ) && empty( $output ) ) {
+			if ( ! empty( $parent_id ) ) {
 				$parentProduct = wc_get_product( $parent_id );
 				$output        = ProductHelper::get_attribute_value_by_type( $this->attribute, $parentProduct, $this->config );
 			}

@@ -166,7 +166,7 @@ class GoogleTemplate {
 	 * @link https://webappick.atlassian.net/browse/CBT-150
 	 */
 	public function woo_feed_filter_product_description_callback( $description ) {
-		return substr( $description, 0, 5000 );
+		return is_null( $description ) ? '' : substr($description, 0, 5000);
 	}
 
 	/**
