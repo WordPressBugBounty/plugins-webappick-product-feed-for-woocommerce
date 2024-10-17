@@ -5,7 +5,7 @@ Tags: WooCommerce Product Feed, Google Shopping feed,Facebook Catalog feed, XML 
 Requires at least: 4.4
 Tested Up To: 6.5
 Requires PHP: 5.6
-Stable tag: 6.5.26
+Stable tag: 6.5.27
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -438,6 +438,9 @@ Currently, there aren’t any issues or bugs. We regularly update both the free 
 4. Category Mapping
 
 == Changelog ==
+
+= 6.5.27 (2024-10-17) =
+* Fixed  : Including variations of a pending parent variable product
 
 = 6.5.26 (2024-10-15) =
 * Fixed  : PHP Deprecated issue

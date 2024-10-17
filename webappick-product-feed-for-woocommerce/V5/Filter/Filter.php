@@ -70,6 +70,7 @@ class Filter {
 			'exclude_hidden_products',
             'exclude_variation_parent_draft_products',
             'exclude_variation_parent_private_products',
+			'exclude_variation_parent_pending_products',
 
 		];
 
@@ -204,6 +205,23 @@ class Filter {
 
         return false;
     }
+
+	/**
+	 * Remove  variation products whose parent status is pending.
+	 *
+	 * @return bool
+	 */
+	public function exclude_variation_parent_pending_products() {
+
+		if ( $this->product->is_type( 'variation' ) ) {
+			$parent_id = $this->product->get_parent_id();
+			if ( get_post_status( $parent_id ) === 'pending' && !in_array('pending',$this->config->get_post_status_to_include())) {
+				return true;
+			}
+		}
+
+		return false;
+	}
 
 	/**
 	 * Remove hidden variation products whose parent status is draft.
