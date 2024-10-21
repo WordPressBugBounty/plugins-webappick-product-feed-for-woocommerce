@@ -369,24 +369,24 @@ class TRP_Translate_PressCompatibility {
 	 * @return string
 	 */
 	public function get_tp_translate_url( $output, $product, $config ) { // phpcs:ignore
-		/*$feed_language = $config->get_feed_language();
-		// If the url should be modified then modify the url.
-		if ( $this->should_modify_url( $feed_language ) ) {
-			$output = $this->get_modified_url( $output, $feed_language );
-		}
-		return $output; */
-		$link = $output;
-		$feed_language = $config->feedLanguage;
+
+		$link = $product->get_permalink();
+		$feed_language = $config->get_feed_language();
+
 		$settings = get_option( 'trp_settings', false );
 		if( is_array( $settings ) && isset( $settings['url-slugs'][ $feed_language ] ) && is_array( $settings['url-slugs'] ) ){
+
 			$url_slug = $settings['url-slugs'][ $feed_language ];
+
 			$trp           = TRP_Translate_Press::get_trp_instance();
 			$url_converter = $trp->get_component( 'url_converter' );
 			$link          = $url_converter->get_url_for_language( $feed_language, $link );
-			if ( $settings['default-language'] != $feed_language ) {
-				$link = str_replace( home_url() . '/', home_url() . '/' . $url_slug . '/', $link );
-			}
+
+//			if ( $settings['default-language'] != $feed_language ) {
+//				$link = str_replace( home_url() . '/', home_url() . '/' . $url_slug . '/', $link );
+//			}
 		}
+
 		$link = $this->add_utm_tracker( $link, $config );
 
 		return $link;
