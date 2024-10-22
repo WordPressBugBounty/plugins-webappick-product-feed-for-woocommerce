@@ -5,7 +5,7 @@ Tags: WooCommerce, Product Feed, Google Shopping, Facebook Catalog, XML
 Requires at least: 4.4
 Tested Up To: 6.5
 Requires PHP: 5.6
-Stable tag: 6.5.28
+Stable tag: 6.5.29
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -329,6 +329,9 @@ Using pro version:
 4. Category Mapping
 
 == Changelog ==
+
+= 6.5.29 (2024-10-22) =
+* Added : Halloween Discount Banner
 
 = 6.5.28 (2024-10-21) =
 * Updated : Plugin description
