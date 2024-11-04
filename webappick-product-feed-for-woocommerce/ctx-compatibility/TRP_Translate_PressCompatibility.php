@@ -78,6 +78,8 @@ class TRP_Translate_PressCompatibility {
 				'woo_feed_get_google_color_attribute',
 				'woo_feed_get_google_g:brand_attribute',
 				'woo_feed_get_google_brand_attribute',
+				'woo_feed_get_google_size_attribute',
+
 			)
 		);
 

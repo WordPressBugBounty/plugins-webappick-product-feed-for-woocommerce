@@ -51,7 +51,7 @@ if ( ! function_exists('webappick_dashboard_widget_render') ) {
         <hr>
         <?php
 
-        $ctx_pro_image =  WOO_FEED_PLUGIN_URL . "admin/images/pro-large-bg-black-halloween.png";
+        $ctx_pro_image =  WOO_FEED_PLUGIN_URL . "admin/images/pro-large-bg-black.png";
         $column_one = [
                 esc_html__('Enable conditional pricing','woo-feed'),
                 esc_html__('Multilingual product feed','woo-feed'),
@@ -63,27 +63,12 @@ if ( ! function_exists('webappick_dashboard_widget_render') ) {
             esc_html__('Leverage dynamic attribute', 'woo-feed')
         ];
 
-        $allowedHtml = array(
-            'b'   => array(),
-            'class' => array(),
-            'sub'  => array(),
-            'sup'  => array(),
-            'span' => array(
-                'class' => array(),
-            ),
-            'a'    => array(
-                'href'   => array(),
-                'target' => array(),
-            ),
-        );
-
         if( ! \CTXFeed\V5\Common\Helper::is_pro() ) { ?>
             <div class="woo-feed-widget-banner">
                 <div class="woo-feed-widget-banner-image">
                     <img src='<?php echo esc_url($ctx_pro_image); ?>'>
                 </div>
-                <div class="woo-feed-widget-banner-heading" ><?php echo wp_kses('<span class="woo-feed-coupon">Exclusive Halloween Deal: Up to 30% OFF</span> CTX Feed Pro!',$allowedHtml,'woo-feed')?></div>
-                <div class="woo-feed-widget-banner-heading2" ><?php echo wp_kses('Use <span class="woo-feed-coupon">HW2024</span> for yearly, <span class="woo-feed-coupon">HWLT2024</span> for lifetime— <span class="woo-feed-coupon-offer">Hurry, offer ends soon!</span> 🎃', $allowedHtml, 'woo-feed')?></div>
+                <div class="woo-feed-widget-banner-heading" ><?php echo esc_html__('Unlock Exclusive Features for Product Feed Generation!', 'woo-feed')?></div>
                 <div class="woo-feed-widget-banner-list">
                     <div class="woo-feed-widget-list-item">
                         <ul>
@@ -112,7 +97,7 @@ if ( ! function_exists('webappick_dashboard_widget_render') ) {
                 </div>
                 <div class="woo-feed-widget-footer">
                     <div class="woo-feed-widget-button">
-                        <a href="<?php echo esc_url('https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=free_plugin_side&utm_medium=dashboard_banner&utm_campaign=free_to_pro&utm_term=ctx_feed')?>" target="_blank" ><?php echo esc_html__('Unlock My 30% Discount Now 👻', 'woo-feed'); ?> <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="m12.14 8.753-5.482 4.796c-.646.566-1.658.106-1.658-.753V3.204a1 1 0 0 1 1.659-.753l5.48 4.796a1 1 0 0 1 0 1.506z"></path></svg></a>
+                        <a href="<?php echo esc_url('https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=free_plugin_side&utm_medium=dashboard_banner&utm_campaign=free_to_pro&utm_term=ctx_feed')?>" target="_blank" ><?php echo esc_html__('Get Your CTX Feed Pro', 'woo-feed'); ?> <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="m12.14 8.753-5.482 4.796c-.646.566-1.658.106-1.658-.753V3.204a1 1 0 0 1 1.659-.753l5.48 4.796a1 1 0 0 1 0 1.506z"></path></svg></a>
                     </div>
                 </div>
             </div>

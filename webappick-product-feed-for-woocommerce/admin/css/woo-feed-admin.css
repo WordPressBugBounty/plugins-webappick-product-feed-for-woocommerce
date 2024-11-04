@@ -2183,7 +2183,7 @@ span[id*=cat-map-] {
 }
 
 .woo-feed-widget-banner {
-  background-color: #6D086C;
+  background-color: #2282df;
   color: white;
   padding: 6px;
   border-radius: 5px;
@@ -2205,22 +2205,6 @@ span[id*=cat-map-] {
   font-weight: bold;
   margin-left: 5px;
   text-align: center;
-}
-
-.woo-feed-widget-banner-heading2 {
-  font-size: 15px;
-  margin-left: 5px;
-  text-align: center;
-  padding-top: 4px;
-}
-
-.woo-feed-coupon {
-  font-weight: bold;
-  color: #FCC02A;
-}
-
-.woo-feed-coupon-offer {
-  color: #F6941C;
 }
 
 .woo-feed-widget-banner-list {
@@ -2261,7 +2245,7 @@ span[id*=cat-map-] {
   -ms-flex-pack: center;
   justify-content: center;
   border: none;
-  font-size: 17px;
+  font-size: 13px;
   font-weight: 600;
   display: -ms-flexbox;
   display: flex;

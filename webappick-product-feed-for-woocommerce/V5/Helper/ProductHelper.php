@@ -1045,7 +1045,7 @@ class ProductHelper {
 	 * @return string The modified output string with the appropriate prefix and/or suffix added.
 	 */
 	public static function add_prefix_suffix( $output, $attribute, $config, $merchant_attribute ) {
-		if ( $output === '' ) {
+		if ( $output == '' ) {
 			return $output;
 		}
 

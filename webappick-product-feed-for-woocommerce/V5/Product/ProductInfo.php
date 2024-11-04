@@ -112,9 +112,14 @@ class ProductInfo {
 				$title = apply_filters( 'woo_feed_filter_product_title', $title, $this->product, $this->config );
 				// Merge product title with variation attributes.
 				if ( ! empty( $variation_attributes ) ) {
-					$title .= $product_title_and_attribute_merger . $variation_attributes;
+					$variation_attributes = explode('-', $variation_attributes);
+					if(!empty($variation_attributes)){
+						foreach($variation_attributes as $key => $value){
+							$variation_attribute = apply_filters( 'woo_feed_filter_product_title', $value, $this->product, $this->config );
+							$title .= $product_title_and_attribute_merger . $variation_attribute;
+						}
+					}
 				}
-
 				return $title;
 			} else {
 				// Merge product title with variation attributes.
