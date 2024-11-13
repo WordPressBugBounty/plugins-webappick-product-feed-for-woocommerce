@@ -3,9 +3,9 @@ Contributors: wahid0003, webappick
 Donate link: https://webappick.com
 Tags: WooCommerce, Product Feed, Google Shopping, Facebook Catalog, XML
 Requires at least: 4.4
-Tested Up To: 6.5
+Tested Up To: 6.7
 Requires PHP: 5.6
-Stable tag: 6.5.31
+Stable tag: 6.5.32
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -330,11 +330,14 @@ Using pro version:
 
 == Changelog ==
 
-= 6.5.31 (2024-11-04)
+= 6.5.32 (2024-11-13) =
+* Tweak: WordPress version 6.7 compatibility checked.
+
+= 6.5.31 (2024-11-04) =
 * Removed : Halloween Discount Banner
 * Updated : Code refactor
 
-= 6.5.30 (2024-10-28)
+= 6.5.30 (2024-10-28) =
 * Updated : Halloween Discount Banner
 
 = 6.5.29 (2024-10-22) =
