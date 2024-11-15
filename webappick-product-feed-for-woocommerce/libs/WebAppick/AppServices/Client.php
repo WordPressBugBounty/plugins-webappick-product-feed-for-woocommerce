@@ -294,7 +294,8 @@ class Client {
 			/** @noinspection SpellCheckingInspection, PhpUnusedLocalVariableInspection */
 			list( $this->slug, $mainfile ) = explode( '/', $this->basename );
 			if ( ! function_exists( 'get_plugin_data' ) )  require_once ABSPATH . 'wp-admin/includes/plugin.php';
-			$plugin_data = get_plugin_data( $this->file );
+			//$plugin_data = get_plugin_data( $this->file );
+            $plugin_data = get_plugin_data( WOO_FEED_FREE_FILE, false, false );
 			$this->project_version = $plugin_data['Version'];
 			$this->type = 'plugin';
 		} else {
