@@ -64,13 +64,13 @@ if ( ! function_exists('webappick_dashboard_widget_render') ) {
         ];
 
         if( \CTXFeed\V5\Common\Helper::is_pro() ) { ?>
-            <a target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=CTX+Feed&utm_medium=BFCM_Banner&utm_campaign=BFCM_24&utm_id=202">
+            <a target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=CTX+Feed+Plugin&utm_medium=cm_banner&utm_campaign=CM_24&utm_id=2024">
                 <div class="woo-feed-widget-banner-bfc"> </div>
             </a>
         <?php }
 
         if( !\CTXFeed\V5\Common\Helper::is_pro() ) { ?>
-            <a target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=CTX+Feed&utm_medium=BFCM_Banner&utm_campaign=BFCM_24&utm_id=2024">
+            <a target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=CTX+Feed+Plugin&utm_medium=cm_banner&utm_campaign=CM_24&utm_id=2024">
                 <div class="woo-feed-widget-banner-bfc-free"> </div>
             </a>
         <?php }
