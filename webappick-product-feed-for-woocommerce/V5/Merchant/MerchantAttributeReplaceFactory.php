@@ -89,6 +89,8 @@ class MerchantAttributeReplaceFactory {
 					'adult'                         => array( 'g:adult', true ),
 					'ads_redirect'                  => array( 'g:ads_redirect', true ),
 					'pause'                  		=> array( 'g:pause', true ),
+					'ads_labels'                    => array( 'g:ads_labels', true ),
+					'ads_grouping'                  => array( 'g:ads_grouping', true ),
 					'custom_label_0'                => array( 'g:custom_label_0', true ),
 					'custom_label_1'                => array( 'g:custom_label_1', true ),
 					'custom_label_2'                => array( 'g:custom_label_2', true ),

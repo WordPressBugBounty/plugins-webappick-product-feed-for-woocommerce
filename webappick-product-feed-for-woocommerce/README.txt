@@ -5,7 +5,7 @@ Tags: WooCommerce, Product Feed, Google Shopping, Facebook Catalog, XML
 Requires at least: 4.4
 Tested Up To: 6.7
 Requires PHP: 5.6
-Stable tag: 6.5.35
+Stable tag: 6.5.36
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -329,6 +329,9 @@ Using pro version:
 4. Category Mapping
 
 == Changelog ==
+
+= 6.5.36 (2024-12-04) =
+* Added : Ads attribute for Google Shopping
 
 = 6.5.35 (2024-11-30) =
 * Added : Cyber Monday Discount Banner

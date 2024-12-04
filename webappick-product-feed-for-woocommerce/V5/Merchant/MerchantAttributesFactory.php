@@ -160,6 +160,8 @@ class MerchantAttributesFactory {
 					'options'     => array(
 						'ads_redirect' => 'Ads Redirect[ads_redirect]',
 						'pause' => 'Pause[pause]',
+						'ads_labels' => 'Ads Label[ads_labels]',
+						'ads_grouping' => 'Ads Grouping[ads_grouping]',
 					),
 				),
 				9  => array(
