@@ -170,6 +170,7 @@ class MerchantAttributeReplaceFactory {
 						'g:google_funded_promotion_eligibility',
 						false,
 					),
+					'certified_pre-owned'         			  		  => array( 'g:certified_pre-owned', true ),
 				],
 				'CSV'  => [
 					'id'                                  => array( 'id', false ),

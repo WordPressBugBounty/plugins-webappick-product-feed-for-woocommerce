@@ -203,6 +203,7 @@ class MerchantAttributesFactory {
 						'min_energy_efficiency_class' => 'Min Energy Efficiency Class[energy_efficiency_class]',
 						'max_energy_efficiency_class' => 'Max Energy Efficiency Class[energy_efficiency_class]',
 						'certification'            	  => 'Certification [certification_code]',
+						'certified_pre-owned'         => 'Certified pre-owned [certified_pre-owned]',
 					),
 				),
 				13 => array(
