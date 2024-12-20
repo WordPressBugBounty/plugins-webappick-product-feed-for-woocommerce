@@ -394,7 +394,7 @@ if ( ! function_exists( 'woo_feed_christmas_notice' ) ) {
 	 */
 	function woo_feed_christmas_notice() {
 		$user_id = get_current_user_id();
-		if ( ! get_user_meta( $user_id, 'woo_feed_christmas_notice_2023_dismissed' ) ) {
+		if ( ! get_user_meta( $user_id, 'woo_feed_christmas_notice_2024_dismissed' ) ) {
 			ob_start();
 			?>
 			<script type="text/javascript">
@@ -404,7 +404,7 @@ if ( ! function_exists( 'woo_feed_christmas_notice' ) ) {
 						let nonce = $('#woo_feed_to_ctx_feed_nonce').val();
 
 						//woo feed christmas notice cancel callback
-						wp.ajax.post('woo_feed_save_christmas_notice_2023', {
+						wp.ajax.post('woo_feed_save_christmas_notice', {
 							_wp_ajax_nonce: nonce,
 							clicked: true,
 						}).then(response => {
@@ -415,9 +415,9 @@ if ( ! function_exists( 'woo_feed_christmas_notice' ) ) {
 					});
 				})(jQuery)
 			</script>
-			<a  target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=Christmass_23&utm_medium=Free_to_Pro&utm_campaign=Christmass23&utm_id=23"
+			<a  target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=CTX+Feed+Plugin&utm_medium=HH_banner&utm_campaign=HH_24&utm_id=2024"
 				class="notice woo-feed-ctx-startup-notice is-dismissible"
-				style="background: url(<?php echo esc_url(WOO_FEED_PLUGIN_URL) . 'admin/images/christmas-web-banner-2023.png'; ?>) no-repeat top center;">
+				style="background: url(<?php echo esc_url(WOO_FEED_PLUGIN_URL) . 'admin/images/woo_feed_christmass_banner_2024.png'; ?>) no-repeat top center;">
 				<input type="hidden" id="woo_feed_to_ctx_feed_nonce"
 					   value="<?php echo esc_attr(wp_create_nonce( 'woo-feed-to-ctx-feed-notice' )); ?>">
 			</a>
@@ -3589,7 +3589,7 @@ if ( ! function_exists( 'woo_feed_save_halloween_notice' ) ) {
 add_action( 'wp_ajax_woo_feed_save_halloween_notice', 'woo_feed_save_halloween_notice' );
 
 
-if ( ! function_exists( 'woo_feed_save_christmas_notice_2023' ) ) {
+if ( ! function_exists( 'woo_feed_save_christmas_notice' ) ) {
 	/**
 	 * Update user meta to work ctx startup notice once.
 	 *
@@ -3598,11 +3598,11 @@ if ( ! function_exists( 'woo_feed_save_christmas_notice_2023' ) ) {
 	 * @since 4.5.15
 	 * @author Md. Nashir Uddin
 	 */
-	function woo_feed_save_christmas_notice_2023() {
+	function woo_feed_save_christmas_notice() {
 		if ( isset( $_REQUEST['_wp_ajax_nonce'] ) && wp_verify_nonce( wp_unslash( $_REQUEST['_wp_ajax_nonce'] ), 'woo-feed-to-ctx-feed-notice' ) ) { //phpcs:ignore
 			$user_id = get_current_user_id();
 			if ( isset( $_REQUEST['clicked'] ) ) {
-				$updated_user_meta = add_user_meta( $user_id, 'woo_feed_christmas_notice_2023_dismissed', 'true', true );
+				$updated_user_meta = add_user_meta( $user_id, 'woo_feed_christmas_notice_2024_dismissed', 'true', true );
 
 				if ( $updated_user_meta ) {
 					wp_send_json_success( esc_html__( 'User meta updated successfully.', 'woo-feed' ) );
@@ -3616,7 +3616,7 @@ if ( ! function_exists( 'woo_feed_save_christmas_notice_2023' ) ) {
 		wp_die();
 	}
 }
-add_action( 'wp_ajax_woo_feed_save_christmas_notice_2023', 'woo_feed_save_christmas_notice_2023' );
+add_action( 'wp_ajax_woo_feed_save_christmas_notice', 'woo_feed_save_christmas_notice' );
 
 if ( ! function_exists( 'woo_feed_hide_promotion' ) ) {
 	/**
