@@ -86,7 +86,8 @@ class Feed {
 		}
 
 		// Delete cron schedule.
-		// Delete cron schedule.
+		wp_clear_scheduled_hook( 'woo_feed_update_single_feed', array( $feed_id ) );
+
 		$hook_name = CronHelper::get_cron_hook_name( $feed_name, true );
 		CronHelper::delete_cron_job( $hook_name );
 
