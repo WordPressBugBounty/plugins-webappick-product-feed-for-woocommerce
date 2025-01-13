@@ -49,6 +49,11 @@ if ( ! class_exists( 'WooFeedWebAppickAPI' ) ) {
 		 */
 		protected $updater = null;
 
+        /**
+         * var $is_add_extra
+         */
+        protected $is_add_extra = true;
+
 		/**
 		 * Initialize
 		 * @return WooFeedWebAppickAPI
@@ -136,16 +141,23 @@ if ( ! class_exists( 'WooFeedWebAppickAPI' ) ) {
 			foreach ( array( 'rp-wcdpd', 'wpml', 'rating', 'product_limit' ) as $which ) {
 				$hidden_notices[ $which ] = (int) get_option( sprintf( 'woo_feed_%s_notice_hidden', $which ), 0 );
 			}
-			$tracker_extra = array(
-				'products'        => $this->insights->get_post_count( 'product' ),
-				'variations'      => $this->insights->get_post_count( 'product_variation' ),
-				'batch_limit'     => get_option( 'woo_feed_per_batch' ),
-				'feed_configs'    => wp_json_encode( $result ),
-				'product_cat_num' => $catCount,
-				'review_notice'   => wp_json_encode( get_option( 'woo_feed_review_notice', array() ) ),
-				'hidden_notices'  => $hidden_notices,
-			);
-			$this->insights->add_extra( $tracker_extra );
+
+            $this->is_add_extra = apply_filters( 'woo_feed_woocommerce_add_extra', true );
+
+            if( $this->is_add_extra ) {
+
+                $tracker_extra = array(
+                    'products' => $this->insights->get_post_count('product'),
+                    'variations' => $this->insights->get_post_count('product_variation'),
+                    'batch_limit' => get_option('woo_feed_per_batch'),
+                    'feed_configs' => wp_json_encode($result),
+                    'product_cat_num' => $catCount,
+                    'review_notice' => wp_json_encode(get_option('woo_feed_review_notice', array())),
+                    'hidden_notices' => $hidden_notices,
+                );
+                $this->insights->add_extra($tracker_extra);
+            }
+
 			$projectSlug = $this->client->getSlug();
 			add_filter( $projectSlug . '_what_tracked', array( $this, 'data_we_collect' ), 10, 1 );
 			add_filter(
