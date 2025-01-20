@@ -5,7 +5,7 @@ Tags: WooCommerce, Product Feed, Google Shopping, Facebook Catalog, XML
 Requires at least: 4.4
 Tested Up To: 6.7
 Requires PHP: 5.6
-Stable tag: 6.5.44
+Stable tag: 6.5.45
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -330,17 +330,20 @@ Using pro version:
 
 == Changelog ==
 
+= 6.5.45 (2025-01-20) =
+* Updated : Plugin Information
+
 = 6.5.44 (2025-01-13) =
-Added : Filter Hook for add extra data
+* Added : Filter Hook for add extra data
 
 = 6.5.43 (2025-01-08) =
-Fixed : Cron Event Removed issue
+* Fixed : Cron Event Removed issue
 
 = 6.5.42 (2025-01-01) =
-Removed : Merry Christmas Discount Banner
+* Removed : Merry Christmas Discount Banner
 
 = 6.5.41 (2024-12-23) =
-Added : Merry Christmas Dashboard Discount Banner
+* Added : Merry Christmas Dashboard Discount Banner
 
 = 6.5.40 (2024-12-20) =
 * Added : Merry Christmas Discount Banner
