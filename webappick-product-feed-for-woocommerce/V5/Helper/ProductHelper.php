@@ -524,10 +524,13 @@ class ProductHelper {
 		$value = self::fetch_product_attribute( $attr, $product );
 
 		// Retrieve attribute value from the parent product if it's a variation and the attribute value is empty.
-		if ( '' === $value && $product->is_type( 'variation' ) ) {
-			$parent_product = \wc_get_product( $product->get_parent_id() );
-			if ( $parent_product ) {
-				$value = self::fetch_product_attribute( $attr, $parent_product );
+
+		if ( $product instanceof WC_Product ) {
+			if ('' === $value && $product->is_type('variation')) {
+				$parent_product = \wc_get_product($product->get_parent_id());
+				if ($parent_product) {
+					$value = self::fetch_product_attribute($attr, $parent_product);
+				}
 			}
 		}
 
@@ -542,13 +545,17 @@ class ProductHelper {
 	 *
 	 * @return string The attribute value.
 	 */
-	private static function fetch_product_attribute( $attr, WC_Product $product ) {
-		if ( \woo_feed_wc_version_check( 3.2 ) ) {
-			return $product->get_attribute( $attr );
+	private static function fetch_product_attribute( $attr, $product ) {
+		if ($product instanceof WC_Product) {
+			if (\woo_feed_wc_version_check(3.2)) {
+				return $product->get_attribute($attr);
+			}
+
+			// Fallback for WooCommerce versions below 3.2.
+			return \implode(',', \wc_get_product_terms($product->get_id(), $attr, array('fields' => 'names')));
 		}
 
-		// Fallback for WooCommerce versions below 3.2.
-		return \implode( ',', \wc_get_product_terms( $product->get_id(), $attr, array( 'fields' => 'names' ) ) );
+		return '';
 	}
 
 	/**
