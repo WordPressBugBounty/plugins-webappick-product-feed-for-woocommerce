@@ -270,11 +270,8 @@ class Shipping {
 
 		// add product to cart
 		if ( is_plugin_active( 'woocommerce-multi-currency/woocommerce-multi-currency.php' ) ) {
-			$curccy = new WOOMULTI_CURRENCYCompatibility();
-			$curccy->switch_currency($this->config);
+			do_action('woo_feed_action_shipping_currency',$this->config);
 		}
-
-		do_action('woo_feed_filter_shipping_currency',$this->config);
 
 		$woocommerce->cart->add_to_cart( $id, 1 );
 

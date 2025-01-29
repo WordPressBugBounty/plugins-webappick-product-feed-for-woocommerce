@@ -40,7 +40,7 @@ class WOOMULTI_CURRENCYCompatibility
 		add_filter('woo_feed_filter_product_price_with_tax', array($this, 'get_converted_price'), 10, 5);
 		add_filter('woo_feed_filter_product_sale_price_with_tax', array($this, 'get_converted_price'), 10, 5);
 
-		add_action('woo_feed_filter_shipping_currency',array($this,'shipping_currency_switch'),10,1);
+		add_action('woo_feed_action_shipping_currency',array($this,'shipping_currency_switch'),10,1);
 	}
 
 	/**
