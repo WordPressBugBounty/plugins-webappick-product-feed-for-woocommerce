@@ -313,6 +313,11 @@ class TRP_Translate_PressCompatibility {
 	 * @return string
 	 */
 	public function trp_translate_strings( $output, $product, $config ) { // phpcs:ignore
+
+
+		$output = str_replace( ' - ', ' &#8211; ', $output );
+		$output = str_replace( 'x', '&#215;', $output );
+
 		$original_output        = $output;
 		$strings                = self::get_translatable_strings( $output );
 		$strings                = array_map( 'trp_full_trim', $strings );
