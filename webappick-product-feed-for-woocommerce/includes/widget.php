@@ -63,44 +63,17 @@ if ( ! function_exists('webappick_dashboard_widget_render') ) {
             esc_html__('Leverage dynamic attribute', 'woo-feed')
         ];
 
-        if( ! \CTXFeed\V5\Common\Helper::is_pro() ) { ?>
-            <div class="woo-feed-widget-banner">
-                <div class="woo-feed-widget-banner-image">
-                    <img src='<?php echo esc_url($ctx_pro_image); ?>'>
-                </div>
-                <div class="woo-feed-widget-banner-heading" ><?php echo esc_html__('Unlock Exclusive Features for Product Feed Generation!', 'woo-feed')?></div>
-                <div class="woo-feed-widget-banner-list">
-                    <div class="woo-feed-widget-list-item">
-                        <ul>
-                            <?php foreach ($column_one as $value): ?>
-                                <li class="woo-feed-widget-item">
-                                    <div>
-                                        <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 20 20" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-                                    </div>
-                                    <span><?php echo esc_attr($value); ?></span>
-                                </li>
-                            <?php endforeach; ?>
-                        </ul>
-                    </div>
-                    <div class="woo-feed-widget-list-item">
-                        <ul>
-                            <?php foreach ($column_two as $value): ?>
-                                <li class="woo-feed-widget-item">
-                                    <div>
-                                        <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 20 20" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
-                                    </div>
-                                    <span><?php echo esc_attr($value); ?></span>
-                                </li>
-                            <?php endforeach; ?>
-                        </ul>
-                    </div>
-                </div>
-                <div class="woo-feed-widget-footer">
-                    <div class="woo-feed-widget-button">
-                        <a href="<?php echo esc_url('https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=free_plugin_side&utm_medium=dashboard_banner&utm_campaign=free_to_pro&utm_term=ctx_feed')?>" target="_blank" ><?php echo esc_html__('Get Your CTX Feed Pro', 'woo-feed'); ?> <svg stroke="currentColor" fill="currentColor" stroke-width="0" viewBox="0 0 16 16" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg"><path d="m12.14 8.753-5.482 4.796c-.646.566-1.658.106-1.658-.753V3.204a1 1 0 0 1 1.659-.753l5.48 4.796a1 1 0 0 1 0 1.506z"></path></svg></a>
-                    </div>
-                </div>
-            </div>
+        //if( \CTXFeed\V5\Common\Helper::is_pro() ) { ?>
+            <!--a target="_blank" href="https://discoplugin.com/">
+                <div class="woo-feed-widget-banner-disco"> </div>
+            </a-->
+        <?php //}
+
+        if( !\CTXFeed\V5\Common\Helper::is_pro() ) { ?>
+            <a target="_blank" href="https://discoplugin.com/">
+                <div class="woo-feed-widget-banner-disco-free"> </div>
+            </a>
+            <hr>
         <?php }
 
         // If there are posts.
