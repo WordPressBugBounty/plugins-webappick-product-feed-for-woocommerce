@@ -296,6 +296,7 @@ if ( ! class_exists( 'WooFeedWebAppickAPI' ) ) {
 
 		public function premium_features() {
 			add_submenu_page( 'webappick-manage-feeds', esc_html__( 'Premium', 'woo-feed' ), '<span class="woo-feed-premium">' . esc_html__( 'Premium', 'woo-feed' ) . '</span>', 'manage_woocommerce', 'webappick-feed-pro-vs-free', array( $this, 'woo_feed_pro_vs_free' ) );
+            add_submenu_page( 'webappick-manage-feeds', esc_html__( 'Our Plugins', 'woo-feed' ), '<span class="woo-feed-our-plugin">' . esc_html__( 'Our Plugins', 'woo-feed' ) . '</span>', 'manage_woocommerce', 'webappick-feed-our-plugins', array( $this, 'woo_feed_our_plugins' ) );
 			add_action( 'admin_head', array( $this, 'remove_admin_notices' ), 9999 );
 		}
 
@@ -307,6 +308,15 @@ if ( ! class_exists( 'WooFeedWebAppickAPI' ) ) {
 			/** @define "WOO_FEED_FREE_ADMIN_PATH''./../../admin/" */ // phpcs:ignore
 			require WOO_FEED_FREE_ADMIN_PATH . 'partials/woo-feed-pro-vs-free.php';
 		}
+
+        /**
+         * Render Our Plugins Page
+         * @return void
+         */
+        public function woo_feed_our_plugins() {
+            /** @define "WOO_FEED_FREE_ADMIN_PATH''./../../admin/" */ // phpcs:ignore
+            require WOO_FEED_FREE_ADMIN_PATH . 'partials/woo-feed-our-plugins.php';
+        }
 
 		/**
 		 * Remove Admin Notice in pro features page.

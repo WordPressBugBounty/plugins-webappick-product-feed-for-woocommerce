@@ -270,6 +270,7 @@ class Woo_Feed_Admin {
 				false
 			);
 
+
 			//get feed options with which feed is previously generated
 			$feed_rules = '';
 
@@ -480,6 +481,7 @@ class Woo_Feed_Admin {
 			) {
 				wp_enqueue_script( $this->woo_feed );
 			}
+
 			if ( 'woo-feed_page_webappick-feed-pro-vs-free' === $hook ) {
 				wp_register_script(
 					'jquery-slick',
@@ -497,6 +499,22 @@ class Woo_Feed_Admin {
 				);
 				wp_enqueue_script( $this->woo_feed . '-pro' );
 			}
+
+            if ( 'ctx-feed_page_webappick-feed-our-plugins' === $hook ) {
+                wp_register_script(
+                    'woo-feed-admin-page',
+                    plugin_dir_url( __FILE__ ) . 'js/woo-feed-our-plugins.js',
+                    $feedScriptDependency,
+                    $this->version,
+                    false
+                );
+                wp_enqueue_script( 'woo-feed-admin-page' );
+
+                wp_localize_script($this->woo_feed, 'woo_feed_our_plugins_info', array(
+                    'url' => admin_url('admin-ajax.php'),
+                    'nonce' => wp_create_nonce('woo-feed-our-plugins-nonce')
+                ));
+            }
 
             wp_register_script(
                 'codemirror',

@@ -1155,26 +1155,27 @@ class DropDownOptions {
 
 					$options = $currencies;
 				}
-			} elseif ( is_plugin_active( 'woocommerce-currency-switcher/index.php' ) && class_exists( 'WOOCS' ) ) {
+			}  elseif (is_plugin_active('woocommerce-currency-switcher/index.php') || class_exists('WOOCS')) {
 				global $WOOCS;
-				$get_currencies = $WOOCS->get_currencies();
-				if ( ! empty( $get_currencies ) ) {
-					$currencies = [];
-					foreach ( $get_currencies as $key => $currency ) {
-						$currencies[ $key ] = $key;
+				// Try to get currencies from the $WOOCS object first
+				if (isset($WOOCS) && method_exists($WOOCS, 'get_currencies')) {
+					$get_currencies = $WOOCS->get_currencies();
+					if (! empty($get_currencies)) {
+						foreach ($get_currencies as $key => $currency) {
+							$options[$key] = $key;
+						}
 					}
-					$options = $currencies;
 				}
 
-				/*$get_currencies = get_option('woocs', array());
-				if ( ! empty( $get_currencies ) ) {
-					$currencies = [];
-					foreach ( $get_currencies as $key => $currency ) {
-						$currencies[ $key ] = $key;
+				// Fallback to get currencies from the 'woocs' option
+				if (empty($options)) {
+					$get_currencies = get_option('woocs', array());
+					if (! empty($get_currencies)) {
+						foreach ($get_currencies as $key => $currency) {
+							$options[$key] = $key;
+						}
 					}
-					$options = $currencies;
-				}*/
-
+				}
 			} elseif ( is_plugin_active( 'currency-switcher-woocommerce/currency-switcher-woocommerce.php' ) ) {
 
 				if ( function_exists( 'alg_get_enabled_currencies' ) ) {

@@ -6151,6 +6151,77 @@ if ( ! function_exists( 'woo_feed_wcml_save_currency' ) ) {
 	}
 }
 
+if ( ! function_exists( 'woo_feed_plugin_installing' ) ) {
+    function woo_feed_plugin_installing() {
+        // Handle AJAX request here
+        // For example, get data from request
+        check_ajax_referer( 'woo-feed-our-plugins-nonce', 'nonce' );
+
+        $plugin_slug = isset( $_POST['data'] ) ? sanitize_text_field( $_POST['data'] )  : '';
+
+        $result = woo_feed_install_and_activate_plugin($plugin_slug);
+
+        // Process data
+        // Example response
+        $response = array(
+            'status' => 200,
+            'result' => $result
+        );
+
+        // Send JSON response
+        wp_send_json($response);
+
+        // Don't forget to exit
+        wp_die();
+    }
+}
+
+add_action('wp_ajax_woo_feed_plugin_installing', 'woo_feed_plugin_installing');
+
+if ( ! function_exists( 'woo_feed_install_and_activate_plugin' ) ) {
+    function woo_feed_install_and_activate_plugin($plugin_slug)
+    {
+        // Include necessary WordPress files
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        require_once ABSPATH . 'wp-admin/includes/plugin-install.php';
+        require_once ABSPATH . 'wp-admin/includes/class-wp-ajax-upgrader-skin.php';
+
+        // Get plugin information from WordPress.org API
+        $api = plugins_api('plugin_information', array('slug' => $plugin_slug));
+
+        if (is_wp_error($api)) {
+            return "failed";
+        }
+
+        // Set up the Plugin Upgrader
+        $upgrader = new Plugin_Upgrader(new WP_Ajax_Upgrader_Skin());
+
+        // Install the plugin
+        $result = $upgrader->install($api->download_link);
+
+        if (is_wp_error($result)) {
+            return "failed";
+        }
+
+        if($plugin_slug=='webappick-pdf-invoice-for-woocommerce') {
+            $plugin_index = 'woo-invoice';
+        }else{
+            $plugin_index = $plugin_slug;
+        }
+
+        // Plugin main file path (assumes plugin directory matches slug)
+        $plugin_path = WP_PLUGIN_DIR . "/{$plugin_slug}/{$plugin_index}.php";
+
+        if (file_exists($plugin_path)) {
+            activate_plugin("{$plugin_slug}/{$plugin_index}.php");
+            return "activated";
+        } else {
+            return "installed";
+        }
+    }
+}
+
 #==== MERCHANT TEMPLATE OVERRIDE END ================#
 
 
