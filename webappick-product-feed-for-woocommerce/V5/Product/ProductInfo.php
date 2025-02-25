@@ -885,6 +885,10 @@ class ProductInfo {
 		$quantity = $this->product->get_stock_quantity();
 		$status   = $this->product->get_stock_status();
 
+		if ( 'instock' === $status && $quantity === null) {
+			$quantity = 1;
+		}
+
 		if ( 'outofstock' === $status && $quantity === null ) {
 			$quantity = 0;
 		}
