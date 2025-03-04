@@ -314,9 +314,11 @@ class TRP_Translate_PressCompatibility {
 	 */
 	public function trp_translate_strings( $output, $product, $config ) { // phpcs:ignore
 
-
-		$output = str_replace( ' - ', ' &#8211; ', $output );
-		$output = str_replace( 'x', '&#215;', $output );
+		if($config->get_feed_language()!='en_US') {
+			$output = str_replace(' - ', ' &#8211; ', $output);
+			$output = str_replace("'", '&#8217;', $output);
+			$output = preg_replace('/(\d)x(\d)/', '$1&#215;$2', $output);
+		}
 
 		$original_output        = $output;
 		$strings                = self::get_translatable_strings( $output );
