@@ -356,6 +356,7 @@ class MerchantAttributesFactory {
 				6 => array(
 					'optionGroup' => 'Custom Label Attributes',
 					'options'     => array(
+						'internal_label' => 'Internal label [internal_label]',
 						'custom_label_0' => 'Custom label 0 [custom_label_0]',
 						'custom_label_1' => 'Custom label 1 [custom_label_1]',
 						'custom_label_2' => 'Custom label 2 [custom_label_2]',
