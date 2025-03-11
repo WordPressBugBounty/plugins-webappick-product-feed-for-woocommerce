@@ -212,6 +212,8 @@ class InputCustomFiled implements CustomFieldInterface {
 
 				if ( isset( $product_meta_value ) && ! empty( $product_meta_value ) ) {
 					update_post_meta( $post_id, $product_meta_key, $product_meta_value );
+				}else {
+					delete_post_meta( $post_id, $product_meta_key );
 				}
 			}
 		}
