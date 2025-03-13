@@ -5,7 +5,7 @@ Tags: WooCommerce, Product Feed, Google Shopping, Facebook Catalog, XML
 Requires at least: 4.4
 Tested Up To: 6.7
 Requires PHP: 5.6
-Stable tag: 6.5.54
+Stable tag: 6.5.55
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -329,6 +329,9 @@ Using pro version:
 4. Category Mapping
 
 == Changelog ==
+
+= 6.5.55 (2025-03-13) =
+* Added : Woocommerce default GTIN,UPC,EAN, or ISBN to the attribute list.
 
 = 6.5.54 (2025-03-11) =
 * Fixed : Custom Field Value remove issue

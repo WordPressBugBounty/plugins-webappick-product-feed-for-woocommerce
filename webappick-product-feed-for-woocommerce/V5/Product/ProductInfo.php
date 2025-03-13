@@ -1947,5 +1947,19 @@ class ProductInfo {
 		return $output;
 	}
 
+	/**
+	 * Get product is a bundle.
+	 *
+	 * @return string
+	 * @since 8.0.0
+	 */
+	public function gtin_upc_ean_isbn() {
+
+		$gtin_upc_ean_isbn = get_post_meta( $this->product->get_id(), '_global_unique_id', true );
+
+		return apply_filters( 'woo_feed_filter_product_gtin_upc_ean_isbn', $gtin_upc_ean_isbn, $this->product, $this->config );
+	}
+
+
 
 }

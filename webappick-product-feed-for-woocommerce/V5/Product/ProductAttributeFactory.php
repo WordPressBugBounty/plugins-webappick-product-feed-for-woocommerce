@@ -86,6 +86,7 @@ class ProductAttributeFactory {
 				'product_status'        => esc_html__( 'Product Status', 'woo-feed' ),
 				'featured_status'        => esc_html__( 'Featured Status', 'woo-feed' ),
 				'checkout_link_template' => esc_html__( 'Checkout Link Template', 'woo-feed' ),
+				'gtin_upc_ean_isbn'      => esc_html__( 'GTIN,UPC,EAN, or ISBN', 'woo-feed' ),
 			]
 		];
 
