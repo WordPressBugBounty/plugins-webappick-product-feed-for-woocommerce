@@ -318,6 +318,7 @@ class Woo_Feed_Admin {
 				'api_version'             => WOO_FEED_API_VERSION,
 				'v5_url'                  => WOO_FEED_V5_URL,
 				'is_free'                 => WOO_FEED_IS_FREE,
+				'is_pro_active' 		  => false,
 				'plugin_version'          => WOO_FEED_FREE_VERSION,
 				'constants'               => [
 					'categoryMapping'   => 'wf_cmapping_',
