@@ -68,7 +68,8 @@ class CommonHelper {//phpcs:ignore
 			'woosb',
 			'woosg',
 			'auction',
-			'course'
+			'course',
+			'appointment'
 		);
 
 		return apply_filters( 'ctx_filter_product_types_for_product_query', $product_types );
