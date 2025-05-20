@@ -17,14 +17,12 @@
     $woo_feed_challan_slug = 'webappick-pdf-invoice-for-woocommerce';
     $woo_feed_challan_url = $woo_feed_plugin_api_url . $woo_feed_challan_slug;
 
-    // Initialize cURL
-    $woo_feed_ch = curl_init();
-    curl_setopt($woo_feed_ch, CURLOPT_URL, $woo_feed_challan_url);
-    curl_setopt($woo_feed_ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($woo_feed_ch, CURLOPT_SSL_VERIFYPEER, false);
+    $response = wp_remote_get( $woo_feed_challan_url, array(
+       'timeout' => 20,
+       'sslverify' => false,
+    ) );
 
-    $woo_feed_challan_response = curl_exec($woo_feed_ch);
-    curl_close($woo_feed_ch);
+    $woo_feed_challan_response = wp_remote_retrieve_body( $response );
 
     // Decode JSON response
     $woo_feed_challan_data = json_decode($woo_feed_challan_response, true);
@@ -40,14 +38,12 @@
     $woo_feed_disco_slug = 'disco';
     $woo_feed_disco_url = $woo_feed_plugin_api_url . $woo_feed_disco_slug;
 
-    // Initialize cURL
-    $woo_feed_ch = curl_init();
-    curl_setopt($woo_feed_ch, CURLOPT_URL, $woo_feed_disco_url);
-    curl_setopt($woo_feed_ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($woo_feed_ch, CURLOPT_SSL_VERIFYPEER, false);
+    $response = wp_remote_get( $woo_feed_disco_url, array(
+       'timeout' => 20,
+       'sslverify' => false,
+    ) );
 
-    $woo_feed_disco_response = curl_exec($woo_feed_ch);
-    curl_close($woo_feed_ch);
+    $woo_feed_disco_response = wp_remote_retrieve_body( $response );
 
     // Decode JSON response
     $woo_feed_disco_data = json_decode($woo_feed_disco_response, true);
