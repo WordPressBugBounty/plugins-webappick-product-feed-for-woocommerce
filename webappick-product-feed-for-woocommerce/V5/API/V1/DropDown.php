@@ -73,12 +73,12 @@ class DropDown extends RestController {
 					'permission_callback' => [ $this, 'get_item_permissions_check' ],
 					'args'                => [
 						'type'   => [
-							'description' => __( 'Dropdown type name. $type will be DropDownOptions class\'s method name. Example: wp-json/ctxfeed/v1/drop_down/?type=feed_country. Here fee_country is DropDownOptions method name.' ),
+							'description' => __( 'Dropdown type name. $type will be DropDownOptions class\'s method name. Example: wp-json/ctxfeed/v1/drop_down/?type=feed_country. Here fee_country is DropDownOptions method name.' ,'woo-feed'),
 							'type'        => 'string',
 							'required'    => true
 						],
 						'search' => [
-							'description' => __( 'Search with search string in the specific method. If search string exists.' ),
+							'description' => __( 'Search with search string in the specific method. If search string exists.' ,'woo-feed'),
 							'type'        => 'string',
 							'required'    => false,
 							'default'     => ''
@@ -104,7 +104,7 @@ class DropDown extends RestController {
 					'permission_callback' => [ $this, 'get_item_permissions_check' ],
 					'args'                => [
 						'template' => [
-							'description' => __( 'Template name' ),
+							'description' => __( 'Template name' ,'woo-feed'),
 							'type'        => 'string',
 							'required'    => true
 						],
@@ -294,7 +294,7 @@ class DropDown extends RestController {
 			'type'       => 'array',
 			'properties' => [
 				'dropdown' => [
-					'description' => __( 'Unique identifier for the object.' ),
+					'description' => __( 'Unique identifier for the object.', 'woo-feed' ),
 					'type'        => 'array',
 					'context'     => [ 'view', 'edit' ],
 					'readonly'    => false,

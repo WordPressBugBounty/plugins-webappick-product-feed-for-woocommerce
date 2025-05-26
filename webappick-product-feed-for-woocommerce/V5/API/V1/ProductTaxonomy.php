@@ -86,29 +86,29 @@ class ProductTaxonomy extends RestController {
 					'permission_callback' => [ $this, 'get_item_permissions_check' ],
 					'args'                => [
 						'country_code' => [
-							'description' => __( 'Country code.' ),
+							'description' => __( 'Country code.' ,'woo-feed'),
 							'type'        => 'string',
 							'required'    => true
 						],
 						'merchant'     => [
-							'description' => __( 'Merchant name' ),
+							'description' => __( 'Merchant name' ,'woo-feed'),
 							'type'        => 'string',
 							'required'    => true
 						],
 						'with_id'      => [
-							'description' => __( 'If true then taxonomy will be downloaded with id' ),
+							'description' => __( 'If true then taxonomy will be downloaded with id' ,'woo-feed'),
 							'type'        => 'boolean',
 							'required'    => false,
 							'default'     => true
 						],
 						'ext'          => [
-							'description' => __( 'File extension default is txt' ),
+							'description' => __( 'File extension default is txt' ,'woo-feed'),
 							'type'        => 'string',
 							'required'    => false,
 							'default'     => 'txt'
 						],
 						'update'       => [
-							'description' => __( 'Should update if value is true' ),
+							'description' => __( 'Should update if value is true' ,'woo-feed'),
 							'type'        => 'boolean',
 							'required'    => false,
 							'default'     => false

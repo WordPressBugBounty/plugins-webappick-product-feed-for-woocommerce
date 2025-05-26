@@ -70,7 +70,7 @@ class MerchantInfo extends RestController {
 					'permission_callback' => [ $this, 'get_item_permissions_check' ],
 					'args'                => [
 						'merchant' => [
-							'description' => __( 'Merchant name' ),
+							'description' => __( 'Merchant name' ,'woo-feed'),
 							'type'        => 'string',
 							'required'    => true
 						],
