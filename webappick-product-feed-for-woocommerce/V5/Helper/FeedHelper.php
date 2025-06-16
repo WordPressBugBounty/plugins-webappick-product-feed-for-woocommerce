@@ -930,7 +930,7 @@ class FeedHelper {
 
 		$ext = self::get_file_type( $type );
 		if ( 'json' === $ext ) {
-			$string = \wp_json_encode( $string );
+			$string = \wp_json_encode( apply_filters( "woo_feed_make_json_encode_feed_body", $string) );
 		}
 
 		$path   = Helper::get_file_dir( $feed_service, $type );
