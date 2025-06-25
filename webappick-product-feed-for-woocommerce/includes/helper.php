@@ -240,6 +240,48 @@ if ( ! function_exists( 'wooFeed_Admin_Notices' ) ) {
 		}
 	}
 }
+
+if ( ! function_exists( 'woo_feed_summer_sale_notice' ) ) {
+    /**
+     * CTX Feed Black Friday Notice
+     *
+     * @since 4.4.35
+     * @author Nazrul Islam Nayan
+     */
+    function woo_feed_summer_sale_notice() {
+        $user_id = get_current_user_id();
+        if ( ! get_user_meta( $user_id, 'woo_feed_summer_sale_notice_2025_dismissed' ) ) {
+            ob_start();
+            ?>
+            <script type="text/javascript">
+                (function ($) {
+                    $(document).on('click', '.woo-feed-ctx-summer-sale-notice button.notice-dismiss', function (e) {
+                        e.preventDefault();
+                        let nonce = $('#woo_feed_to_ctx_feed_nonce').val();
+                        //woo feed black friday notice cancel callback
+                        wp.ajax.post('woo_feed_save_summer_sale_notice', {
+                            _wp_ajax_nonce: nonce,
+                            clicked: true,
+                        }).then(response => {
+                            console.log(response);
+                        }).fail(error => {
+                            console.log(error);
+                        });
+                    });
+                })(jQuery)
+            </script>
+            <a  target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/?utm_source=summer_banner&utm_medium=banner&utm_campaign=summer_offer&utm_id=1"
+                class="notice woo-feed-ctx-summer-sale-notice is-dismissible"
+                style="background: url(<?php echo esc_url(WOO_FEED_PLUGIN_URL) . 'admin/images/ctx-feed-summer-sale-banner.png'; ?>) no-repeat top center;">
+                <input type="hidden" id="woo_feed_to_ctx_feed_nonce"
+                       value="<?php echo esc_attr(wp_create_nonce( 'woo-feed-to-ctx-feed-notice' )); ?>">
+            </a>
+            <?php
+            $image = ob_get_contents();
+        }
+    }
+}
+
 if ( ! function_exists( 'woo_feed_black_friday_notice' ) ) {
 	/**
 	 * CTX Feed Black Friday Notice
@@ -3528,6 +3570,35 @@ if ( ! function_exists( 'woo_feed_get_approved_reviews_data' ) ) {
 
 	}
 }
+
+if ( ! function_exists( 'woo_feed_save_summer_sale_notice' ) ) {
+    /**
+     * Update user meta to work ctx startup notice once.
+     *
+     * @param int _ajax_nonce nonce number.
+     *
+     * @since 4.3.31
+     * @author Nazrul Islam Nayan
+     */
+    function woo_feed_save_summer_sale_notice() {
+        if ( isset( $_REQUEST['_wp_ajax_nonce'] ) && wp_verify_nonce( wp_unslash( $_REQUEST['_wp_ajax_nonce'] ), 'woo-feed-to-ctx-feed-notice' ) ) { //phpcs:ignore
+            $user_id = get_current_user_id();
+            if ( isset( $_REQUEST['clicked'] ) ) {
+                $updated_user_meta = add_user_meta( $user_id, 'woo_feed_summer_sale_notice_2025_dismissed', 'true', true );
+
+                if ( $updated_user_meta ) {
+                    wp_send_json_success( esc_html__( 'User meta updated successfully.', 'woo-feed' ) );
+                } else {
+                    wp_send_json_error( esc_html__( 'Something is wrong.', 'woo-feed' ) );
+                }
+            }
+        } else {
+            wp_send_json_error( esc_html__( 'Invalid Request.', 'woo-feed' ) );
+        }
+        wp_die();
+    }
+}
+add_action( 'wp_ajax_woo_feed_save_summer_sale_notice', 'woo_feed_save_summer_sale_notice' );
 
 if ( ! function_exists( 'woo_feed_save_black_friday_notice' ) ) {
 	/**

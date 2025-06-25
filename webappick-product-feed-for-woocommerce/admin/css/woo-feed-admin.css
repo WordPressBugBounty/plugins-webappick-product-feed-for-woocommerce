@@ -98,6 +98,19 @@
   font-size: 18px;
 }
 
+.woo-feed-ctx-summer-sale-notice {
+  min-height: 130px;
+  background-size: contain !important;
+  border: none;
+  display: block;
+  margin-left: 0;
+  margin-top: 40px;
+}
+.woo-feed-ctx-summer-sale-notice button::before {
+  color: #fbfbfb;
+  font-size: 18px;
+}
+
 .woo_feed_manage_list_table .wf_update_interval_btn {
   background: linear-gradient(125deg, #3cb0fd 0, #6c5ce7 140%);
   border: none;
