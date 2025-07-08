@@ -127,7 +127,7 @@
          </div>
 
          <div class="our_plugin_card_one_middle">
-            <h3><span>Challan</span> - PDF invoice and Packing Slip Plugin for Woocommerce</h3>
+            <h3><span>Challan</span> - PDF Invoice and Packing Slip Plugin for Woocommerce</h3>
             <p>Challan plugin allows you to attach a fully customizable PDF invoice to order confirmation emails, offering easy downloads and more customization than standard WooCommerce invoices.</p>
          </div>
 
