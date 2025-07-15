@@ -219,11 +219,6 @@ class Shipping {
 			return "";
 		}
 
-		// TODO : This filter is removed the price of shipping method. We have to check it more.
-//		if ( ( "free_shipping" === $shipping['method_id'] ) && $this->product->get_price() >= $shipping['method_min_amount'] ) {
-//			return apply_filters( 'woo_feed_filter_shipping_attribute_price', 0, $shipping, $this->config );
-//		}
-
 		// Set shipping cost
 		$shipping_cost = 0;
 		$tax           = 0;
@@ -279,11 +274,7 @@ class Shipping {
 		$shipping_cost = $woocommerce->cart->get_shipping_total();
 		$tax           = $woocommerce->cart->get_shipping_tax();
 
-		// TODO: this is not resetting the value of array. Id and instance id not available in method. so it's commented.
-		// reset chosen shipping methods in the cart
-//		if ( isset( $method['id'] ) && $method['instance_id'] ) {
-			WC()->session->set( 'chosen_shipping_methods', array( '' ) );
-//		}
+	    WC()->session->set( 'chosen_shipping_methods', array( '' ) );
 
 		$shipping_cost += $tax;
 
