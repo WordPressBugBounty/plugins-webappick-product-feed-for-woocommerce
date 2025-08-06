@@ -5,7 +5,7 @@ Tags: WooCommerce, Product Feed, Google Shopping, Facebook Catalog, XML
 Requires at least: 4.4
 Tested Up To: 6.8
 Requires PHP: 5.6
-Stable tag: 6.5.74
+Stable tag: 6.5.75
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -329,6 +329,9 @@ Using pro version:
 4. Category Mapping
 
 == Changelog ==
+
+= 6.5.75 (2025-08-06) =
+* Fixed: Status Page Right Sidebar issue
 
 = 6.5.74 (2025-07-28) =
 * Updated: Code Refactor
