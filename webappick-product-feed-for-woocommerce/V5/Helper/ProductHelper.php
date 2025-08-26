@@ -385,20 +385,22 @@ class ProductHelper {
 	 * @return array|false
 	 */
 	private static function array_search_key( $needle_key, $structure ) {
-		foreach ( $structure as $key => $value ) {
-			if ( strpos( $key, $needle_key ) !== false ) {
+        if (is_array($structure) || is_object($structure)) {
+            foreach ($structure as $key => $value) {
+                if (strpos($key, $needle_key) !== false) {
 
-				return [
-					'attribute'  => $value,
-					'mattribute' => $key,
-				];
-			}
-			if ( is_array( $value ) ) {
-				if ( ( $result = self::array_search_key( $needle_key, $value ) ) !== false ) {
-					return $result;
-				}
-			}
-		}
+                    return [
+                        'attribute' => $value,
+                        'mattribute' => $key,
+                    ];
+                }
+                if (is_array($value)) {
+                    if (($result = self::array_search_key($needle_key, $value)) !== false) {
+                        return $result;
+                    }
+                }
+            }
+        }
 
 		return false;
 	}
