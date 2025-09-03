@@ -103,6 +103,13 @@ class XML implements FileInterface {
 			$value = $this->get_CDATA( $value );
 		}
 
+		if ( $this->config->get_feed_template() === 'google' ) {
+			$excluded_destination = explode('g:excluded_destination', $key);
+			if (is_array($excluded_destination) && isset($excluded_destination[0]) && isset($excluded_destination[1]) && $excluded_destination[1] != '') {
+				$key = 'g:excluded_destination';
+			}
+		}
+
 		if ( $this->config->get_feed_template() === 'googlereview' ) {
 			if ( "overall" === $key ) {
 				$value = "<$key min='1' max='5'>" . $value . "</$key>". PHP_EOL;

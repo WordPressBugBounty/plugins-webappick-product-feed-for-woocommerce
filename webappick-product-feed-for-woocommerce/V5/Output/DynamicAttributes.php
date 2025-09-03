@@ -67,6 +67,20 @@ class DynamicAttributes {
 
 					$conditionName = ( new AttributeValueByType( $attribute, $product, $config, $merchant_attribute, $parent_product ) )->get_value( $name );
 
+					if($config->get_feed_template()=='custom2' && !is_numeric($conditionName) && $conditionName!='') {
+						$number_format= $config->get_number_format();
+						if(isset($number_format['decimal_separator']) && $number_format['decimal_separator']==','){
+							// Get the last decimals characters
+							$decimals_str = substr($conditionName, -($number_format['decimals']+1));
+							// Check if the character exists in that substring
+							if(!strpos($decimals_str, ',')){
+								$decimals_dot = str_replace(",",".",$decimals_str);
+								$conditionName = str_replace($decimals_str,$decimals_dot ,$conditionName);
+								$conditionName = str_replace(',','' ,$conditionName);
+							}
+						}
+					}
+
 					if ( 'weight' === $name ) {
 						$unit = ' ' . get_option( 'woocommerce_weight_unit' );
 						if ( ! empty( $unit ) ) {
@@ -203,7 +217,14 @@ class DynamicAttributes {
 						default:
 							break;
 					}
+
 				}
+
+				if($config->get_feed_template()=='custom2' && is_numeric($conditionName) && $conditionName!='') {
+					$number_format= $config->get_number_format();
+					$result = number_format( $result, $number_format['decimals'], $number_format['decimal_separator'], $number_format['thousand_separator']  );
+				}
+
 				$result_array[ $key ] = array(
 					'conditionName'     => $conditionName,
 					'result'            => $result,

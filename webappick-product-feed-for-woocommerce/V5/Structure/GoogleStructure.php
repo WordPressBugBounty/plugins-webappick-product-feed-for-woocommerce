@@ -87,6 +87,10 @@ class GoogleStructure implements StructureInterface {
 			'shipping_price'
 		];
 
+		$group['allow_twice']          = [
+			'excluded_destination'
+		];
+
 		return $group;
 	}
 
@@ -181,6 +185,9 @@ class GoogleStructure implements StructureInterface {
 				}
 			} elseif ( \in_array( $attribute, $group['shipping'], true ) ) {
 				$data[ $wrapper ][ $shipping_label ] = 'shipping';
+			} elseif ( \in_array( $attribute, $group['allow_twice'], true ) ) {
+				$replaced_attribute= $replaced_attribute.'_'.$attribute_value ;
+				$data[ $wrapper ][ $replaced_attribute ] = $attribute_value;
 			} else {
 				$data[ $wrapper ][ $replaced_attribute ] = $attribute_value;
 			}
