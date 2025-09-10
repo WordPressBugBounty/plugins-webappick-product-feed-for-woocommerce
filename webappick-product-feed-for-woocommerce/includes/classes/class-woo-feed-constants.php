@@ -24,7 +24,7 @@ if( ! class_exists("Woo_Feed_Constants") ) {
 				 * @since 3.1.6
 				 */
 
-				define( 'WOO_FEED_FREE_VERSION', '6.5.79' );
+				define( 'WOO_FEED_FREE_VERSION', '6.5.80' );
 
 			}
 
