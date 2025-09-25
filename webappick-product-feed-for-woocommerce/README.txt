@@ -5,11 +5,11 @@ Tags: WooCommerce, Product Feed, Google Shopping, Facebook Catalog, Google listi
 Requires at least: 4.4
 Tested Up To: 6.8
 Requires PHP: 5.6
-Stable tag: 6.5.82
+Stable tag: 6.5.83
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
-dvanced WooCommerce Feed Plugin to Generate Optimized, Error-Free Product Feeds for Google Listing, Facebook, Bing, TikTok & 100+ channels.
+Advanced WooCommerce Feed Plugin to Generate Optimized, Error-Free Product Feeds for Google Listing, Facebook, Bing, TikTok & 100+ channels.
 
 == Description ==
 
@@ -47,7 +47,7 @@ From product rejections due to missing attributes, broken image URLs, and incorr
 
 Add in the frustration of keeping up with different channel requirements, currencies, or languages, and the process becomes overwhelming.
 
-With years of experience and deep knowledge of different channel feeds, we’ve designed a plugin that eliminates these pain points and simplifies product feed management.
+With years of experience and deep knowledge of different channel feeds, we’ve designed a plugin that simplifies your product feed management.
 
 * **Zero Limits** – Handle 10 products or 10,000+ without restrictions.
 * **130+ Channel-Ready Templates** – Instantly generate feeds for Google Merchant Center (Google Shopping), Facebook, Instagram, Pinterest, Bing Ads, eBay, Rakuten, PriceRunner, and more.
@@ -71,7 +71,7 @@ With over 100+ ready-made templates, you can create product feeds in minutes wit
 
 Using our pre-made templates, which are carefully built for each marketplace, ensures your feeds are accurate, complete, and ready to go—saving you time and avoiding errors.
 
-= ☞ upports Any Product Feed File Type =
+= ☞ Supports Any Product Feed File Type =
 
 CTX Feed lets you create product feeds in **six different file formats**—more than any other WooCommerce feed plugin. You can export your feeds as:
 
@@ -133,7 +133,7 @@ Just like Google Shopping, Facebook, and Instagram have their own product feed r
 
 An <a target="_blank" href="https://webappick.com/facebook-catalog-for-woocommerce/">optimized Facebook Product Feed Catalog</a> boosts the visibility of your Facebook Shop, helping your products show up for the right searches. The same applies to your Instagram Shop, making it easier for customers to discover and buy your products.
 
-📹 Watch the video below to learn how to set up your Facebook and Instagram product feeds with CTX Feed.
+📹 **Watch the video below to learn how to set up your Facebook and Instagram product feeds with CTX Feed.**
 
 [youtube https://youtu.be/Ml-KoFEVBHQ]
 
@@ -141,7 +141,7 @@ An <a target="_blank" href="https://webappick.com/facebook-catalog-for-woocommer
 
 CTX Feed includes a **pre-built Pinterest Feed template** with all the required attributes, so you can quickly create a product feed for your WooCommerce store without extra setup.
 
-📹 Watch the video below to see how to set up your Pinterest Product Feed with CTX Feed.
+📹 **Watch the video below to see how to set up your Pinterest Product Feed with CTX Feed.**
 
 [youtube https://youtu.be/kv1PMdCYy_g]
 
@@ -152,7 +152,7 @@ With CTX Feed, creating a **Bing Shopping Product Feed** is quick and simple. Ju
 <blockquote>
 <h4>✨If you like the Free Version, you’ll love the Pro Version!</h4>
 <br/>
-<h4><a target="_blank" href="http://webappick.com/plugin/woocommerce-product-feed-pro/">CTX Feed Pro gives you everything in the free version plus powerful premium features designed to save time, boost accuracy, and maximize your product reach.</h4>
+<h4><a target="_blank" href="http://webappick.com/plugin/woocommerce-product-feed-pro/">CTX Feed Pro</a> gives you everything in the free version plus powerful premium features designed to save time, boost accuracy, and maximize your product reach.</h4>
 <br/>
 <br/>
 </blockquote>
@@ -371,6 +371,9 @@ Using pro version:
 4. Category Mapping
 
 == Changelog ==
+
+= 6.5.83 (2025-09-25) =
+* Updated: Plugin information
 
 = 6.5.82 (2025-09-23) =
 * Updated: Plugin description information
