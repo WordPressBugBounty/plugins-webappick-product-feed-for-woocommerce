@@ -68,6 +68,7 @@ class ProductQuery implements QueryInterface {
 			'woosg',
 			'auction',
 			'course',
+			'easy_product_bundle'
 		);
 
 		return apply_filters( 'ctx_feed_filter_product_types_for_product_query', $product_types );

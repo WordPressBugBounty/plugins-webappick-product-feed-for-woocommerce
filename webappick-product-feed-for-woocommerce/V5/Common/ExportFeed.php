@@ -17,6 +17,11 @@ class ExportFeed {
 	 * @return void
 	 */
 	public function export_feed() {
+		// Verify user has permission
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to export feeds.', 'woo-feed' ), 403 );
+		}
+
 		if ( isset( $_REQUEST['feed'], $_REQUEST['_wpnonce'] ) && ! empty( $_REQUEST['feed'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['_wpnonce'] ) ), 'wpf-export' ) ) {
 			$feed      = sanitize_text_field( wp_unslash( $_REQUEST['feed'] ) );
 			$feed_info  = Feed::get_single_feed( $feed );

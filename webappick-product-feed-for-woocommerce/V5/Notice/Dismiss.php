@@ -134,6 +134,12 @@ class Dismiss {
 	 */
 	public function ajax_maybe_dismiss_notice() {
 
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            woo_feed_log_debug_message( 'User doesnt have enough permission.' );
+            wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ),403 );
+            die();
+        }
+
 		// Sanity check: Early exit if we're not on a pressmodo_dismiss_notice action.
 		if ( ! isset( $_POST['action'] ) || 'pressmodo_dismiss_notice' !== $_POST['action'] ) {
 			return;

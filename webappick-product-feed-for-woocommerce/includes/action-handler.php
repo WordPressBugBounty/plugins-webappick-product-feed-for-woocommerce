@@ -120,7 +120,7 @@ if ( ! function_exists( 'woo_feed_get_product_information' ) ) {
 		// Check user permission
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
 			Logs::write_debug_log( 'User doesnt have enough permission.' );
-			wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ) );
+			wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ),403 );
 			wp_die();
 		}
 
@@ -226,7 +226,7 @@ if ( ! function_exists( 'make_per_batch_feed' ) ) {
 		// Check user permission
 		if ( ! current_user_can( 'manage_woocommerce' ) ) {
 			Logs::write_debug_log( 'User doesnt have enough permission.' );
-			wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ) );
+			wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ),403 );
 			wp_die();
 		}
 

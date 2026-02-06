@@ -5,7 +5,7 @@
         if( typeof fbq === "function" ){
             $(this.body).on( 'added_to_cart', function( event, fragments, cart_hash, button ){
                 var product_id = button.data('product_id');
-                wp.ajax.post('add_to_cart_facebook_pixel', {product_id: product_id})
+                wp.ajax.post('add_to_cart_facebook_pixel', {product_id: product_id, nonce: woo_feed_facebook_pixel_params.nonce})
                     .done(function(response){
                         if( response.length > 0 ) {
                             fbq( 'track', 'AddToCart', response );

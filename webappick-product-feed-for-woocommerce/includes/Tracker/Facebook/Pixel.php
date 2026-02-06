@@ -34,7 +34,7 @@ class Pixel extends Base {
 
 		// Ajax add to cart
 		add_action( 'wp_ajax_add_to_cart_facebook_pixel', array( &$this, 'product_add_to_cart_data' ) );
-		add_action( 'wp_ajax_nopriv_add_to_cart_facebook_pixel', array( &$this, 'product_add_to_cart_data' ) );
+		//add_action( 'wp_ajax_nopriv_add_to_cart_facebook_pixel', array( &$this, 'product_add_to_cart_data' ) );
 
 	}
 
@@ -61,6 +61,10 @@ class Pixel extends Base {
 	public function frontend_script() {
 
 		wp_enqueue_script( 'woo-feed-facebook-pixel,', WOO_FEED_PLUGIN_URL . 'admin/js/woo-feed-facebook-pixel.min.js', array( 'jquery', 'wp-util' ), '1.0.0', true );
+
+		wp_localize_script( 'woo-feed-facebook-pixel,', 'woo_feed_facebook_pixel_params', array(
+			'nonce' => wp_create_nonce( 'woo_feed_facebook_pixel_nonce' ),
+		) );
 
 	}
 
@@ -155,6 +159,16 @@ class Pixel extends Base {
 	 * @since 4.4.27
 	 */
 	public function product_add_to_cart_data() {
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            woo_feed_log_debug_message( 'User doesnt have enough permission.' );
+            wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ),403 );
+            die();
+        }
+
+		// Verify nonce for security
+		check_ajax_referer( 'woo_feed_facebook_pixel_nonce', 'nonce' );
+
 		$data = array();
 
 		$product_id = sanitize_text_field( isset( $_POST['product_id'] ) ? $_POST['product_id'] : '' );

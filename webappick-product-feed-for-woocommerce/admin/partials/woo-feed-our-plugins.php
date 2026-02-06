@@ -91,11 +91,11 @@
 
 
 ?>
-<section class="our_plugin_main_container">
+<section class="woo_feed_our_plugin_main_container">
 
-<section class="our_plugin_container">
-   <h3 class="our_plugin_title">Explore Our Essential WooCommerce Plugins</h3>
-   <p class="our_plugin_description">At WebAppick, we specialize in creating high-quality plugins that empower WooCommerce store owners to <br>
+<section class="woo_feed_our_plugin_container">
+   <h3 class="woo_feed_our_plugin_title">Explore Our Essential WooCommerce Plugins</h3>
+   <p class="woo_feed_our_plugin_description">At WebAppick, we specialize in creating high-quality plugins that empower WooCommerce store owners to <br>
    streamline their workflows, improve store performance, and enhance the customer experience.</p>
    <img class="our_plugin_plus_1" src="<?php echo esc_url( WOO_FEED_PLUGIN_URL ); ?>admin/images/our_plugins/plus-icon-1.png" alt="<?php esc_attr_e( 'Add Plus logo', 'woo-feed' ); ?>">
 
@@ -107,9 +107,9 @@
 
    
 
-   <div class="our_plugin_main_card">
+   <div class="woo_feed_our_plugin_main_card">
 <!-------------------------- our_plugin_card_one part start  -------------------->
-      <div class="our_plugin_card_one">
+      <div class="woo_feed_our_plugin_card_one">
       <div class="our_plugin_card_one_top">
       <img class="our_plugin_card_one_top_image" src="<?php echo esc_url( WOO_FEED_PLUGIN_URL ); ?>admin/images/our_plugins/challan-logo.png" alt="<?php esc_attr_e( 'Add challan logo in our_plugin page', 'woo-feed' ); ?>">
       <div class="our_plugin_card_one_top_review">
@@ -133,11 +133,11 @@
 
          <div class="our_plugin_card_one_bottom">
              <?php if (woo_feed_is_plugin_activated($woo_feed_challan_slug)) { ?>
-                <button class="installed" type="submit" name="submit">Active</button>
+                <button class="woo_feed_installed" type="submit" name="submit">Active</button>
              <?php } else { ?>
-                 <button id="activated_<?php echo esc_attr($woo_feed_challan_slug); ?>" style="display: none;" class="installed" type="submit" name="submit">Active</button>
-                 <button id="installing_<?php echo esc_attr($woo_feed_challan_slug); ?>" style="display: none;" class="installed" type="submit" name="submit">Installing...</button>
-                 <button id="install_now_<?php echo esc_attr($woo_feed_challan_slug); ?>" onclick="woo_feed_plugin_install('<?php echo esc_attr($woo_feed_challan_slug); ?>')" class="install_now" type="submit" name="submit">Install Now</button>
+                 <button id="activated_<?php echo esc_attr($woo_feed_challan_slug); ?>" style="display: none;" class="woo_feed_installed" type="submit" name="submit">Active</button>
+                 <button id="installing_<?php echo esc_attr($woo_feed_challan_slug); ?>" style="display: none;" class="woo_feed_installed" type="submit" name="submit">Installing...</button>
+                 <button id="install_now_<?php echo esc_attr($woo_feed_challan_slug); ?>" onclick="woo_feed_plugin_install('<?php echo esc_attr($woo_feed_challan_slug); ?>')" class="woo_feed_install_now" type="submit" name="submit">Install Now</button>
                  <input type="hidden" id="woo_feed_plugin_slug" name="woo_feed_plugin_slug" value=<?php echo esc_attr($woo_feed_challan_slug); ?>>
              <?php } ?>
              <a class="read_doc" target="_blank" href="https://webappick.com/docs/challan/">Read Docs</a>
@@ -148,7 +148,7 @@
 
 <!-------------------------- our_plugin_card_two part start  -------------------->
 
-      <div class="our_plugin_card_two">
+      <div class="woo_feed_our_plugin_card_two">
       <div class="our_plugin_card_two_top">
       <img class="our_plugin_card_two_top_image" src="<?php echo esc_url( WOO_FEED_PLUGIN_URL ); ?>admin/images/our_plugins/disco-icon.png" alt="<?php esc_attr_e( 'Add Disco logo in our_plugin page', 'Disco icon' ); ?>">
       <div class="our_plugin_card_two_top_review">
@@ -178,11 +178,11 @@
 
          <div class="our_plugin_card_two_bottom">
              <?php if (woo_feed_is_plugin_activated($woo_feed_disco_slug)) { ?>
-                 <button id="installed" class="installed" type="submit" name="submit">Active</button>
+                 <button id="installed" class="woo_feed_installed" type="submit" name="submit">Active</button>
              <?php } else { ?>
-                 <button id="activated_<?php echo esc_attr($woo_feed_disco_slug); ?>" style="display: none;" class="installed" type="submit" name="submit">Active</button>
-                 <button id="installing_<?php echo esc_attr($woo_feed_disco_slug); ?>" style="display: none;" class="installed" type="submit" name="submit">Installing...</button>
-                 <button id="install_now_<?php echo esc_attr($woo_feed_disco_slug); ?>" onclick="woo_feed_plugin_install('<?php echo esc_attr($woo_feed_disco_slug); ?>')" class="install_now" type="submit" name="submit">Install Now</button>
+                 <button id="activated_<?php echo esc_attr($woo_feed_disco_slug); ?>" style="display: none;" class="woo_feed_installed" type="submit" name="submit">Active</button>
+                 <button id="installing_<?php echo esc_attr($woo_feed_disco_slug); ?>" style="display: none;" class="woo_feed_installed" type="submit" name="submit">Installing...</button>
+                 <button id="install_now_<?php echo esc_attr($woo_feed_disco_slug); ?>" onclick="woo_feed_plugin_install('<?php echo esc_attr($woo_feed_disco_slug); ?>')" class="woo_feed_install_now" type="submit" name="submit">Install Now</button>
                  <input type="hidden" id="woo_feed_plugin_slug" name="woo_feed_plugin_slug" value=<?php echo esc_attr($woo_feed_disco_slug); ?>>
              <?php } ?>
             <a class="read_doc" target="_blank" href="https://discoplugin.com/docs/">Read Docs</a>
@@ -196,9 +196,9 @@
 
 
    <!------------------  About Us Part Start ------------------->
-   <section class="about_us_images">
-      <div class="about_us">
-         <div class="about_us_text">
+   <section class="woo_feed_about_us_images">
+      <div class="woo_feed_about_us">
+         <div class="woo_feed_about_us_text">
             <h3>About Us</h3>
             <p class="about_us_text_1"><span>At WebAppick</span>, we develop powerful eCommerce plugins designed to supercharge your WooCommerce store. Trusted by over 1 million users globally, our solutions are designed to help businesses thrive with simplicity, innovation, and seamless experiences.</p>
 

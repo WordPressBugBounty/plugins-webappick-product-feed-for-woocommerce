@@ -20,9 +20,10 @@ function woo_feed_plugin_install(plugin_slug) {
             },
             success: function( response ){
                 if(response.status==200){
-                    console.log( response );
                     activated.style.display = "block";
                     installing.style.display = "none";
+                }else{
+                    console.log(response);
                 }
             },
             error : function(error){ console.log(error) }

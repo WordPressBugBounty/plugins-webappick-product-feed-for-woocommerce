@@ -43,7 +43,8 @@ class WCReviewQuery implements QueryInterface {
 			'woosb',
 			'woosg',
 			'auction',
-			'course'
+			'course',
+			'easy_product_bundle'
 		];
 
 		// Include Product Variations with db query if configured.

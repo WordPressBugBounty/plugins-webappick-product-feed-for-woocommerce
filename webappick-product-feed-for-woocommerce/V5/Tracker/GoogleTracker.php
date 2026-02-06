@@ -24,7 +24,7 @@ class GoogleTracker implements TrackerInterface {
 		
 		// Ajax adds to cart
 		add_action( 'wp_ajax_add_to_cart_facebook_pixel', [ $this, 'ajax_add_to_cart_data' ] );
-		add_action( 'wp_ajax_nopriv_add_to_cart_facebook_pixel', [ $this, 'ajax_add_to_cart_data' ] );
+		//add_action( 'wp_ajax_nopriv_add_to_cart_facebook_pixel', [ $this, 'ajax_add_to_cart_data' ] );
 	}
 	
 	/**
@@ -46,6 +46,10 @@ class GoogleTracker implements TrackerInterface {
 			'jquery',
 			'wp-util'
 		], '1.0.0', true );
+
+		wp_localize_script( 'woo-feed-google-remarketing,', 'woo_feed_google_remarketing_params', array(
+			'nonce' => wp_create_nonce( 'woo_feed_google_remarketing_nonce' ),
+		) );
 	}
 	
 	/**
@@ -216,13 +220,22 @@ class GoogleTracker implements TrackerInterface {
 	 * @since 4.4.27
 	 */
 	public function ajax_add_to_cart_data() {
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			woo_feed_log_debug_message( 'User doesnt have enough permission.' );
+			wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ), 403 );
+			die();
+		}
+
+		// Verify nonce for security
+		check_ajax_referer( 'woo_feed_google_remarketing_nonce', 'nonce' );
+
 		$data = [];
-		
+
 		$product_id = sanitize_text_field( isset( $_POST['product_id'] ) ? $_POST['product_id'] : '' );
 		if ( ! empty( $product_id ) ) {
 			$data = $this->get_content_info( [ $product_id ] );
 		}
-		
+
 		wp_send_json_success( json_encode( $data ) );
 	}
 	

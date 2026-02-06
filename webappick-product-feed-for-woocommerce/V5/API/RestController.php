@@ -86,26 +86,51 @@ class RestController extends WP_REST_Controller {
 	 * @@ -86,7 +86,16 @@ public static function instance() {
 	 * @see https://github.com/WP-API/Basic-Auth
 	 */
-	public function get_item_permissions_check( $request ) {
-		$user                             = wp_get_current_user();
-		$mange_ctx_feed                   = apply_filters( 'ctx_feed_api_accessed_users', [
-			'manage_options',
-			'manage_woocommerce'
-		] );
-		$current_user_roles               = $user->get_role_caps();
-		$current_user_roles               = array_keys( $current_user_roles );
-		$current_user_can_manage_ctx_feed = false;
-		foreach ( $mange_ctx_feed as $role ) {
-			if ( in_array( $role, $current_user_roles ) ) {
-				$current_user_can_manage_ctx_feed = true;
-			}
-		}
+//	public function get_item_permissions_check( $request ) {
+//
+//		$user                             = wp_get_current_user();
+//		$mange_ctx_feed                   = apply_filters( 'ctx_feed_api_accessed_users', [
+//			'manage_options',
+//			'manage_woocommerce'
+//		] );
+//		$current_user_roles               = $user->get_role_caps();
+//		$current_user_roles               = array_keys( $current_user_roles );
+//		$current_user_can_manage_ctx_feed = false;
+//		foreach ( $mange_ctx_feed as $role ) {
+//			if ( in_array( $role, $current_user_roles ) ) {
+//				$current_user_can_manage_ctx_feed = true;
+//			}
+//		}
+//
+//		return apply_filters( 'ctx_feed_current_user_can_manage_api', $current_user_can_manage_ctx_feed, $user, $current_user_roles, $mange_ctx_feed, $request );
+//
+//	}
 
-		return apply_filters( 'ctx_feed_current_user_can_manage_api', $current_user_can_manage_ctx_feed, $user, $current_user_roles, $mange_ctx_feed, $request );
+    public function get_item_permissions_check( $request ) {
 
-	}
+        // Must be logged in
+        if ( ! is_user_logged_in() ) {
+            return new \WP_Error(
+                'ctxfeed_rest_forbidden',
+                __( 'Authentication required.', 'woo-feed' ),
+                [ 'status' => 401 ]
+            );
+        }
 
-	/**
+        // Must have proper capability
+        if ( ! current_user_can( 'manage_woocommerce' ) && ! current_user_can( 'manage_options' ) ) {
+            return new \WP_Error(
+                'ctxfeed_rest_forbidden',
+                __( 'You are not allowed to access this resource.', 'woo-feed' ),
+                [ 'status' => 403 ]
+            );
+        }
+
+        return true;
+    }
+
+
+    /**
 	 * Register routes according to $_SERVER['REQUEST_URI'].
 	 * After 'wp-json' value will be considered as namespace.
 	 * After that v1/v2 will be as api version number.

@@ -29,6 +29,11 @@ class DownloadFiles {
 	 * @throw RuntimeException
 	 */
 	public function download_log() {
+		// Verify user has permission
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to download logs.', 'woo-feed' ), 403 );
+		}
+
 		if (
 			isset( $_REQUEST['feed'], $_REQUEST['_wpnonce'] )
 			&& wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['_wpnonce'] ) ), 'wpf-log-download' )
@@ -61,6 +66,11 @@ class DownloadFiles {
 	 * @return void
 	 */
 	public function download_feed() {
+		// Verify user has permission
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to download feeds.', 'woo-feed' ), 403 );
+		}
+
 		if (
 			isset( $_REQUEST['feed'], $_REQUEST['_wpnonce'] )
 			&& wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['_wpnonce'] ) ), 'wpf-download-feed' )

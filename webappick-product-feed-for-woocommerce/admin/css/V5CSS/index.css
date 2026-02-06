@@ -823,6 +823,18 @@ input[type="checkbox"]:focus,
   bottom: 0px;
 }
 
+.-ctx-bottom-\[15\%\] {
+  bottom: -15%;
+}
+
+.-ctx-left-\[20\%\] {
+  left: -20%;
+}
+
+.-ctx-right-1\/4 {
+  right: -25%;
+}
+
 .-ctx-top-1 {
   top: -0.25rem;
 }
@@ -837,6 +849,10 @@ input[type="checkbox"]:focus,
 
 .-ctx-top-8 {
   top: -2rem;
+}
+
+.-ctx-top-\[20\%\] {
+  top: -20%;
 }
 
 .ctx--left-1 {
@@ -943,6 +959,10 @@ input[type="checkbox"]:focus,
   z-index: 10;
 }
 
+.ctx-z-20 {
+  z-index: 20;
+}
+
 .ctx-z-50 {
   z-index: 50;
 }
@@ -999,6 +1019,11 @@ input[type="checkbox"]:focus,
 .\!ctx-mx-auto {
   margin-left: auto !important;
   margin-right: auto !important;
+}
+
+.ctx-mx-1 {
+  margin-left: 0.25rem;
+  margin-right: 0.25rem;
 }
 
 .ctx-mx-2 {
@@ -1391,6 +1416,10 @@ input[type="checkbox"]:focus,
   height: 100%;
 }
 
+.ctx-h-px {
+  height: 1px;
+}
+
 .ctx-max-h-60 {
   max-height: 15rem;
 }
@@ -1505,6 +1534,10 @@ input[type="checkbox"]:focus,
 
 .ctx-w-\[10\%\] {
   width: 10%;
+}
+
+.ctx-w-\[107px\] {
+  width: 107px;
 }
 
 .ctx-w-\[140\] {
@@ -1941,6 +1974,10 @@ input[type="checkbox"]:focus,
   gap: 1.5rem;
 }
 
+.ctx-gap-\[14px\] {
+  gap: 14px;
+}
+
 .ctx-gap-x-1 {
   -webkit-column-gap: 0.25rem;
      -moz-column-gap: 0.25rem;
@@ -2031,6 +2068,11 @@ input[type="checkbox"]:focus,
 .ctx-divide-gray-200 > :not([hidden]) ~ :not([hidden]) {
   --tw-divide-opacity: 1;
   border-color: rgb(229 231 235 / var(--tw-divide-opacity));
+}
+
+.ctx-self-stretch {
+  -ms-flex-item-align: stretch;
+      align-self: stretch;
 }
 
 .ctx-overflow-auto {
@@ -2300,6 +2342,11 @@ input[type="checkbox"]:focus,
   background-color: rgb(71 85 105 / var(--tw-bg-opacity)) !important;
 }
 
+.ctx-bg-\[\#022333\] {
+  --tw-bg-opacity: 1;
+  background-color: rgb(2 35 51 / var(--tw-bg-opacity));
+}
+
 .ctx-bg-\[\#0a82df\] {
   --tw-bg-opacity: 1;
   background-color: rgb(10 130 223 / var(--tw-bg-opacity));
@@ -2319,6 +2366,11 @@ input[type="checkbox"]:focus,
   background-color: rgb(240 240 241 / var(--tw-bg-opacity));
 }
 
+.ctx-bg-\[\#F1D259\] {
+  --tw-bg-opacity: 1;
+  background-color: rgb(241 210 89 / var(--tw-bg-opacity));
+}
+
 .ctx-bg-\[\#F92187\] {
   --tw-bg-opacity: 1;
   background-color: rgb(249 33 135 / var(--tw-bg-opacity));
@@ -2332,6 +2384,10 @@ input[type="checkbox"]:focus,
 .ctx-bg-\[\#FFDE59\] {
   --tw-bg-opacity: 1;
   background-color: rgb(255 222 89 / var(--tw-bg-opacity));
+}
+
+.ctx-bg-\[\#FFFFFF0D\] {
+  background-color: #FFFFFF0D;
 }
 
 .ctx-bg-\[\#ced1d5\] {
@@ -2737,6 +2793,11 @@ input[type="checkbox"]:focus,
   padding-bottom: 1px;
 }
 
+.ctx-py-\[22px\] {
+  padding-top: 22px;
+  padding-bottom: 22px;
+}
+
 .\!ctx-pl-2 {
   padding-left: 0.5rem !important;
 }
@@ -2931,6 +2992,11 @@ input[type="checkbox"]:focus,
   line-height: 2rem;
 }
 
+.ctx-text-3xl {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+}
+
 .ctx-text-4xl {
   font-size: 2.25rem;
   line-height: 2.5rem;
@@ -2976,6 +3042,10 @@ input[type="checkbox"]:focus,
   font-size: 22px;
 }
 
+.ctx-text-\[32px\] {
+  font-size: 32px;
+}
+
 .ctx-text-\[8px\] {
   font-size: 8px;
 }
@@ -3019,6 +3089,10 @@ input[type="checkbox"]:focus,
 
 .ctx-font-bold {
   font-weight: 700;
+}
+
+.ctx-font-extrabold {
+  font-weight: 800;
 }
 
 .ctx-font-medium {
@@ -3115,9 +3189,19 @@ input[type="checkbox"]:focus,
   color: rgb(164 40 106 / var(--tw-text-opacity));
 }
 
+.ctx-text-\[\#F1D259\] {
+  --tw-text-opacity: 1;
+  color: rgb(241 210 89 / var(--tw-text-opacity));
+}
+
 .ctx-text-\[\#ef657b\] {
   --tw-text-opacity: 1;
   color: rgb(239 101 123 / var(--tw-text-opacity));
+}
+
+.ctx-text-\[\#f1d259\] {
+  --tw-text-opacity: 1;
+  color: rgb(241 210 89 / var(--tw-text-opacity));
 }
 
 .ctx-text-black {
@@ -3285,6 +3369,12 @@ input[type="checkbox"]:focus,
 .ctx-shadow-\[0_3\.105px_0_0_\#E13639\] {
   --tw-shadow: 0 3.105px 0 0 #E13639;
   --tw-shadow-colored: 0 3.105px 0 0 var(--tw-shadow-color);
+  box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
+}
+
+.ctx-shadow-\[0_3\.907px_3\.907px_0_rgba\(0\,0\,0\,0\.05\)\,1\.953px_1\.953px_0_0\.977px_\#DAB900\] {
+  --tw-shadow: 0 3.907px 3.907px 0 rgba(0,0,0,0.05),1.953px 1.953px 0 0.977px #DAB900;
+  --tw-shadow-colored: 0 3.907px 3.907px 0 var(--tw-shadow-color), 1.953px 1.953px 0 0.977px var(--tw-shadow-color);
   box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000), var(--tw-shadow);
 }
 
@@ -3604,6 +3694,11 @@ img {
 .hover\:ctx-bg-\[\#FFF9F9\]:hover {
   --tw-bg-opacity: 1;
   background-color: rgb(255 249 249 / var(--tw-bg-opacity));
+}
+
+.hover\:ctx-bg-\[\#f1bc59\]:hover {
+  --tw-bg-opacity: 1;
+  background-color: rgb(241 188 89 / var(--tw-bg-opacity));
 }
 
 .hover\:ctx-bg-\[\#f2ae01\]:hover {

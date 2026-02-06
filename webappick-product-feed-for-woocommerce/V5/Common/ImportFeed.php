@@ -16,6 +16,11 @@ class ImportFeed {
 	 * @throws \Exception
 	 */
 	public function import_feed() {
+		// Verify user has permission
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_die( esc_html__( 'You do not have permission to import feeds.', 'woo-feed' ), 403 );
+		}
+
 		check_admin_referer( 'wpf_import' );
 
 		$wpf_import_file = isset( $_FILES['wpf_import_file'] ) ? $_FILES['wpf_import_file'] : '';

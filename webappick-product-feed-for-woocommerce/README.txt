@@ -1,790 +1,695 @@
-=== CTX Feed – WooCommerce Product Feed Manager ===
+=== Product Feed Manager for WooCommerce – CTX Feed – Support 220+ Shopping & Social Channels ===
 Contributors: wahid0003, webappick
 Donate link: https://webappick.com
-Tags: WooCommerce, Product Feed, Google Shopping, Facebook Catalog, Google listings
+Tags: woocommerce, product feed, google shopping, facebook Catalog, google listings
 Requires at least: 4.4
-Tested Up To: 6.8
+Tested Up To: 6.9
 Requires PHP: 5.6
-Stable tag: 6.5.84
+Stable tag: 6.6.22
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
-Advanced WooCommerce Feed Plugin to Generate Optimized, Error-Free Product Feeds for Google Listing, Facebook, Bing, TikTok & 100+ channels.
+Create WooCommerce product feeds for Google Shopping, Facebook, TikTok & 220+ channels. 2026 compliant. 6 formats. Trusted by 70,000+ stores.
 
 == Description ==
 
-🏆 **Reach millions of customers and sell faster with the optimized & error-free  Product Feed Plugin for Google Shopping, Facebook, Instagram & 130+ marketplaces—trusted by 70,000+ stores.**
+🏆 **The #1 WooCommerce Product Feed Manager Plugin trusted by 70,000+ online stores worldwide.**
 
-Get your products listed across Google Shopping, Facebook, Pinterest, Instagram, TikTok, Snapchat, eBay, Bing, PriceRunner, Rakuten, PriceSpy, Kelko, and 100+ more channels with optimized, error-free product feeds—directly from your WooCommerce store.
+Stop losing sales to rejected product feeds. **CTX Feed** is the most powerful **product feed plugin for WooCommerce**, designed to generate optimized, error-free feeds for **Google Shopping**, **Facebook Catalog**, **Instagram Shopping**, **TikTok Shop**, Pinterest, Bing, and **220+ global marketing channels**.
 
-With CTX Feed – the Best  WooCommerce Product Feed Manager Plugin – you can connect with over 100+ recognized marketplaces, search engines, affiliate sites, and price comparison platforms to maximize your product reach.
+Whether you're managing 100 products or 100,000+ SKUs, CTX Feed handles your entire **WooCommerce product feed** with **zero limits**. Our intelligent batch processing ensures your XML, CSV, and JSON feeds are created flawlessly without crashing your server.
 
-No more struggling with manual feed creation. CTX Feed automatically maps required attributes, ensures compliance with Google Product Listings and other major channels, and gives you flexible scheduling to keep your product data up-to-date.
-
-You can sync changes in real-time via HTTP or FTP/SFTP, ensuring your customers always see the latest information.
-
-By reducing your workload and eliminating feed errors, CTX Feed helps you save time, simplify your marketing, and focus on driving more sales.
-
-= Watch this step-by-step video guide to create a WooCommerce Product Feed for Google Shopping (Google Merchant Center) using CTX Feed. =
 [youtube https://www.youtube.com/watch?v=QRTvrDJm4mI]
 
-<blockquote>
-<h4>Read Step by Step <a target="_blank" href="https://webappick.com/docs/woo-feed/">Documentation</a> and <a target="_blank" href="https://www.youtube.com/playlist?list=PLapCcXJAoEenI-35wc6YnnsAAgoYRxDr7">Video Tutorial</a></h4>
-<br/>
-<h4>For Support Email to <a href="mailto:support@webappick.com">support[@]webappick.com</a> </h4>
-<br/>
-<h4>Request New Feature <a target="_blank" href="https://webappick.com/contact/">Here</a></h4>
-<br/>
-<h4>Try Premium Version: <a target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/">CTX Feed Pro</a></h4>
-<br/>
-</blockquote>
+🆕 **2026 Google Merchant Center Compliant** – Ready for the March 2026 multi-channel product ID requirements and subscription product support.
 
-== Why Should You Use CTX Feed – The Best WooCommerce Product Feed Plugin? ==
+== Why 70,000+ WooCommerce Stores Choose CTX Feed? ==
 
-As a WooCommerce store owner, creating and managing product feeds often feels like a nightmare.
+* **220+ Pre-Built Templates** – Instant setup for Google Merchant Center, Meta (Facebook/Instagram), TikTok Shop, Amazon, eBay, Snapchat, Pinterest, and more
+* **6 Export Formats** – XML, CSV, TSV, XLS, TXT, JSON (more file format options than any competitor)
+* **Smart Category Mapping** – Auto-map WooCommerce categories to Google's official taxonomy to prevent feed errors
+* **Real-Time Auto-Sync** – Scheduled cron updates keep your ads accurate with correct pricing and availability
+* **Variable Product Support** – Perfectly handle complex product variations that other plugins miss
+* **Zero Server Crashes** – Intelligent batch processing for stores with 50,000+ products
 
-From product rejections due to missing attributes, broken image URLs, and incorrect titles to the hassle of handling multiple formats like CSV or XML, most merchants waste hours fixing errors instead of selling.
+**[Upgrade to Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) | [Complete Documentation](https://webappick.com/docs/ctx-feed/) | [Video Tutorials](https://www.youtube.com/@WebAppick) | [Get Support](https://webappick.com/my-account/contact-support/)**
 
-Add in the frustration of keeping up with different channel requirements, currencies, or languages, and the process becomes overwhelming.
+==🛒 Google Shopping Feed Manager==
 
-With years of experience and deep knowledge of different channel feeds, we’ve designed a plugin that simplifies your product feed management.
+CTX Feed is the ultimate **Google Shopping feed manager** for WooCommerce. Create **Google Shopping feeds** that get approved fast with automatic attribute mapping for all required fields:
 
-* **Zero Limits** – Handle 10 products or 10,000+ without restrictions.
-* **130+ Channel-Ready Templates** – Instantly generate feeds for Google Merchant Center (Google Shopping), Facebook, Instagram, Pinterest, Bing Ads, eBay, Rakuten, PriceRunner, and more.
-* **Error-Proof Feeds** – Automatic validation fixes GTIN errors, missing descriptions, invalid image links, and mismatched variants before submission.
-* **Seamless Compatibility** – Works with all WooCommerce product types (simple, variable, subscription, bundles) and extensions (Dokan, WCFM, WPML, Polylang).
-* **Flexible Export Formats** – Export to XML, CSV, TSV, XLS, TXT, or JSON—more options than any other WooCommerce feed manager.
+* Product Title, Description, Link, Image Link
+* Price, Sale Price, Availability, Condition
+* Brand, GTIN, MPN, SKU, EAN, UPC
+* Google Product Category (automatic taxonomy mapping)
+* Shipping, Tax, and Custom Labels
+* Color, Size, Material, Pattern, Gender, Age Group
+* Local Inventory Ads support
+* Google Promotions feed support
 
-Let’s Explore the Powerful Features of CTX Feed
+**Fix "Missing Required Attribute" errors instantly** with our built-in attribute mapping tool. No more Google Merchant Center rejections!
 
-= ☞ Unlimited Products =
+==📱 Facebook Product Feed & Instagram Shopping==
 
-Whether your store has hundreds or tens of thousands of products, CTX Feed lets you upload **every single item without limits**. Seamlessly push your entire inventory to all major channels—Google Shopping, Facebook, Instagram, Pinterest, and 100+ more—saving you time and effort while ensuring nothing gets left behind.
+Generate **Facebook product feeds** and **Instagram Shopping catalogs** compatible with Meta Commerce Manager. CTX Feed creates the perfect **WooCommerce Facebook product feed** for:
 
-= ☞ Unlimited Feeds =
+* Dynamic Product Ads (DPA) support
+* Facebook Pixel integration ready
+* Instagram Shopping checkout is compatible
+* Advantage+ catalog campaigns optimized
+* Facebook Marketplace listings
+* All Meta required attributes are included automatically
 
-You can create **as many feeds as you need**, no matter how big your store is. Each feed can include any number of products. Manage all your feeds easily in the **Manage Feeds** section, and quickly find the one you need by its name—no confusing URLs or complicated searches.
+[youtube https://www.youtube.com/watch?v=Ml-KoFEVBHQ]
 
-= ☞ 100+ Pre-Configured Templates =
+==🎵 TikTok Shop & Social Commerce Feed Manager==
 
-With over 100+ ready-made templates, you can create product feeds in minutes without worrying about researching every attribute or requirement for each channel. Manually finding the right attributes  takes time and may not match the channel’s latest rules.
+Reach younger shoppers with **TikTok Shop** integration. CTX Feed is your complete **shopping feed manager** for social commerce:
 
-Using our pre-made templates, which are carefully built for each marketplace, ensures your feeds are accurate, complete, and ready to go—saving you time and avoiding errors.
+* TikTok Seller Center compatible feeds
+* Product certification fields included
+* Brand Authority attributes mapped
+* Avoid "Under Review" status with optimized data
+* Snapchat Product Catalog support
+* Pinterest Shopping feed ready
 
-= ☞ Supports Any Product Feed File Type =
+==🔍 Complete Channel & Marketplace Support==
 
-CTX Feed lets you create product feeds in **six different file formats**—more than any other WooCommerce feed plugin. You can export your feeds as:
+CTX Feed supports more channels than any other **WP product feed manager**:
 
-* **XML** Product Feed
-* **CSV** Product Feed
-* **TSV** Product Feed
-* **XLS** Product Feed
-* **TXT** Product Feed
-* **JSON** Product Feed
+**Google Feeds:**
+Google Shopping, Google Local Inventory, Google Promotions, Google Dynamic Remarketing, Google Local Products, Google Manufacturer Center, Google Express
 
-This gives you the flexibility to use the format your channels or marketplaces require.
+**Shopping & Comparison Sites:**
+Bing Shopping, Yahoo Shopping, PriceGrabber, Shopzilla, PriceRunner, PriceSpy, Kelkoo, Idealo, Billiger.de, Trovaprezzi, Skroutz, Heureka, Ceneo, Beslist, Vergelijk
 
-= ☞ Supports All WooCommerce Product Types =
+**Social Commerce:**
+Facebook Catalog, Instagram Shop, Pinterest, TikTok Shop, Snapchat Product Catalog
 
-CTX Feed works with **all WooCommerce product types** and popular extensions, so you don’t have to worry about missing products in your feed. It fully supports:
+**Marketplaces:**
+Amazon, eBay, Walmart, Etsy, Rakuten, Wish, Fruugo, Bonanza, Newegg, Jet
 
-* Bundle products
-* Composite products
-* Mix & match products
-* Subscription products
+**Affiliate Networks:**
+Commission Junction, ShareASale, Awin, Rakuten Advertising, AvantLink, Pepperjam
 
-It also integrates smoothly with top plugins like:
+**Regional Marketplaces:**
+Bol.com (Netherlands), Allegro (Poland), Fnac (France), Otto (Germany), Coolblue, Marktplaats
 
-* <a target="_blank" href="https://woocommerce.com/products/composite-products/">WooCommerce Composite Products</a>
-* <a target="_blank" href="https://yithemes.com/themes/plugins/yith-woocommerce-composite-products/">YITH Composite Products</a>
-* <a target="_blank" href="https://wordpress.org/plugins/wpc-composite-products/">WPC Composite Products for WooCommerce</a>
-* <a target="_blank" href="https://woocommerce.com/products/product-bundles/">WooCommerce Product Bundles</a>
-* <a target="_blank" href="https://wordpress.org/plugins/yith-woocommerce-product-bundles/">YITH WooCommerce Product Bundles</a>
-* <a target="_blank" href="https://wordpress.org/plugins/woo-product-bundle/">WPC Product Bundles for WooCommerce</a>
-* <a target="_blank" href="https://woocommerce.com/products/woocommerce-subscriptions/">WooCommerce Subscription</a>
+**[Upgrade to Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) | [Complete Documentation](https://webappick.com/docs/ctx-feed/) | [Video Tutorials](https://www.youtube.com/@WebAppick) | [Get Support](https://webappick.com/my-account/contact-support/)**
 
-This ensures **every product in your store** is included in your feeds, no matter how complex.
+==💪 Built for Large Catalogs - The Best Product Feed Tool==
 
-= ☞ Custom Templates =
+CTX Feed is **engineered for WooCommerce stores of any size**. As a professional **product feed tool**, it handles:
 
-CTX Feed lets you create **your own templates** for any marketplace. For more complex XML feeds, the **Custom Template feature** in <a target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/">CTX Feed Pro</a>  allows developers to add any attributes they need.
+* Unlimited products per feed
+* Unlimited feeds
+* Batch processing prevents timeouts
+* Background feed generation
+* Memory-efficient processing
+* Works on shared hosting
+* Optimized for 100,000+ products
+* Server resource management
 
-If you would like a specific marketplace template added to CTX Feed, please **send your requirements to our support team**, and we will assist in making it happen.
+==📊 WooCommerce Data Feed Features==
 
-= ☞ Category Mapping =
+CTX Feed provides comprehensive **WooCommerce data feed** management:
 
-Getting your products in front of the right buyers starts with the right categories. With CTX Feed, you can easily **map your WooCommerce store categories to the matching marketplace categories**—like Google Shopping or Facebook/Instagram.
+**Smart Filtering:**
 
-This means your products always appear in the most relevant search results, making them more visible and easier to reach for your target customers. The process is simple, dynamic, and ensures your categories stay aligned across every channel.
+* Include/exclude products by category
+* Filter by stock status
+* Filter by price range
+* Filter by product type
+* Custom condition filters
+* Exclude specific products
 
-= ☞ Auto Feed Update =
+**Dynamic Attributes:**
 
-CTX Feed automatically updates your product feeds at the time intervals you set—so you don’t have to log in and update them manually. The free version offers five update intervals, while <a target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/">CTX Feed Pro</a> adds three shorter options for even faster updates.
+* Create custom attributes on-the-fly
+* Combine multiple fields
+* Price manipulation (markup/markdown)
+* String replacement
+* Conditional logic
+* Pattern-based transformations
 
-= ☞ Google Product Feed: =
+**Feed Optimization:**
 
-Creating a product feed for Google Shopping Listings has never been easier. With 100+ pre-configured templates, the <a target="_blank" href="https://webappick.com/google-merchant-center-data-feed-template/">Google Shopping Product Feed template</a> is one of the most practical options, covering all the essential attributes you need to generate a fully compliant feed using the CTX Feed plugin.
+* Auto-remove HTML from descriptions
+* Image URL optimization
+* Price formatting by locale
+* Availability status mapping
+* Category path customization
+* UTM parameter support
 
-CTX Feed also automatically detects and maps the correct values for the required fields, saving you time and reducing errors. Whether you’re targeting **Google Product Listings** or running ads on Google Shopping, this plugin ensures your WooCommerce product feed always meets Google’s specifications.
+==🔧 Complete WooCommerce Compatibility==
 
-= ☞ Facebook Catalog Feed / Instagram Shopping Feed =
+Works with all WooCommerce product types and popular extensions:
 
-Just like Google Shopping, Facebook, and Instagram have their own product feed requirements. With CTX Feed, you can easily create feeds that follow their guidelines and include all the necessary attributes.
+**Product Types:**
 
-An <a target="_blank" href="https://webappick.com/facebook-catalog-for-woocommerce/">optimized Facebook Product Feed Catalog</a> boosts the visibility of your Facebook Shop, helping your products show up for the right searches. The same applies to your Instagram Shop, making it easier for customers to discover and buy your products.
+* Simple Products
+* Variable Products (with all variations)
+* Grouped Products
+* External/Affiliate Products
+* WooCommerce Subscriptions
+* WooCommerce Bundles
+* WooCommerce Composite Products
+* WooCommerce Bookings
 
-📹 **Watch the video below to learn how to set up your Facebook and Instagram product feeds with CTX Feed.**
+**Multi-Vendor Plugins:**
 
-[youtube https://youtu.be/Ml-KoFEVBHQ]
+* Dokan Multivendor
+* WCFM Marketplace
+* WC Vendors
+* MultiVendorX
+* WC Marketplace
 
-= ☞ Pinterest Catalog Product Feed =
+**Multilingual & Multi-Currency:**
 
-CTX Feed includes a **pre-built Pinterest Feed template** with all the required attributes, so you can quickly create a product feed for your WooCommerce store without extra setup.
+* WPML (WordPress Multilingual)
+* Polylang
+* TranslatePress
+* Weglot
+* CURCY – Multi Currency for WooCommerce
+* Aelia Currency Switcher
+* WooCommerce Multi Currency
 
-📹 **Watch the video below to see how to set up your Pinterest Product Feed with CTX Feed.**
+**SEO & Custom Fields:**
 
-[youtube https://youtu.be/kv1PMdCYy_g]
+* Yoast SEO (product data)
+* Rank Math SEO
+* All in One SEO
+* ACF (Advanced Custom Fields)
+* Custom Product Tabs
+* WooCommerce Custom Fields
 
-= ☞ Bing Shopping Product Feed =
+**Other Integrations:**
 
-With CTX Feed, creating a **Bing Shopping Product Feed** is quick and simple. Just select the built-in Bing Shopping template, which already includes all the required attributes, and your feed is ready to go.
+* WooCommerce Brands
+* Perfect Brands for WooCommerce
+* YITH WooCommerce Brands
+* WooCommerce Product Add-Ons
+* WooCommerce Measurement Price Calculator
 
-<blockquote>
-<h4>✨If you like the Free Version, you’ll love the Pro Version!</h4>
-<br/>
-<h4><a target="_blank" href="http://webappick.com/plugin/woocommerce-product-feed-pro/">CTX Feed Pro</a> gives you everything in the free version plus powerful premium features designed to save time, boost accuracy, and maximize your product reach.</h4>
-<br/>
-<br/>
-</blockquote>
+==🆕 2026 Google Compliance Features==
 
-= ☞ Product Brand (Pro Feature) 💎 =
+CTX Feed is fully prepared for Google's 2026 policy updates:
 
-Shoppers trust brands they recognize. When your product feed includes brand information—like the name or logo—it builds credibility and keeps customers engaged longer on your product pages.
+**March 2026 Multi-Channel Product ID Requirement:**
 
-**With CTX Feed Pro,** you can easily add brand attributes to your feeds. The plugin supports popular branding extensions such as:
+* Separate product IDs for online vs in-store items
+* Local Inventory Ads compliance
+* Multi-channel feed generation
+* Unique identifier management
 
-* <a target="_blank" href="https://woocommerce.com/products/brands/">WooCommerce Brands</a>
-* <a target="_blank" href="https://wordpress.org/plugins/perfect-woocommerce-brands/">Perfect Brands for WooCommerce</a>
-* <a target="_blank" href="https://wordpress.org/plugins/yith-woocommerce-brands-add-on/">YITH WooCommerce Brands Add-On</a>
-* <a target="_blank" href="https://codecanyon.net/item/ultimate-woocommerce-brands-plugin/9433984">Ultimate WooCommerce Brands Plugin</a>
+**January 2026 Subscription Products:**
 
-This ensures your brand identity is highlighted across every channel, making your products more trustworthy and easier to find.
+* subscription_cost attribute support
+* Billing period mapping
+* Recurring price feeds
+* WooCommerce Subscriptions integration
 
-= ☞ Dynamic Attribute (Pro Feature) 💎 =
+**AI-Ready Semantic Data:**
 
-One of the most powerful reasons CTX Feed is the best WooCommerce product feed plugin is its **Dynamic Attribute** feature. With it, you can set custom conditions for any attribute—no matter the marketing channel.
+* Clean, structured product data
+* HTML/shortcode stripping
+* Google SGE optimized feeds
+* Schema-compliant output
 
-For example:
-    * If a product’s height is **greater than 2cm,** it can automatically show as “Big.”
-    * If the height is **less than 2cm,** it can show as “Small.”
+**[Upgrade to Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) | [Complete Documentation](https://webappick.com/docs/ctx-feed/) | [Video Tutorials](https://www.youtube.com/@WebAppick) | [Get Support](https://webappick.com/my-account/contact-support/)**
 
-This flexibility lets you adapt product data to meet specific channel requirements and present your products exactly how you want—without manual editing.
+==⭐ CTX Feed Pro – Premium Features==
 
-= ☞ Smart Filter & Condition (Pro Feature) 💎 =
+Upgrade to [CTX Feed Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) for advanced capabilities:
 
-<a target="_blank" href="https://webappick.com/plugin/woocommerce-product-feed-pro/">CTX Feed Pro</A> lets you easily include or exclude products from your feeds based on your rules.
+* **Dynamic Attribute Creation** – Create custom attributes on-the-fly
+* **Advanced Filtering** – Include/exclude products by any condition
+* **Multi-Vendor Feeds** – Generate vendor-specific feeds
+* **Custom XML Templates** – Build any complex feed structure
+* **FTP/SFTP Auto-Upload** – Automatically push feeds to channels
+* **Google Content API** – Direct Merchant Center integration
+* **Facebook Pixel Integration** – Enhanced conversion tracking
+* **Priority Support** – 24/7 expert assistance
 
-* **Smart Filtering:** Quickly remove products that are out of stock, on backorder, missing descriptions, loss-making, or in low demand.
-* **Advanced Filtering:** Apply conditions based on attributes like title, ID, description, height, length, weight, price, tax, or availability. Products are automatically included or excluded depending on the rules you set.
+[youtube https://www.youtube.com/watch?v=XEW8rSyEcSU]
 
-This gives you full control over which products appear in your feeds, ensuring your listings are always optimized and relevant.
+== 🌟 What Store Owners Say ==
 
-= ☞ Attribute Mapping (Pro Feature) 💎 =
+> "CTX Feed is the ONLY plugin that handled our 45,000 product catalog without crashing. We tried 3 other plugins before finding this gem." – **WooCommerce Store Owner**
 
-First impressions matter, and product titles are often the first thing customers notice. A clear, descriptive title can **increase clicks and boost sales,** while vague or short titles may drive customers away.
+> "Finally got our Google Shopping feed approved after weeks of rejections with other plugins. CTX Feed's category mapping feature saved us!" – **E-commerce Manager**
 
-With **CTX Feed Pro,** the <a target="_blank" href="https://webappick.com/docs/ctx-feed/faqs/how-to-extend-product-title/">Attribute Mapping</A> feature lets you customize and extend product titles and other attributes. This ensures your products stand out, attract more clicks, and give customers the right information to make a purchase.
+> "The support team is incredible. They helped us set up feeds for 12 different marketplaces in one day." – **Digital Marketing Agency**
 
-= ☞ Multi-Language Feed – WPML & Polylang (Pro Feature) 💎 =
+> "Best WooCommerce product feed plugin we've used. The batch processing feature is a game-changer for large stores." – **Online Retailer**
 
-With **CTX Feed Pro,** you can <a target="_blank" href="https://webappick.com/docs/ctx-feed/faqs/how-to-make-feed-for-wpml-languages/">create product feeds in multiple languages</a> and currencies, making it easy to reach international customers. The plugin fully supports popular multi-language tools:
+==📚 Documentation & Support==
 
-* <a target="_blank" href="https://wpml.org/">WPML</a>
-* <a target="_blank" href="https://wordpress.org/plugins/polylang/">Polylang</a>
-* <a target="_blank" href="https://translatepress.com/">TranslatePress</a>
+* [Getting Started Guide](https://webappick.com/docs/ctx-feed/)
+* [Video Tutorials](https://www.youtube.com/webappick)
+* [Knowledge Base](https://webappick.com/docs/ctx-feed/)
+* [Support Forum](https://wordpress.org/support/plugin/webappick-product-feed-for-woocommerce/)
 
-This ensures your WooCommerce store can expand globally while keeping feeds accurate and channel-ready
-
-= ☞ Multi-Currency Feed (Pro Feature) 💎 =
-
-Expand your business globally by <a target="_blank" href="https://webappick.com/docs/ctx-feed/faqs/how-to-create-multi-currency-feeds-with-different-currency-switcher-plugins/">creating product feeds in the currency</a> required by each channel. With CTX Feed Pro, you can easily generate feeds for different currencies, ensuring your products are ready for international marketplaces.
-
-Supports popular currency tools:
-
-* <a target="_blank" href="https://wordpress.org/plugins/woocommerce-multilingual/">WooCommerce Multilingual</a>.
-* <a target="_blank" href="https://polylang.pro/downloads/polylang-for-woocommerce/">Polylang WooCommerce</a>.
-* <a target="_blank" href="https://aelia.co/shop/currency-switcher-woocommerce/">Currency Switcher for WooCommerce</a> By Aelia.
-* <a target="_blank" href="https://wordpress.org/plugins/woocommerce-currency-switcher/">WooCommerce Currency Switcher (WOOCS)</a> by realmag777.
-
-= ☞ Multi-Vendor Feed (Pro Feature) 💎 =
-
-With **CTX Feed Pro,** you can create <a target="_blank" href="https://webappick.com/docs/ctx-feed/faqs/how-to-make-feed-for-individual-vendor/">product feeds for single or multiple vendors</a> on your site. This allows each vendor to promote their products seamlessly while keeping your feeds organized and optimized.
-
-Supports popular multi-vendor plugins:
-
-* <a target="_blank" href="https://wedevs.com/dokan">Dokan</a>.
-* <a target="_blank" href="https://www.wcvendors.com/">WC Vendors</a>.
-* <a target="_blank" href="https://wc-marketplace.com/">WC Marketplace</a>.
-* <a target="_blank" href="https://yithemes.com/themes/plugins/yith-woocommerce-multi-vendor/">YITH WooCommerce Multi-Vendor</a>.
-* <a target="_blank" href="https://wclovers.com/">WCFM Marketplace for WooCommerce</a>.
-
-This makes managing and sharing multi-vendor products across channels easy and efficient.
-
-= ☞ Custom Attribute (Pro Feature) 💎 =
-
-If your products have **custom attributes,** CTX Feed Pro lets you easily map these fields to the corresponding channel attributes when creating your feeds.
-
-This ensures that **all your unique product information** is included and displayed correctly across every marketplace.
-
-= ☞ Custom Fields – ACF, Field Factory, etc. (Pro Feature) 💎 =
-
-CTX Feed Pro supports <a target="_blank" href="https://webappick.com/docs/ctx-feed/faqs/how-to-add-acf-filed-value-into-feed/">Advanced Custom Fields (ACF)</a> and other custom field plugins. You can easily map any custom product field to a feed attribute, ensuring all your unique product details are included in your feeds.
-
-= ☞ Product Meta & Taxonomies (Pro Feature) 💎 =
-
-CTX Feed Pro lets you include **any product meta or taxonomy**—like brands, sizes, weights, or other attributes created by plugins—directly in your feeds.
-
-This ensures that **ll your product details** are accurately represented across every marketplace.
-
-== Customer Support Team ==
-
-Our **dedicated team of WordPress experts and developers** is here to make your experience smooth and hassle-free.
-
-If you need help using the plugin or run into any issues, just email us at: **support@webappick.com.**
+== Our Other Free Plugins ==
+* <strong>[Disco – Dynamic Pricing & Discount Rules for WooCommerce](https://wordpress.org/plugins/disco/)
+* <strong>[Challan – PDF Invoice & Packing Slip for WooCommerce](https://wordpress.org/plugins/webappick-pdf-invoice-for-woocommerce/)
 
 == Installation ==
 
-Before installing the plugin please make sure that
+= Automatic Installation =
 
-1. Your php version is 5.4 or greater
-1. WordPress version is 3.6 or greater
-1. WooCommerce version is 2.4 or greater
+1. Go to **Plugins > Add New** in your WordPress dashboard
+2. Search for "CTX Feed"
+3. Click **Install Now** then **Activate**
+4. Go to **CTX Feed > Make Feed** to create your first product feed
 
-You can also check your system status and versions from WooCommerce > System Status
+= Manual Installation =
 
-This section describes how to install the plugin and get it working.
+1. Download the plugin ZIP file
+2. Go to **Plugins > Add New > Upload Plugin**
+3. Upload the ZIP file and click **Install Now**
+4. Activate the plugin
+5. Navigate to **CTX Feed** in your dashboard
 
-e.g.
+= Creating Your First Google Shopping Feed =
 
-1. Upload `webappick-product-feed-for-woocommerce` folder to the `/wp-content/plugins/` directory
-1. Activate the plugin through the 'Plugins' menu in WordPress
-1. Select 'CTX Feed' from admin menu, Click 'Make Feed'
-1. Select the template and make feed
-1. Done!
+1. Go to **CTX Feed > Make Feed**
+2. Select "Google Shopping" from the template dropdown
+3. Choose XML as your file format
+4. Click **Update and Generate Feed**
+5. Copy the feed URL
+6. Add to Google Merchant Center via Scheduled Fetch
+
+= Creating a Facebook Catalog Feed =
+
+1. Go to **CTX Feed > Make Feed**
+2. Select "Facebook Catalog / Instagram" template
+3. Choose CSV or XML format
+4. Generate your feed
+5. Upload to Meta Commerce Manager
 
 == Frequently Asked Questions ==
 
-<blockquote>
-<h4>Read <a target="_blank" href="https://webappick.com/docs/woo-feed/">Documentation and FAQ</a></h4>
-<br/>
-<h4>For Support Email to support@webappick.com</h4>
-<br/>
-</blockquote>
+= How do I create a Google Shopping feed for WooCommerce? =
 
-= Why should I use this WooCommerce product feed plugin? =
+With CTX Feed, creating a Google Shopping feed takes just 3 clicks:
+1. Select the Google Shopping template from 220+ options
+2. Configure your product attributes (pre-filled automatically)
+3. Click "Generate Feed"
 
-This plugin support all the sopping engines.
+The plugin automatically maps your WooCommerce product data to all Google required attributes including title, description, price, availability, GTIN, brand, and image links.
 
-= Why is CTX Feed one of the best WooCommerce product feed generators? =
+= How do I fix "Missing Required Attribute" errors in Google Merchant Center? =
 
-Being a freemium plugin, the free version is capable of generating a feed with almost every little element you need to make it perfect. However, the pro version can leverage your feed with lots of premium features like dynamic attribute (applying conditions on the products), attribute mapping (for modifying title, description, or other attributes), ample marketplaces to promote your products, custom template for more complex feed for a personalized channel, variations and variables setup, multilingual & multicurrency feature, different output types for mapping the products, auto-update feature, etc. These features make it one of the best WooCommerce product feed plugins.
+CTX Feed's **Category Mapping** tool instantly links your WooCommerce categories to Google's official taxonomy. For missing attributes like brand or GTIN, use our **Attribute Mapping** feature to:
+- Pull data from custom fields or ACF
+- Use Yoast SEO or Rank Math data
+- Set static values for your entire catalog
+- Create dynamic attributes based on conditions
 
-= For which channels can I generate product feed with CTX Feed free and pro version? =
+= Can CTX Feed handle large stores with 50,000+ products? =
 
-Tou can create a feed for more than 100 marketing channels from high-range to any range. It is available for both free and pro versions. However, the pro version of this WooCommerce product feed manager allows you to create custom templates for your own bespoke channels.
+Absolutely! Unlike plugins that timeout, CTX Feed uses **intelligent batch processing**. Adjust the "Products Per Batch" setting (recommended: 200-500 products) to match your server capacity. This prevents memory limit errors and ensures 100% feed completion for massive catalogs.
 
-= Can I generate a Google product feed for WooCommerce with CTX Feed? =
+= Is CTX Feed ready for Google's March 2026 multi-channel product requirements? =
 
-Yes, you can. In fact, WooCommerce Google Shopping is one of the most key channels for feed generation. Therefore, we have not only put Google Shopping as a single channel, but we also have several templates of Google built-in the CTX Feed, such as Google Shopping inventory ads, Google Ads, Google Promotions, Google Dynamic search ads, etc.
+Yes. CTX Feed fully supports Google's new requirement for separate product IDs when online and in-store attributes differ (price, availability, condition). Our **Local Inventory Ads template** helps you generate compliant feeds with unique identifiers for multi-channel products.
 
-= How do I generate a WooCommerce Google product feed for Google Shopping? =
+= How do I create a Facebook/Instagram product catalog feed? =
 
-Check out the following tutorial.
+Select the "Facebook Catalog / Instagram" template from CTX Feed's 220+ pre-built options. The plugin generates a feed compliant with **Meta Commerce Manager** requirements, including all required fields for:
+- Dynamic Product Ads (DPA)
+- Instagram Shopping
+- Advantage+ catalog campaigns
 
-**WooCommerce Google Shopping Product Feed – Video Tutorial**
-[youtube https://www.youtube.com/watch?v=QRTvrDJm4mI]
+= Does CTX Feed support WooCommerce Subscriptions for Google Shopping? =
 
-= How can I create Facebook product catalog feeds? =
+Yes! Following Google's January 2026 policy update allowing subscription products in Shopping ads, CTX Feed Pro supports the **subscription_cost attribute** mapping required for:
+- Subscription boxes
+- Replenishment/auto-ship products
+- Membership products
 
-Watch the following YouTube video to know more about creating the Facebook catalog feed
+= How do I sync my feed to TikTok Shop? =
 
-**WooCommerce Facebook Catalog Product Feed – Video Tutorial**
-[youtube https://youtu.be/Ml-KoFEVBHQ]
+1. Create a new feed using the TikTok Shop template
+2. Include all required attributes (product certification, brand authority)
+3. Generate the feed and copy the URL
+4. Add the feed URL to TikTok Seller Center
+5. Set up a scheduled sync for automatic updates
 
-= Are there any limits of products the plugin supports in a single feed? =
+= Can I exclude out-of-stock products from my feed? =
 
-No. You can create a feed with unlimited products.
+Yes! Use the **Filter** option when creating your feed:
+1. Click "Filter" in the feed settings
+2. Add condition: "Availability" + "is not" + "out of stock"
+3. Generate your filtered feed
 
-= Are there any limits on product feed? =
+Pro tip: Use CTX Feed Pro's advanced filtering for complex conditions.
 
-No. This best WooCommerce product feed plugin is capable of creating an unlimited number of feeds.
+= Does CTX Feed work with WPML for multilingual feeds? =
 
-= Does  CTX Feed auto-update product feeds? =
+Yes. CTX Feed is fully compatible with WPML, Polylang, and TranslatePress. Create separate feeds for each language to target international markets with localized product data.
 
-Yes, This plugin offers you a range of product feed updating interval times. You can set your interval time, and the product feed will update automatically as per the scheduled time.
+= How often should I update my product feed? =
 
-= What file format does CTX Feed Plugin Support? =
+We recommend **daily updates** for most stores. CTX Feed's scheduled cron feature can automatically regenerate your feed every 1, 6, 12, or 24 hours. For stores with frequently changing inventory, use the **Auto Update** feature to sync changes immediately.
 
-It supports 6 feed file formats depending on the marketing channels you select;
+= What file formats does CTX Feed support? =
 
- * XML
- * CSV
- * TXT
- * TSV
- * JSON
- * XLS
+CTX Feed supports **6 file formats** – more than any other WooCommerce feed plugin:
+- XML (most common for Google, Facebook)
+- CSV (spreadsheet compatible)
+- TSV (tab-separated)
+- XLS (Excel)
+- TXT (text)
+- JSON (API integrations)
 
-= Does this plugin support. product variations? =
+= Is there a product limit in the free version? =
 
-Yes, This plugin supports both variables and their associated variations.
+No! CTX Feed free version supports **unlimited products** and **unlimited feeds**. There are no artificial limits. The Pro version adds advanced features like dynamic attributes, custom XML templates, and multi-vendor support.
 
-= What is the difference between Free and Pro Version? =
+= How do I add GTIN, MPN, or Brand to my products? =
 
-The free version includes all the major functions but the Pro version has some awesome functionality.
+CTX Feed adds custom fields for GTIN, MPN, EAN, UPC, and Brand to your WooCommerce products. Simply:
+1. Edit any product
+2. Scroll to the "CTX Feed" tab
+3. Enter your product identifiers
+4. These will automatically be included in your feeds
 
-Using pro version:
+= Can I create feeds for multiple countries? =
 
-*  You can filter products using price, quantity, product name
+Yes! Create separate feeds for each target country with:
+- Localized pricing and currency
+- Country-specific shipping information
+- Translated product data (with WPML/Polylang)
+- Region-specific availability
 
-*  You can use custom taxonomies or other plugins taxonomy value into feed
+= How do I troubleshoot feed generation errors? =
 
-*  Using Category Mapping You can map your store category with your merchant category which is very useful for visitors to find out your product on the merchant site.
-
-*  You can make different prices for different merchants using Dynamic Attribute. Also, it is possible to set different values for different products using Dynamic Attribute Conditions.
-
-**CTX FEED Free vs Pro**
-[youtube https://youtu.be/XEW8rSyEcSU]
-
-= How to Get a Free Google Listing with CTX Feed?
-
-1. Install **CTX Feed** on your WooCommerce store.
-2. Create a **Google Shopping feed** using the pre-built template.
-3. Map your product data and generate the feed.
-4. Submit the feed to **Google Merchant Center** and enable **Free Listings.**
-5. Use **Auto Feed Update** to keep your products up to date.
+If your feed fails to generate:
+1. Reduce "Products Per Batch" to 100-200
+2. Increase PHP memory limit in wp-config.php
+3. Check for plugin conflicts by disabling other plugins
+4. Enable WordPress debug mode to identify errors
+5. Contact our support team for assistance
 
 == Screenshots ==
 
-1. Manage Feed
-2. Feed Configuration
-3. Feed output types
-4. Category Mapping
+1. Make Feed: Generate feeds for 220+ marketplaces
+2. Manage Feed: Control all product feeds from one dashboard
+3. Category Mapping: Map store categories to feed categories
+4. Filter: Filter products for feed generation
+5. Advanced Filter: Apply advanced rules to filter products
+6. Settings: Configure WooCommerce feed settings easily
+7. Custom Fields: Map and manage custom product fields
+8. Dynamic Attributes: Use dynamic attributes for feeds
+9. Attribute Mapping: Map product attributes to channels
+10. WP Option: Configure WordPress feed settings
+11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
 
-= 6.5.84 (2025-09-30) =
-* Updated: Attributes Mapping Page UI
-* Updated: Filter and Advance Filter UI
+= Version 6.6.22 (February 02, 2026) =
+* Bug Fix: Subscription period attribute issue in Google shopping feed
 
-= 6.5.83 (2025-09-25) =
-* Updated: Plugin information
+= Version 6.6.21 (January 27, 2026) =
+* Documentation Update: Enhanced plugin information for better user guidance.
 
-= 6.5.82 (2025-09-23) =
-* Updated: Plugin description information
+= Version 6.6.20 (January 26, 2026) =
+* Bug Fix: Checkout link template attribute issue
+* Documentation Update: Enhanced plugin information for better user guidance.
 
-= 6.5.81 (2025-09-18) =
-* Fixed: PHP Warning error issue
+= Version 6.6.19 (January 19, 2026) =
+* Security Update: Fixed missing authorization (broken access control) vulnerability (CVE-2026-22461) to protect your store data.
 
-= 6.5.80 (2025-09-10) =
-* Updated: Code refactor
+= Version 6.6.18 (January 13, 2026) =
+* Compatibility Fix: Fixed conflict with the Ninja Forms plugin for seamless WordPress form integration.
 
-= 6.5.79 (2025-09-03) =
-* Updated: Excluded_destination allow multiple times for Google Template
+= Version 6.6.17 (January 6, 2026) =
+* UI Cleanup: Removed Happy Holiday promotional banner.
 
-= 6.5.78 (2025-08-26) =
-* Fixed: PHP Warning error issue
+= Version 6.6.16 (January 5, 2026) =
+* Performance Improvement: Refactored compatibility code for better WooCommerce integration and faster feed generation.
 
-= 6.5.77 (2025-08-20) =
-* Updated: Status Page Icon
+= Version 6.6.15 (December 30, 2025) =
+* WooCommerce 10.4 Compatible: Tested and verified compatibility with WooCommerce version 10.4 for reliable product feed management.
 
-= 6.5.76 (2025-08-12) =
-* Fixed: Status Page UI issue
+= Version 6.6.14 (December 18, 2025) =
+* Documentation Update: Enhanced plugin information for better user guidance.
 
-= 6.5.75 (2025-08-06) =
-* Fixed: Status Page Right Sidebar issue
+= Version 6.6.13 (December 16, 2025) =
+* Seasonal Promotion: Added Happy Holiday discount banner.
 
-= 6.5.74 (2025-07-28) =
-* Updated: Code Refactor
+= Version 6.6.12 (December 11, 2025) =
+* New Feature: Added Parent Description attribute for improved product data flexibility in Google Shopping and Facebook feeds.
+* Security Patch: Fixed a security vulnerability issue to ensure safe product feed generation.
 
-= 6.5.73 (2025-07-21) =
-* Tweak: WooCommerce version 10.0 compatibility checked
+= Version 6.6.11 (December 8, 2025) =
+* UI Cleanup: Removed Black Friday promotional banner.
 
-= 6.5.72 (2025-07-15) =
-* Updated: Code Refactor
+= Version 6.6.10 (December 2, 2025) =
+* WordPress 6.9 Compatible: Verified full compatibility with WordPress 6.9 for stable product feed creation.
 
-= 6.5.71 (2025-07-08) =
-* Updated: Our Plugins page text
+= Version 6.6.9 (November 28, 2025) =
+* Marketing Update: Updated discount banner UTM tracking links for better analytics.
 
-= 6.5.70 (2025-07-02) =
-* Removed: Summer sale discount banner
+= Version 6.6.8 (November 25, 2025) =
+* Documentation Enhancement: Improved plugin information and documentation.
 
-= 6.5.69 (2025-06-30) =
-* Tweak: WooCommerce version 9.9 compatibility checked
+= Version 6.6.7 (November 25, 2025) =
+* Seasonal Promotion: Added Black Friday discount banner.
 
-= 6.5.68 (2025-06-24) =
-* Added: Summer sale discount banner
-* Updated: Settings page text
+= Version 6.6.6 (November 20, 2025) =
+* SEO Fix: Resolved canonical URL attribute issue for better search engine optimization in product feeds.
 
-= 6.5.67 (2025-06-16) =
-* Added: Filter Hook for JSON file type
+= Version 6.6.5 (November 17, 2025) =
+* Special Promotion: Added 10th Anniversary discount banner.
 
-= 6.5.66 (2025-06-03) =
-* Updated: Status page table
+= Version 6.6.4 (November 6, 2025) =
+* Documentation Update: Enhanced plugin documentation and information.
 
-= 6.5.65 (2025-05-26) =
-* Fixed: Plugin Check(PCP) error
+= Version 6.6.3 (November 3, 2025) =
+* UI Cleanup: Removed Halloween promotional banner.
 
-= 6.5.64 (2025-05-20) =
-* Updated: Code Refactor
+= Version 6.6.2 (October 27, 2025) =
+* Code Optimization: Refactored codebase for improved performance and maintainability of WooCommerce product feeds.
 
-= 6.5.63 (2025-05-15) =
-* Added: Appointment product type support
+= Version 6.6.1 (October 27, 2025) =
+* UI Improvements: Updated the Manage Feed Page sidebar and Make Feed Page sidebar for a better user experience.
 
-= 6.5.62 (2025-05-08) =
-* Updated: Code Refactor
+= Version 6.6.0 (October 22, 2025) =
+* Major Feature: Added ChatGPT (OpenAI) Product Feed Template for AI-powered product feed optimization and content generation.
 
-= 6.5.61 (2025-04-23) =
-* Updated: WordPress version 6.8 compatibility
+= Version 6.5.88 (October 20, 2025) =
+* Seasonal Promotion: Added Halloween discount banner.
 
-= 6.5.60 (2025-04-23) =
-* Updated : Code Refactor
+= Version 6.5.87 (October 13, 2025) =
+* Code Optimization: Refactored core code for enhanced performance.
 
-= 6.5.59 (2025-04-16) =
-* Tweak: WordPress version 6.8 compatibility checked
-* Tweak: WooCommerce version 9.8 compatibility checked
+= Version 6.5.86 (October 13, 2025) =
+* UI Enhancement: Updated the Manage Feed Page interface for improved usability.
 
-= 6.5.58 (2025-04-08) =
-* Updated : Doc page text
+= Version 6.5.85 (October 7, 2025) =
+* Bug Fix: Resolved Settings Page UI display issues.
 
-= 6.5.57 (2025-03-25) =
-* Updated : Code Refactor
+= Version 6.5.84 (September 30, 2025) =
+* UI Improvements: Enhanced Attributes Mapping Page, Filter, and Advanced Filter interfaces for easier product feed configuration.
 
-= 6.5.56 (2025-03-19) =
-* Updated : Status page title
+= Version 6.5.83 (September 25, 2025) =
+* Documentation Update: Updated plugin information.
 
-= 6.5.55 (2025-03-13) =
-* Added : Woocommerce default GTIN,UPC,EAN, or ISBN to the attribute list.
+= Version 6.5.82 (September 23, 2025) =
+* Documentation Enhancement: Improved plugin description for better understanding.
 
-= 6.5.54 (2025-03-11) =
-* Fixed : Custom Field Value remove issue
+= Version 6.5.81 (September 18, 2025) =
+* Bug Fix: Fixed PHP warning errors for cleaner operation.
 
-= 6.5.53 (2025-03-06) =
-* Added : "internal Label" to facebook template.
+= Version 6.5.80 (September 10, 2025) =
+* Code Optimization: Refactored code for better performance.
 
-= 6.5.52 (2025-03-04) =
-* Updated : Code Refactor
+= Version 6.5.79 (September 3, 2025) =
+* Google Shopping Enhancement: Updated excluded_destination attribute to allow multiple values in Google Shopping feeds.
 
-= 6.5.51 (2025-02-25) =
-* Fixed  : Quantity value issue
+= Version 6.5.78 (August 26, 2025) =
+* Bug Fix: Resolved PHP warning errors.
 
-= 6.5.50 (2025-02-17) =
-* Added   : Our Plugins page
-* Updated : Dashboard Banner UTM link
+= Version 6.5.77 (August 20, 2025) =
+* UI Update: Updated Status Page icons for better visual clarity.
 
-= 6.5.49 (2025-02-10) =
-* Updated : Dashboard Banner
+= Version 6.5.76 (August 12, 2025) =
+* Bug Fix: Fixed Status Page UI display issues.
 
-= 6.5.48 (2025-02-04) =
-* Updated : Code Refactor
+= Version 6.5.75 (August 6, 2025) =
+* Bug Fix: Resolved Status Page right sidebar display issues.
 
-= 6.5.47 (2025-01-28) =
-* Updated : Code Refactor
+= Version 6.5.74 (July 28, 2025) =
+* Code Optimization: Refactored codebase for improved efficiency.
 
-= 6.5.46 (2025-01-23) =
-* Fixed : Cron update issue
+= Version 6.5.73 (July 21, 2025) =
+* WooCommerce 10.0 Compatible: Tested and verified compatibility with WooCommerce 10.0 for seamless product feed generation.
 
-= 6.5.45 (2025-01-20) =
-* Updated : Plugin Information
+= Version 6.5.72 (July 15, 2025) =
+* Code Optimization: Refactored code for enhanced performance.
 
-= 6.5.44 (2025-01-13) =
-* Added : Filter Hook for add extra data
+= Version 6.5.71 (July 8, 2025) =
+* Documentation Update: Updated our Plugins page content.
 
-= 6.5.43 (2025-01-08) =
-* Fixed : Cron Event Removed issue
+= Version 6.5.70 (July 2, 2025) =
+* UI Cleanup: Removed summer sale promotional banner.
 
-= 6.5.42 (2025-01-01) =
-* Removed : Merry Christmas Discount Banner
+= Version 6.5.69 (June 30, 2025) =
+* WooCommerce 9.9 Compatible: Verified compatibility with WooCommerce 9.9.
 
-= 6.5.41 (2024-12-23) =
-* Added : Merry Christmas Dashboard Discount Banner
+= Version 6.5.68 (June 24, 2025) =
+* Seasonal Promotion: Added summer sale discount banner. Documentation Update: Updated Settings page text for clarity.
 
-= 6.5.40 (2024-12-20) =
-* Added : Merry Christmas Discount Banner
-* Fixed : Plugin installation error issue
+= Version 6.5.67 (June 16, 2025) =
+* Developer Feature: Added filter hook for JSON file type customization in product feeds.
 
-= 6.5.39 (2024-12-18) =
-* Added : Certified pre-owned to google shopping template
+= Version 6.5.66 (June 3, 2025) =
+* UI Enhancement: Updated the Status page table for better data display.
 
-= 6.5.38 (2024-12-11) =
-* Added : Excluded/exclude_destination to Bing Shopping
+= Version 6.5.65 (May 26, 2025) =
+* Compliance Fix: Fixed Plugin Check (PCP) errors for WordPress.org guidelines compliance.
 
-= 6.5.37 (2024-12-06) =
-* Removed : Cyber Monday Discount Banner
+= Version 6.5.64 (May 20, 2025) =
+* Code Optimization: Refactored code for improved performance.
 
-= 6.5.36 (2024-12-04) =
-* Added : Ads attribute for Google Shopping
+= Version 6.5.63 (May 15, 2025) =
+* New Feature: Added support for Appointment product type in WooCommerce product feeds.
 
-= 6.5.35 (2024-11-30) =
-* Added : Cyber Monday Discount Banner
+= Version 6.5.62 (May 8, 2025) =
+* Code Optimization: Refactored codebase for better efficiency.
 
-= 6.5.34 (2024-11-27) =
-* Fixed : Facebook template include xml version issue
+= Version 6.5.61 (April 23, 2025) =
+* WordPress 6.8 Compatible: Updated for full compatibility with WordPress 6.8.
 
-= 6.5.33 (2024-11-15) =
-* Added : Black Friday Discount Banner
+= Version 6.5.60 (April 23, 2025) =
+* Code Optimization: Refactored code for enhanced performance.
 
-= 6.5.32 (2024-11-13) =
-* Tweak: WordPress version 6.7 compatibility checked.
+= Version 6.5.59 (April 16, 2025) =
+* Compatibility Updates: Tested and verified compatibility with WordPress 6.8 and WooCommerce 9.8.
 
-= 6.5.31 (2024-11-04) =
-* Removed : Halloween Discount Banner
-* Updated : Code refactor
+= Version 6.5.58 (April 8, 2025) =
+* Documentation Update: Improved documentation page content.
 
-= 6.5.30 (2024-10-28) =
-* Updated : Halloween Discount Banner
+= Version 6.5.57 (March 25, 2025) =
+* Code Optimization: Refactored code for better performance.
 
-= 6.5.29 (2024-10-22) =
-* Added : Halloween Discount Banner
+= Version 6.5.56 (March 19, 2025) =
+* UI Update: Updated Status page title.
 
-= 6.5.28 (2024-10-21) =
-* Updated : Plugin description
+= Version 6.5.55 (March 13, 2025) =
+* WooCommerce Integration: Added WooCommerce default GTIN, UPC, EAN, and ISBN identifiers to the attribute list for enhanced Google Shopping compliance.
 
-= 6.5.27 (2024-10-17) =
-* Fixed  : Including variations of a pending parent variable product
+= Version 6.5.54 (March 11, 2025) =
+* Bug Fix: Fixed custom field value removal issue in product feeds.
 
-= 6.5.26 (2024-10-15) =
-* Fixed  : PHP Deprecated issue
-* Updated: Code refactor
+= Version 6.5.53 (March 6, 2025) =
+* Facebook Enhancement: Added "internal label" attribute to Facebook product feed template.
 
-= 6.5.25 (2024-10-07) =
-* Fixed: Parent Variable Products sale price issue
+= Version 6.5.52 (March 4, 2025) =
+* Code Optimization: Refactored code for improved performance.
 
-= 6.5.24 (2024-10-03) =
-* Updated: Google Local Inventory feed
+= Version 6.5.51 (February 25, 2025) =
+* Bug Fix: Resolved quantity value display issue in product feeds.
 
-= 6.5.23 (2024-09-30) =
-* Updated: Compatibility code refactor
+= Version 6.5.50 (February 17, 2025) =
+* New Feature: Added our Plugins page for easy plugin discovery.
+* Marketing Update: Updated dashboard banner UTM tracking links.
 
-= 6.5.22 (2024-09-24) =
-* Fixed: Cron event created for all feed issue
-* Fixed: Template loading issue
+= Version 6.5.49 (February 10, 2025) =
+* UI Update: Updated dashboard banner display.
 
-= 6.5.21 (2024-09-23) =
-* Fixed: Feed type appear issue in edit
+= Version 6.5.48 (February 4, 2025) =
+* Code Optimization: Refactored codebase for enhanced efficiency.
 
-= 6.5.20 (2024-09-17) =
-* Updated: Code refactor
+= Version 6.5.47 (January 28, 2025) =
+* Code Optimization: Refactored code for better performance.
 
-= 6.5.19 (2024-09-10) =
-* Fixed: Cheapest variation issue
+= Version 6.5.46 (January 23, 2025) =
+* Bug Fix: Fixed cron job update issue for automated feed generation.
 
-= 6.5.18 (2024-09-05) =
-* Updated: Plugin Description
+= Version 6.5.45 (January 20, 2025) =
+* Documentation Update: Enhanced plugin information.
 
-= 6.5.17 (2024-09-05) =
-* Updated: Plugin Description
-* Updated: Plugin Screenshots
+= Version 6.5.44 (January 13, 2025) =
+* Developer Feature: Added filter hook for adding extra data to product feeds.
 
-= 6.5.16 (2024-09-02) =
-* Updated: Code refactor
+= Version 6.5.43 (January 8, 2025) =
+* Bug Fix: Resolved cron event removal issue for scheduled feed updates.
 
-= 6.5.15 (2024-08-29) =
-* Fixed: Minor code base error
+= Version 6.5.42 (January 1, 2025) =
+* UI Cleanup: Removed Merry Christmas promotional banner.
 
-= 6.5.14 (2024-08-27) =
-* Fixed: TikTok XML feed format
+= Version 6.5.41 (December 23, 2024) =
+* Seasonal Promotion: Added Merry Christmas dashboard discount banner.
 
-= 6.5.13 (2024-08-22) =
-* Updated: Code refactor
+= Version 6.5.40 (December 20, 2024) =
+* Seasonal Promotion: Added Merry Christmas discount banner. Bug Fix: Fixed plugin installation error for smoother setup.
 
-= 6.5.12 (2024-08-19) =
-* Fixed: Child category map issue
+= Version 6.5.39 (December 18, 2024) =
+* Google Shopping Enhancement: Added certified pre-owned attribute to the Google Shopping template for better product categorization.
 
-= 6.5.11 (2024-08-12) =
-* Fixed: Price with TAX attributes issue
+= Version 6.5.38 (December 11, 2024) =
+* Bing Shopping Enhancement: Added excluded/exclude_destination attributes to Bing Shopping feeds.
 
-= 6.5.9 (2024-07-29) =
-* Updated: Zbozi Template feed
-* Tweak: WooCommerce version 9.0 compatibility checked.
+= Version 6.5.37 (December 6, 2024) =
+* UI Cleanup: Removed Cyber Monday promotional banner.
 
-= 6.5.8 (2024-07-25) =
-* Fixed: PHP notice error issue
-* Fixed: Status page loading issue for WooCommerce version before 9.0
-* Tweak: WordPress version 6.6 compatibility checked.
+= Version 6.5.36 (December 4, 2024) =
+* Google Shopping Enhancement: Added Ads attribute for Google Shopping feeds to improve advertising integration.
 
-= 6.5.7 (2024-07-15) =
-* Fixed: Plugin security issue
-* Fixed: Plugin notice appear in wrong format.
+= Version 6.5.35 (November 30, 2024) =
+* Seasonal Promotion: Added Cyber Monday discount banner.
 
-= 6.5.6 (2024-07-12) =
-* Fixed: Plugin security issue
+= Version 6.5.34 (November 27, 2024) =
+* Facebook Fix: Resolved the Facebook feed template XML version display issue.
 
-= 6.5.5 (2024-07-11) =
-* Fixed: Shipping price currency conversion issue
-* Fixed: Certification attribute in Google Shopping Template not working issue
+= Version 6.5.33 (November 15, 2024) =
+* Seasonal Promotion: Added Black Friday discount banner.
 
-= 6.5.4 (2024-07-08) =
-* Fixed : Output Type selection issue
+= Version 6.5.32 (November 13, 2024) =
+* WordPress 6.7 Compatible: Tested and verified compatibility with WordPress 6.7.
 
-= 6.5.3 (2024-07-03) =
-* Fixed : Google Review feed breaking issue
+= Version 6.5.31 (November 4, 2024) =
+* UI Cleanup: Removed Halloween promotional banner. Code Optimization: Refactored code for improved performance.
 
-= 6.5.2 (2024-07-02) =
-* Fixed : CSV Feed issue
-* Fixed : PHP error for FTP Upload issue
-* Fixed : Output Type selects all value and corrupt feed issue
+= Version 6.5.30 (October 28, 2024) =
+* Marketing Update: Updated Halloween discount banner.
 
-= 6.5.1 (2024-06-27) =
-* Fixed : Woocommerce Legacy REST API deprecated issue
+= Version 6.5.29 (October 22, 2024) =
+* Seasonal Promotion: Added Halloween discount banner.
 
-= 6.5.0 (2024-06-25) =
-* Updated : Plugin compatibility code refactor
+= Version 6.5.28 (October 21, 2024) =
+*  Documentation Enhancement: Updated plugin description for better clarity.
 
-= 6.4.37 (2024-06-13) =
-* Updated : Facebook Pixel default value.
+= Version 6.5.27 (October 17, 2024) =
+* Bug Fix: Fixed issue with variations of pending parent variable products being incorrectly included in feeds.
 
-= 6.4.36 (2024-06-10) =
-* Fixed : Facebook Pixel ID fields validation issue.
+= Version 6.5.26 (October 15, 2024) =
+* PHP Compatibility: Fixed PHP deprecated warnings for modern PHP versions. Code Optimization: Refactored code for better performance.
 
-= 6.4.35 (2024-06-05) =
-* Fixed : Googlereview feed issue
+= Version 6.5.25 (October 7, 2024) =
+* Pricing Fix: Resolved parent variable products sale price display issue in product feeds.
 
-= 6.4.34 (2024-06-03) =
-* Fixed : Identifier exists issue
+= Version 6.5.24 (October 3, 2024) =
+* Google Enhancement: Updated Google Local Inventory feed template for improved local product advertising.
 
-= 6.4.33 (2024-05-30) =
-* Updated : TikTok XML feed template
+= Version 6.5.23 (September 30, 2024) =
+* Code Optimization: Refactored compatibility code for better integration.
 
-= 6.4.32 (2024-05-27) =
-* Fixed : Wine searcher template automatically file type change issue
+= Version 6.5.22 (September 24, 2024) =
+* Bug Fixes: Fixed cron event creation for all feeds issue and template loading problems.
 
-= 6.4.31 (2024-05-23) =
-* Updated : Plugin description.
+= Version 6.5.21 (September 23, 2024) =
+* Bug Fix: Resolved feed type display issue in edit mode.
 
-= 6.4.30 (2024-05-20) =
-* Fixed: Delete button issue.
-* Fixed: TranslatePress categories, attributes translated issue.
-* Fixed: Suffix field typing issue.
-* Fixed: Review feed generated issue.
+= Version 6.5.20 (September 17, 2024) =
+* Code Optimization: Refactored code for improved performance.
 
-= 6.4.29 (2024-05-13) =
-* Updated : Plugin information.
-
-= 6.4.28 (2024-05-09) =
-* Added : Wood Mart images on the additional images fields.
-* Updated: Plugin description, tags, short description, changelog.
-
-= 6.4.27 (2024-05-06) =
-* Fixed : Space issue between url and suffix prefix.
-
-= 6.4.26 (2024-04-29) =
-* Fixed : Settings page data save issue.
-* Fixed : Facebook product category field issue.
-* Fixed : CDATA output type issue with an attribute
-* Fixed : PHP Deprecated issue
-
-= 6.4.25 (2024-04-25) =
-* Updated : Yandex feed template
-
-= 6.4.24 (2024-04-22) =
-* Added: Cron job batch feature
-* Updated: Facebook product category list
-* Fixed: Feed import issue
-
-= 6.4.23 (2024-04-16) =
-* Tweak: WooCommerce 8.7.0 compatibility checked.
-
-= 6.4.22 (2024-04-03) =
-* Tweak: WordPress 6.5 compatibility checked.
-
-= 6.4.21 (2024-04-01) =
-* Fixed: Drafted variations, not excluding issue
-
-= 6.4.20 (2024-03-28) =
-* Updated: Code Refactor
-
-= 6.4.19 (2024-03-25) =
-* Fixed: Plugin translate issue
-
-= 6.4.18 (2024-03-18) =
-* Fixed: Private variable product variations include issue
-
-= 6.4.17 (2024-03-14) =
-* Fixed: Parent empty issue
-
-= 6.4.16 (2024-03-11) =
-* Fixed: Custom Fields value issue for variations product
-
-= 6.4.15 (2024-03-07) =
-* Fixed: Status page PHP warning issue
-
-= 6.4.14 (2024-03-04) =
-* Fixed: Shipping price issue
-
-= 6.4.13 (2024-02-29) =
-* Tweak: WooCommerce 8.6.1 compatibility checked.
-
-= 6.4.12 (2024-02-22) =
-* Fixed: Zbozi.cz template wrapper issue
-
-= 6.4.11 (2024-02-19) =
-* Updated: Update Interval text
-
-= 6.4.10 (2024-02-15) =
-* Updated: Snapchat template
-
-= 6.4.9 (2024-02-12) =
-* Updated: Manage Feeds page text
-
-= 6.4.8 (2024-02-06) =
-* Fixed: Price issue with tax
-
-= 6.4.7 (2024-02-02) =
-* Updated: Code refactor
-
-= 6.4.6 (2024-01-25) =
-* Fixed: Parent Category and Child Category Attribute issue
-* Fixed: WooCommerce Dynamic Pricing With Discount Rules price issue
-* Fixed: Image missing issue
-* Updated: Code refactor
-
-= 6.4.5 (2024-01-22) =
-* Fixed: Variation Product Title issue
-* Fixed: Feature image issue
-
-= 6.4.4 (2024-01-22) =
-* Fixed: Image URL Conversion issue
-* Fixed: Category and  Full Category hierarchy issue
-* Fixed: Product Title comma issue
-
-= 6.4.3 (2024-01-18) =
-* Fixed: Parent Product null issue
-
-= 6.4.2 (2024-01-17) =
-* Fixed: Product title with attribute value issue
-* Fixed: Special characters removing title from feed issue
-* Fixed: Additional image link missing issue
-* Fixed: Variation title in feed issue
-* Fixed: Quantity attribute quantity missing from variation issue
-* Fixed: Price issue with Flycart Discount Rule Plugin
-* Fixed: 0 used as an attribute value issue
-* Fixed: Category hierarchy issue
-* Fixed: String replace row delete issue
-* Fixed: Quantity value issue
-
-= 6.4.1 (2024-01-11) =
-* Fixed: Separators overriding issue
-* Fixed: Language switcher loading issue
-* Fixed: Google product review template issue
-* Fixed: Shipping format issue
-
-= 6.4.0 (2024-01-08) =
-* Fixed: CTX Feed Compatibility  issue
-* Updated: Code Refactor
-* Removed: Christmas Notice Banner
-
-= 6.3.12 (2024-01-01) =
-* Fixed: URL conversion issue.
+= Version 6.5.19 (September 10, 2024) =
+* Pricing Fix: Fixed cheapest variation selection issue for variable products.
 
 == Upgrade Notice ==
 = 6.0.0 =

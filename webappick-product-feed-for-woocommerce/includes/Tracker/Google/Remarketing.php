@@ -42,7 +42,7 @@ class Remarketing extends Base{
 
         // Ajax add to cart
         add_action( 'wp_ajax_add_to_cart_google_remarketing', [ &$this, 'product_add_to_cart_data' ] );
-        add_action( 'wp_ajax_nopriv_add_to_cart_google_remarketing', [ &$this, 'product_add_to_cart_data' ] );
+        //add_action( 'wp_ajax_nopriv_add_to_cart_google_remarketing', [ &$this, 'product_add_to_cart_data' ] );
     }
 
     /*
@@ -104,6 +104,10 @@ class Remarketing extends Base{
 
         wp_enqueue_script( 'woo-feed-google-remarketing,', WOO_FEED_PLUGIN_URL . 'admin/js/woo-feed-google-remarketing.min.js', [ 'jquery', 'wp-util' ], '1.0.0', true );
 
+        wp_localize_script( 'woo-feed-google-remarketing,', 'woo_feed_google_remarketing_params', array(
+            'nonce' => wp_create_nonce( 'woo_feed_google_remarketing_nonce' ),
+        ) );
+
     }
 
     /**
@@ -164,6 +168,16 @@ class Remarketing extends Base{
      * @since 4.4.34
      */
     public function product_add_to_cart_data(){
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            woo_feed_log_debug_message( 'User doesnt have enough permission.' );
+            wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ),403 );
+            die();
+        }
+
+        // Verify nonce for security
+        check_ajax_referer( 'woo_feed_google_remarketing_nonce', 'nonce' );
+
 		$data = [];
 		if( isset( $_POST['product_id'] ) ){
 			$product_id = intval( esc_attr( $_POST['product_id'] ) );

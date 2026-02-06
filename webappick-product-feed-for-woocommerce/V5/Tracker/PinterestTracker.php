@@ -18,7 +18,7 @@ class PinterestTracker implements TrackerInterface {
 		
 		// Ajax adds to cart
 		add_action( 'wp_ajax_add_to_cart_pinterest_tag', [ $this, 'ajax_add_to_cart_data' ] );
-		add_action( 'wp_ajax_nopriv_add_to_cart_pinterest_tag', [ $this, 'ajax_add_to_cart_data' ] );
+		//add_action( 'wp_ajax_nopriv_add_to_cart_pinterest_tag', [ $this, 'ajax_add_to_cart_data' ] );
 	}
 	
 	/**
@@ -40,6 +40,10 @@ class PinterestTracker implements TrackerInterface {
 			'jquery',
 			'wp-util'
 		], '1.0.0', true );
+
+		wp_localize_script( 'woo-feed-pinterest-tag,', 'woo_feed_pinterest_tag_params', array(
+			'nonce' => wp_create_nonce( 'woo_feed_pinterest_tag_nonce' ),
+		) );
 	}
 	
 	/**
@@ -271,8 +275,18 @@ class PinterestTracker implements TrackerInterface {
 	 * @since 4.4.27
 	 */
 	public function ajax_add_to_cart_data() {
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            woo_feed_log_debug_message( 'User doesnt have enough permission.' );
+            wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ),403 );
+            die();
+        }
+
+		// Verify nonce for security
+		check_ajax_referer( 'woo_feed_pinterest_tag_nonce', 'nonce' );
+
 		$data = [];
-		
+
 		$product_id = sanitize_text_field( isset( $_POST['product_id'] ) ? $_POST['product_id'] : '' );
 		if ( ! empty( $product_id ) ) {
 			$data = $this->get_content_info( [ $product_id ] );

@@ -476,7 +476,7 @@ class Status {
 			'limit'            => -1,
 			'offset'           => 0,
 			'status'           => 'publish',
-			'type'             => array( 'simple', 'variable', 'grouped', 'external', 'composite', 'bundle', 'yith_bundle', 'yith-composite', 'subscription', 'variable-subscription', 'woosb', 'woosg', 'auction', 'course' ),
+			'type'             => array( 'simple', 'variable', 'grouped', 'external', 'composite', 'bundle', 'yith_bundle', 'yith-composite', 'subscription', 'variable-subscription', 'woosb', 'woosg', 'auction', 'course' ,'easy_product_bundle'),
 			'orderby'          => 'date',
 			'order'            => 'DESC',
 			'return'           => 'ids',

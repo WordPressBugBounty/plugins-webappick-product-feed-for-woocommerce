@@ -350,6 +350,13 @@ class Promotions {
 	 * @return void
 	 */
 	public function __webappick_dismiss_promo() {
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            woo_feed_log_debug_message( 'User doesnt have enough permission.' );
+            wp_send_json_error( esc_html__( 'Unauthorized Action.', 'woo-feed' ),403 );
+            die();
+        }
+
 		if (
 				isset( $_REQUEST['dismissed'], $_REQUEST['hash'], $_REQUEST['_wpnonce'] ) &&
 				'true' == $_REQUEST['dismissed'] && ! empty( $_REQUEST['hash'] ) &&

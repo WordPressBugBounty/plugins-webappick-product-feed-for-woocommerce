@@ -5,7 +5,7 @@
         if( typeof gtag === "function" ){
             $(this.body).on( 'added_to_cart', function( event, fragments, cart_hash, button ){
                 var product_id = button.data('product_id');
-                wp.ajax.post('add_to_cart_google_remarketing', {product_id: product_id})
+                wp.ajax.post('add_to_cart_google_remarketing', {product_id: product_id, nonce: woo_feed_google_remarketing_params.nonce})
                     .done(function(response){
                         response = JSON.parse( response );
                         gtag( 'event', 'add_to_cart', response );

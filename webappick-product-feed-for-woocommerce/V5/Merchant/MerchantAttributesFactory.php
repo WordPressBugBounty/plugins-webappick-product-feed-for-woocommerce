@@ -2157,6 +2157,152 @@ class MerchantAttributesFactory {
 					),
 				),
 			),
+            'chatgpt'   => array(
+                1 => array(
+                    'optionGroup' => 'OpenAI Flag',
+                    'options'      => array(
+                        'enable_search'       => 'Controls whether the product can be surfaced in ChatGPT search results',
+                        'enable_checkout'     => 'Allows direct purchase inside ChatGPT.',
+                    ),
+                ),
+                2 => array(
+                    'optionGroup' => 'Basic Product Data',
+                    'options'      => array(
+                        'id'          => 'Merchant product ID (unique)',
+                        'gtin'        => 'Universal product identifier',
+                        'mpn'         => 'Manufacturer part number',
+                        'title'       => 'Product title',
+                        'description' => 'Full product description',
+                        'link'        => 'Product detail page URL'
+                    ),
+                ),
+                3 => array(
+                    'optionGroup' => 'Item Information',
+                    'options'      => array(
+                        'condition'          => 'Condition of product',
+                        'product_category'   => 'Category path',
+                        'brand'              => 'Product brand',
+                        'material'           => 'Primary material(s)',
+                        'dimensions'         => 'Overall dimensions',
+                        'length'             => 'Individual dimension(length)',
+                        'width'              => 'Individual dimension(width)',
+                        'height'             => 'Individual dimension(height)',
+                        'weight'             => 'Product weight',
+                        'age_group'          => 'Target demographic',
+                    ),
+                ),
+                4 => array(
+                    'optionGroup' => 'Media',
+                    'options'      => array(
+                        'image_link'            => 'Main product image URL',
+                        'additional_image_link' => 'Extra images',
+                        'video_link'            => 'Product video',
+                        'model_3d_link'         => '3D model',
+                    ),
+                ),
+                5 => array(
+                    'optionGroup' => 'Price & Promotions',
+                    'options'      => array(
+                        'price'                     => 'Regular price',
+                        'applicable_taxes_fees'     => 'Additional taxes/fees',
+                        'sale_price'                => 'Discounted price',
+                        'sale_price_effective_date' => 'Sale window',
+                        'unit_pricing_measure'      => 'Unit price & base measure',
+                        'pricing_trend'             => 'Lowest price in N months',
+                    ),
+                ),
+                6 => array(
+                    'optionGroup' => 'Availability & Inventory',
+                    'options'      => array(
+                        'availability'              => 'Product availability',
+                        'availability_date'         => 'Availability date if preorder',
+                        'inventory_quantity'        => 'Stock count',
+                        'expiration_date'           => 'Remove product after date',
+                        'pickup_method'             => 'Pickup options',
+                        'pickup_sla'                => 'Pickup SLA',
+                    ),
+                ),
+                7 => array(
+                    'optionGroup' => 'Variants',
+                    'options'      => array(
+                        'item_group_id'             => 'Variant group ID',
+                        'item_group_title'          => 'Group product title',
+                        'color'                     => 'Variant color',
+                        'size'                      => 'Variant size',
+                        'size_system'               => 'Size System',
+                        'gender'                    => 'Gender target',
+                        'offer_id'                  => 'Offer ID (SKU+seller+price)',
+                        'Custom_variant1_category'  => 'Custom variant dimension 1',
+                        'Custom_variant1_option'    => 'Custom variant 1 option',
+                        'Custom_variant2_category'  => 'Custom variant dimension 2',
+                        'Custom_variant2_option'    => 'Custom variant 2 option',
+                        'Custom_variant3_category'  => 'Custom variant dimension 3',
+                        'Custom_variant3_option'    => 'Custom variant 3 option'
+                    ),
+                ),
+                8 => array(
+                    'optionGroup' => 'Fulfillment',
+                    'options'      => array(
+                        'shipping'              => 'Shipping method/cost/region',
+                        'delivery_estimate'     => 'Estimated arrival date',
+                    ),
+                ),
+                9 => array(
+                    'optionGroup' => 'Merchant Info',
+                    'options'      => array(
+                        'seller_name'           => 'Seller name',
+                        'seller_url'            => 'Seller page',
+                        'seller_privacy_policy' => 'Seller-specific policies',
+                        'seller_tos'            => 'Seller-specific terms of service',
+                    ),
+                ),
+                10 => array(
+                    'optionGroup' => 'Returns',
+                    'options'      => array(
+                        'return_policy'            => 'Return policy URL',
+                        'return_window'            => 'Days allowed for return',
+                    ),
+                ),
+                11 => array(
+                    'optionGroup' => 'Performance Signals',
+                    'options'      => array(
+                        'popularity_score'       => 'Popularity indicator',
+                        'return_rate'            => 'Return rate',
+                    ),
+                ),
+                12 => array(
+                    'optionGroup' => 'Compliance',
+                    'options'      => array(
+                        'warning'           => 'Product disclaimers',
+                        'age_restriction'   => 'Minimum purchase age',
+                    ),
+                ),
+                13 => array(
+                    'optionGroup' => 'Reviews and Q&A',
+                    'options'      => array(
+                        'product_review_count'    => 'Number of product reviews',
+                        'product_review_rating'   => 'Average review score',
+                        'store_review_count'      => 'Number of brand/store reviews',
+                        'store_review_rating'     => 'Average store rating',
+                        'q_and_a'                 => 'FAQ content',
+                        'raw_review_data'         => 'Raw review payload'
+                    ),
+                ),
+                14 => array(
+                    'optionGroup' => 'Related Products',
+                    'options'      => array(
+                        'related_product_id'      => 'Associated product IDs',
+                        'relationship_type'       => 'Relationship type',
+                    ),
+                ),
+                15 => array(
+                    'optionGroup' => 'Geo Tagging',
+                    'options'      => array(
+                        'geo_price'         => 'Price by region',
+                        'geo_availability'  => 'Availability per region',
+                    ),
+                ),
+            ),
 			'name'                  => array(),
 		);
 	}

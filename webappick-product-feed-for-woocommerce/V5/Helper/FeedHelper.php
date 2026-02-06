@@ -1341,7 +1341,6 @@ class FeedHelper {
 	 * @param $feed_info
 	 * @param $should_update_last_update_time
 	 *
-	 * >>>>>>> feature/CV-79
 	 *
 	 * @return array
 	 */

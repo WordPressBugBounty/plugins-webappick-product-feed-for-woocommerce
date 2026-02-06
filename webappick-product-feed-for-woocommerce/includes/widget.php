@@ -28,24 +28,32 @@ if ( ! function_exists('webappick_dashboard_widget_render') ) {
      */
     function webappick_dashboard_widget_render() {
 
-        // Initialize variable.
-        $allposts = '';
+        $cache_key = 'woo_feed_webappick_posts';
+        $cached = get_transient($cache_key);
 
-        // Enter the name of your blog here followed by /wp-json/wp/v2/posts and add filters like this one that limits the result to 2 posts.
-        $response = wp_remote_get( 'https://webappick.com/wp-json/wp/v2/posts?per_page=5' );
+        // ✅ If cached data exists, use it
+        if ($cached !== false) {
+            $posts = $cached;
+        }else {
+            // Enter the name of your blog here followed by /wp-json/wp/v2/posts and add filters like this one that limits the result to 2 posts.
+            $response = wp_remote_get('https://webappick.com/wp-json/wp/v2/posts?per_page=5');
 
-        // Exit if error.
-        if ( is_wp_error( $response ) ) {
-            return;
+            // Exit if error.
+            if (is_wp_error($response)) {
+                return;
+            }
+
+            // Get the body.
+            $posts = json_decode(wp_remote_retrieve_body($response));
+
+            // Get custom cache duration (default 1 hour)
+            $duration = (int) get_option('woo_feed_webappick_posts', 86400);
+
+            // ✅ Cache for given duration
+            set_transient($cache_key, $posts, $duration);
+
         }
 
-        // Get the body.
-        $posts = json_decode( wp_remote_retrieve_body( $response ) );
-
-        // Exit if nothing is returned.
-        if ( empty( $posts ) ) {
-            return;
-        }
         ?>
         <p> <a style="text-decoration: none;font-weight: bold;" href="<?php echo esc_url( 'https://webappick.com' ); ?>" target=_balnk><?php echo esc_html__("WEBAPPICK.COM",'woo-feed'); ?></a></p>
         <hr>
@@ -63,18 +71,19 @@ if ( ! function_exists('webappick_dashboard_widget_render') ) {
             esc_html__('Leverage dynamic attribute', 'woo-feed')
         ];
 
-        //if( \CTXFeed\V5\Common\Helper::is_pro() ) { ?>
-            <!--a target="_blank" href="https://discoplugin.com/">
-                <div class="woo-feed-widget-banner-disco"> </div>
-            </a-->
-        <?php //}
-
         if( !\CTXFeed\V5\Common\Helper::is_pro() ) { ?>
             <a target="_blank" href="https://discoplugin.com/?utm_source=CTX&utm_medium=Feed-dSboard&utm_campaign=Banner&utm_id=1">
                 <div class="woo-feed-widget-banner-disco-free"> </div>
             </a>
             <hr>
         <?php }
+
+        //if( !\CTXFeed\V5\Common\Helper::is_pro() ) { ?>
+           <!--a target="_blank" href="https://webappick.com/discount-deal/?utm_source=wp-dashboard-H-Holiday&utm_medium=free-to-pro&utm_campaign=H-Holiday&utm_id=1">
+                <div class="woo-feed-widget-banner-discount-free"> </div>
+            </a>
+            <hr-->
+        <?php //}
 
         // If there are posts.
         if ( ! empty( $posts ) ) {

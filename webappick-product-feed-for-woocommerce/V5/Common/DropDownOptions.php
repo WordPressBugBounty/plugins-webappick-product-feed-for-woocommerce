@@ -340,6 +340,7 @@ class DropDownOptions {
 			2 => [
 				'optionGroup' => 'Popular Templates',
 				'options'     => [
+					'chatgpt'                => esc_html__( 'ChatGPT (OpenAI)', 'woo-feed' ),
 					'google'                 => esc_html__( 'Google Shopping', 'woo-feed' ),
 					'google_local'           => esc_html__( 'Google Local Inventory Ads', 'woo-feed' ),
 					'google_local_inventory' => esc_html__( 'Google Local Product Inventory', 'woo-feed' ),

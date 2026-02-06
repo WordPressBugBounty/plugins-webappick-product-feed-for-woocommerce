@@ -47,6 +47,7 @@ class ProductAttributeFactory {
 				'title'                 => esc_html__( 'Product Title', 'woo-feed' ),
 				'parent_title'          => esc_html__( 'Parent Title', 'woo-feed' ),
 				'description'           => esc_html__( 'Product Description', 'woo-feed' ),
+				'parent_description'    => esc_html__( 'Parent Description', 'woo-feed' ),
 				'description_with_html' => esc_html__( 'Product Description (with HTML)', 'woo-feed' ),
 				'short_description'     => esc_html__( 'Product Short Description', 'woo-feed' ),
 				'primary_category'      => esc_html__( 'Parent Category', 'woo-feed' ),

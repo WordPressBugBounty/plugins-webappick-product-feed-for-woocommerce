@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<products>
+<title>
+<![CDATA[ {BlogName} ]]>
+</title>
+<link><![CDATA[ {BlogURL} ]]></link>
+<description><![CDATA[ {BlogDescription} ]]></description>
+{separator}
+</products>
+
