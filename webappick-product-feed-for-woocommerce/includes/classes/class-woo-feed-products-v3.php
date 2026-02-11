@@ -4044,7 +4044,7 @@ class Woo_Feed_Products_v3 {
 			}
 
 			if ( in_array( 3, $outputTypes ) ) { // UTF-8 Encode
-				$output = utf8_encode( $output );
+				$output = mb_convert_encoding( $output );
 			}
 
 			if ( in_array( 4, $outputTypes ) ) { // htmlentities

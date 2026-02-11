@@ -200,7 +200,7 @@ class WF_Engine
                                     if ($value22 == 2) { # Strip Tags
                                         $output = wp_strip_all_tags(html_entity_decode($output));
                                     } elseif ($value22 == 3) { # UTF-8 Encode
-                                        $output = utf8_encode($output);
+                                        $output = mb_convert_encoding($output);
                                     } elseif ($value22 == 4) { # htmlentities
                                         $output = htmlentities($output, ENT_QUOTES, 'UTF-8');
                                     } elseif ($value22 == 5) { # Integer
@@ -286,7 +286,7 @@ class WF_Engine
                                         if ($value22 == 2) { # Strip Tags
                                             $output = wp_strip_all_tags(html_entity_decode($output));
                                         } elseif ($value22 == 3) { # UTF-8 Encode
-                                            $output = utf8_encode($output);
+                                            $output = mb_convert_encoding($output);
                                         } elseif ($value22 == 4) { # htmlentities
                                             $output = htmlentities($output, ENT_QUOTES, 'UTF-8');
                                         } elseif ($value22 == 5) { # Integer
