@@ -223,7 +223,7 @@ class Custom2Structure implements StructureInterface {
 		if ( preg_match( $static_attribute_title, $string ) ) {
 			return $string;
 		}else{
-			return wp_unslash( str_replace( array( "'", "\"", "&quot;" ), "", $string ) );
+			return wp_unslash( str_replace( array( "'", "\"", "&quot;" ), apply_filters( 'woo_feed_template_2_quotation', "" ), $string ) );
 		}
 
 	}
