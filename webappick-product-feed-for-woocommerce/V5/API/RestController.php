@@ -398,13 +398,31 @@ class RestController extends WP_REST_Controller {
 	}
 
 	/**
+	 * Safe unserialize that prevents PHP Object Injection.
+	 *
+	 * @param mixed $data The data to unserialize.
+	 * @return mixed The unserialized data or original if not serialized.
+	 */
+	public static function safe_unserialize( $data ) {
+		if ( ! is_string( $data ) ) {
+			return $data;
+		}
+		if ( ! is_serialized( $data ) ) {
+			return $data;
+		}
+		// Use allowed_classes = false to prevent object instantiation
+		return @unserialize( $data, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+	}
+
+	/**
 	 * @param $item
 	 * @param $request
 	 *
 	 * @return void|\WP_Error|\WP_REST_Response
 	 */
 	public function prepare_item_for_response( $item, $request ) {
-		return maybe_unserialize( $item );
+		// Use safe deserialization to prevent PHP Object Injection
+		return self::safe_unserialize( $item );
 	}
 
 

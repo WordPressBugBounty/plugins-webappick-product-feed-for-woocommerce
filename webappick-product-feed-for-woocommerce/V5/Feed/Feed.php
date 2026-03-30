@@ -38,12 +38,48 @@ class Feed {
 	}
 
 	/**
+	 * Validate that an option name is a valid feed option.
+	 *
+	 * @param string $option_name The option name to validate.
+	 * @return bool True if valid feed option, false otherwise.
+	 */
+	public static function is_valid_feed_option( $option_name ) {
+		$valid_prefixes = array( 'wf_feed_', 'wf_config' );
+		foreach ( $valid_prefixes as $prefix ) {
+			if ( strpos( $option_name, $prefix ) === 0 ) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Safe unserialize that prevents PHP Object Injection.
+	 *
+	 * @param mixed $data The data to unserialize.
+	 * @return mixed The unserialized data or original if not serialized.
+	 */
+	public static function safe_unserialize( $data ) {
+		if ( ! is_string( $data ) ) {
+			return $data;
+		}
+		if ( ! is_serialized( $data ) ) {
+			return $data;
+		}
+		// Use allowed_classes = false to prevent object instantiation
+		return @unserialize( $data, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+	}
+
+	/**
 	 * Update feed status
 	 */
 	public static function update_feed_status($feed_name, $status) {
 		$feed_name = isset( $feed_name ) ? sanitize_text_field( wp_unslash( $feed_name ) ) : false;
-		if ( ! empty( $feed_name ) ) {
-			$feed_info           = maybe_unserialize( get_option( $feed_name ) );
+		if ( ! empty( $feed_name ) && self::is_valid_feed_option( $feed_name ) ) {
+			$feed_info           = self::safe_unserialize( get_option( $feed_name ) );
+			if ( ! is_array( $feed_info ) ) {
+				return false;
+			}
 			$feed_info['status'] = isset( $status ) && 1 === (int) $status ? 1 : 0;
 
 			update_option( sanitize_text_field( wp_unslash( $feed_name ) ), serialize( $feed_info ), false ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize
@@ -62,11 +98,11 @@ class Feed {
 			$feed_data   = $wpdb->get_row( $wpdb->prepare( "SELECT option_name FROM $wpdb->options WHERE option_id = %d", $feed_id ) ); // phpcs:ignore
 			$feed_name   = Helper::extract_feed_option_name( $feed_data->option_name );
 		}
-		$feedInfo = maybe_unserialize( get_option( 'wf_feed_' . $feed_name ) );
-		if ( false !== $feedInfo ) {
+		$feedInfo = self::safe_unserialize( get_option( 'wf_feed_' . $feed_name ) );
+		if ( false !== $feedInfo && is_array( $feedInfo ) ) {
 			$feedInfo = $feedInfo['feedrules'];
 		} else {
-			$feedInfo = maybe_unserialize( get_option( 'wf_config' . $feed_name ) );
+			$feedInfo = self::safe_unserialize( get_option( 'wf_config' . $feed_name ) );
 		}
 		$deleted = false;
 		$file    = Helper::get_file( $feed_name, $feedInfo['provider'], $feedInfo['feedType'] );
@@ -104,9 +140,17 @@ class Feed {
 	}
 
 	public static function get_single_feed( $option_name ) {
+		// Security: Only allow querying valid feed options to prevent PHP Object Injection
+		// The option_name must start with a valid feed prefix
+		if ( ! self::is_valid_feed_option( $option_name ) ) {
+			// If no valid prefix, prepend the default feed prefix
+			$option_name = 'wf_feed_' . $option_name;
+		}
+
 		global $wpdb;
-		self::$feed_lists = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $wpdb->options WHERE option_name LIKE %s ORDER BY option_id DESC;", $option_name ), 'ARRAY_A' );
-		//SELECT * FROM wp_options WHERE option_name LIKE '_transient_timeout___woo_feed_cache_%' OR option_name LIKE '_transient___woo_feed_cache_%'
+		// Escape wildcards in option name to prevent SQL injection via LIKE patterns
+		$escaped_option_name = $wpdb->esc_like( $option_name );
+		self::$feed_lists = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $wpdb->options WHERE option_name LIKE %s ORDER BY option_id DESC;", $escaped_option_name ), 'ARRAY_A' );
 
 		return FeedHelper::prepare_all_feeds( self::$feed_lists , '' );
 	}
@@ -127,7 +171,7 @@ class Feed {
 		// normalize the option name.
 		$feed_from = Helper::extract_feed_option_name( $feed_from );
 		// get the feed data for duplicating.
-		$base_feed = maybe_unserialize( get_option( 'wf_feed_' . $feed_from, array() ) );
+		$base_feed = self::safe_unserialize( get_option( 'wf_feed_' . $feed_from, array() ) );
 		// validate the feed data.
 		if ( empty( $base_feed ) || ! is_array( $base_feed ) || ! isset( $base_feed['feedrules'] ) || ( isset( $base_feed['feedrules'] ) && empty( $base_feed['feedrules'] ) ) ) {
 			return new WP_Error( 'empty_base_feed', esc_html__( 'Feed data is empty. Can\'t duplicate feed.', 'woo-feed' ) );

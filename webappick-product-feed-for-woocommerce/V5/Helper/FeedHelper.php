@@ -209,7 +209,11 @@ class FeedHelper {
 
 			return [ $feed_option_name, array(), false, 1 ];
 		} else {
-			$old_feed = maybe_unserialize( get_option( $feed_option_name, [] ) );
+			// Use safe deserialization to prevent PHP Object Injection
+			$old_feed = self::safe_unserialize( get_option( $feed_option_name, [] ) );
+			if ( ! is_array( $old_feed ) ) {
+				$old_feed = array();
+			}
 			$status   = isset( $old_feed['status'] ) && 1 === (int) $old_feed['status'] ? 1 : 0;
 
 			return [ $feed_option_name, $old_feed, true, $status ];
@@ -542,6 +546,23 @@ class FeedHelper {
 
 
 	/**
+	 * Safe unserialize that prevents PHP Object Injection.
+	 *
+	 * @param mixed $data The data to unserialize.
+	 * @return mixed The unserialized data or original if not serialized.
+	 */
+	public static function safe_unserialize( $data ) {
+		if ( ! is_string( $data ) ) {
+			return $data;
+		}
+		if ( ! is_serialized( $data ) ) {
+			return $data;
+		}
+		// Use allowed_classes = false to prevent object instantiation
+		return @unserialize( $data, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+	}
+
+	/**
 	 * @param $item
 	 * @param $request
 	 *
@@ -550,11 +571,17 @@ class FeedHelper {
 	public static function prepare_item_for_response( $item ) {
 		$actual_value_from_db = $item;
 		if ( isset( $item['option_value'] ) ) {
-			$item['option_value'] = maybe_unserialize( maybe_unserialize( $item['option_value'] ) );
+			// Use safe deserialization to prevent PHP Object Injection
+			$item['option_value'] = self::safe_unserialize( self::safe_unserialize( $item['option_value'] ) );
 
 			return apply_filters( 'woo_feed_prepare_item_for_response', $item, $actual_value_from_db );
 		} else {
-			$item['option_value'] = maybe_unserialize( get_option( $item['option_name'] ) );
+			// Use safe deserialization to prevent PHP Object Injection
+			$item['option_value'] = self::safe_unserialize( get_option( $item['option_name'] ) );
+		}
+
+		if ( ! is_array( $item['option_value'] ) ) {
+			return apply_filters( 'woo_feed_prepare_item_for_response', $item, $actual_value_from_db );
 		}
 
 		if ( ! isset( $item['option_value']['url'] ) ) {

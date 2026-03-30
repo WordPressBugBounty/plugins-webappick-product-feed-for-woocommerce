@@ -28,6 +28,23 @@ use WP_Term;
 class ProductHelper {
 
 	/**
+	 * Safe unserialize that prevents PHP Object Injection.
+	 *
+	 * @param mixed $data The data to unserialize.
+	 * @return mixed The unserialized data or original if not serialized.
+	 */
+	private static function safe_unserialize( $data ) {
+		if ( ! is_string( $data ) ) {
+			return $data;
+		}
+		if ( ! \is_serialized( $data ) ) {
+			return $data;
+		}
+		// Use allowed_classes = false to prevent object instantiation
+		return @unserialize( $data, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+	}
+
+	/**
 	 * Advance Custom Field (ACF) Prefix
 	 *
 	 * @since 3.1.18
@@ -596,7 +613,7 @@ class ProductHelper {
 	 * Test case is available in CTXFeed\tests\wpunit\Output\CategoryMappingTest.
 	 */
 	public static function get_category_mapping( $mapping_name, $product_id ) {
-		$mapping_settings = \maybe_unserialize( \get_option( $mapping_name ) );
+		$mapping_settings = self::safe_unserialize( \get_option( $mapping_name ) );
 
 		if ( ! isset( $mapping_settings['cmapping'], $mapping_settings['gcl-cmapping'] ) ) {
 			return '';
@@ -712,7 +729,7 @@ class ProductHelper {
 	 */
 	public static function get_dynamic_attribute( $product, $attribute_name, $merchant_attribute, $config ) {
 		$get_attribute_value_by_type = new AttributeValueByType( $attribute_name, $merchant_attribute, $product, $config );
-		$get_value                   = \maybe_unserialize( \get_option( $attribute_name ) );
+		$get_value                   = self::safe_unserialize( \get_option( $attribute_name ) );
 		$wf_dattribute_code          = $get_value['wfDAttributeCode'] ?? '';
 		$attribute                   = isset( $get_value['attribute'] ) ? (array) $get_value['attribute'] : array();
 		$condition                   = isset( $get_value['condition'] ) ? (array) $get_value['condition'] : array();

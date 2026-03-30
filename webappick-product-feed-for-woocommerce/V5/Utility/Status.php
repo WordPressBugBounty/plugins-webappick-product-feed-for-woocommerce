@@ -65,6 +65,24 @@ class Status {
 	}
 
 	/**
+	 * Safe unserialize that prevents PHP Object Injection.
+	 *
+	 * @param mixed $data The data to unserialize.
+	 * @param array $allowed_classes Optional array of allowed class names.
+	 * @return mixed The unserialized data or false on failure.
+	 */
+	private function safe_unserialize( $data, $allowed_classes = false ) {
+		if ( ! is_string( $data ) ) {
+			return $data;
+		}
+		if ( ! is_serialized( $data ) ) {
+			return $data;
+		}
+		// Use allowed_classes to prevent arbitrary object instantiation
+		return @unserialize( $data, array( 'allowed_classes' => $allowed_classes ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+	}
+
+	/**
 	 * Get Wordpress.org plugin information.
 	 *
 	 * @param $slug
@@ -95,7 +113,8 @@ class Status {
 		if ( is_wp_error($response) ) {
 			return false;
 		}
-		return unserialize( $response['body']); //phpcs:ignore
+		// Use safe deserialization - only allow stdClass objects from WP.org API
+		return $this->safe_unserialize( $response['body'], array( 'stdClass' ) );
 
 	}
 
@@ -686,8 +705,9 @@ class Status {
 		$feed_urls = array();
 		if ( ! empty( $feed_data ) and is_array( $feed_data ) ) {
 			foreach ( $feed_data as $key => $data ) {
-				$feed_info   = maybe_unserialize( get_option( $data['option_name'] ) );
-				if(isset($feed_info['url'])) {
+				// Use safe deserialization to prevent PHP Object Injection
+				$feed_info = $this->safe_unserialize( get_option( $data['option_name'] ) );
+				if( is_array( $feed_info ) && isset($feed_info['url'])) {
 					$feed_urls[] = $feed_info['url'];
 				}
 			}

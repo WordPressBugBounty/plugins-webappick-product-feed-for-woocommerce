@@ -20,6 +20,22 @@ use WC_Product;
  */
 class DynamicAttributes {
 
+	/**
+	 * Safe unserialize that prevents PHP Object Injection.
+	 *
+	 * @param mixed $data The data to unserialize.
+	 * @return mixed The unserialized data or original if not serialized.
+	 */
+	private static function safe_unserialize( $data ) {
+		if ( ! is_string( $data ) ) {
+			return $data;
+		}
+		if ( ! is_serialized( $data ) ) {
+			return $data;
+		}
+		// Use allowed_classes = false to prevent object instantiation
+		return @unserialize( $data, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+	}
 
 	/**
 	 * Get the value of a dynamic attribute
@@ -34,7 +50,7 @@ class DynamicAttributes {
 	public static function getDynamicAttributeValue( $attribute, $merchant_attribute, $product, $config, $parent_product=null ) {
 
 		//$get_attribute_value_by_type = new AttributeValueByType( $attribute, $merchant_attribute, $product, $config );
-		$getValue         = maybe_unserialize( get_option( $attribute ) );
+		$getValue         = self::safe_unserialize( get_option( $attribute ) );
 		$wfDAttributeCode = isset( $getValue['wfDAttributeCode'] ) ? $getValue['wfDAttributeCode'] : '';
 		$attribute        = isset( $getValue['attribute'] ) ? (array) $getValue['attribute'] : array();
 		$condition        = isset( $getValue['condition'] ) ? (array) $getValue['condition'] : array();

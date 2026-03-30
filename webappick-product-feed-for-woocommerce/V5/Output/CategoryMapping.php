@@ -16,6 +16,22 @@ use CTXFeed\V5\Helper\ProductHelper;
  */
 class CategoryMapping {
 
+	/**
+	 * Safe unserialize that prevents PHP Object Injection.
+	 *
+	 * @param mixed $data The data to unserialize.
+	 * @return mixed The unserialized data or original if not serialized.
+	 */
+	private static function safe_unserialize( $data ) {
+		if ( ! is_string( $data ) ) {
+			return $data;
+		}
+		if ( ! is_serialized( $data ) ) {
+			return $data;
+		}
+		// Use allowed_classes = false to prevent object instantiation
+		return @unserialize( $data, array( 'allowed_classes' => false ) ); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_unserialize
+	}
 
 	 /**
 	  * Return Category Mapping Values by Product Id [Parent Product for variation]
@@ -26,7 +42,7 @@ class CategoryMapping {
 	 */
 	public static function getCategoryMappingValue( $categoryMappingName, $product_id ) {
 
-		$getValue                           = maybe_unserialize( get_option( $categoryMappingName ) );
+		$getValue                           = self::safe_unserialize( get_option( $categoryMappingName ) );
 		$cat_map_value                      = '';
 		$suggestive_category_list_merchants = array(
 			'google',
