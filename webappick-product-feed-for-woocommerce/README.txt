@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 6.9
 Requires PHP: 5.6
-Stable tag: 6.6.27
+Stable tag: 6.6.28
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -409,8 +409,11 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 6.6.28 (April 04, 2026) =
+* Functional Improvements: Title input option added on feed duplicate.
+
 = Version 6.6.27 (March 30, 2026) =
-* Patch: Vulnerable to PHP Object Injection
+* Added Patch: Vulnerable to PHP Object Injection
 
 = Version 6.6.26 (March 10, 2026) =
 * Fix UI : Promotion message display issue

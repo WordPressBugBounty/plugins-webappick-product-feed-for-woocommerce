@@ -338,7 +338,7 @@ class ManageFeeds extends RestController {
 	public function duplicate_feed( $request ) {
 		$args = $request->get_params();
 
-		$response = Feed::duplicate_feed( $args['feed'] );
+		$response = Feed::duplicate_feed( $args['feed'], $args['feedName'] );
 
 		if ( is_wp_error( $response ) ) {
 			return $this->error( $response->get_error_message(), $response->get_error_code() );

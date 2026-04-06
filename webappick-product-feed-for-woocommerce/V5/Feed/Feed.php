@@ -165,11 +165,13 @@ class Feed {
 	 */
 	public static function duplicate_feed( $feed_from, $new_name = '', $copy_file = true ) {
 
+
 		if ( empty( $feed_from ) ) {
 			return new WP_Error( 'invalid_feed_name_top_copy_from', esc_html__( 'Invalid Request.', 'woo-feed' ) );
 		}
 		// normalize the option name.
 		$feed_from = Helper::extract_feed_option_name( $feed_from );
+
 		// get the feed data for duplicating.
 		$base_feed = self::safe_unserialize( get_option( 'wf_feed_' . $feed_from, array() ) );
 		// validate the feed data.
@@ -182,14 +184,19 @@ class Feed {
 			$new_name = FeedHelper::generate_unique_feed_file_name( $feed_from, $base_feed['feedrules']['feedType'], $base_feed['feedrules']['provider'] );
 			// example-2 or example-2-2-3
 			$part = ' ' . Helper::str_replace_trim( $feed_from . '-', '', $new_name ); // -2-2-3
+
+			$base_feed['feedrules']['filename'] = $new_name . $part;
 		} else {
+
+			// new name for the feed with numeric parts from the unique slug.
+			$base_feed['feedrules']['filename'] = $new_name . $part;
+
 			$new_name = FeedHelper::generate_unique_feed_file_name( $new_name, $base_feed['feedrules']['feedType'], $base_feed['feedrules']['provider'] );
+
 		}
 
 		$new_name = AttributeValueByType::FEED_RULES_OPTION_PREFIX . $new_name;
 
-		// new name for the feed with numeric parts from the unique slug.
-		$base_feed['feedrules']['filename'] = $base_feed['feedrules']['filename'] . $part;
 		// copy feed config data.
 		$saved_feed = FeedHelper::save_feed_config_data( $base_feed['feedrules'], $new_name, false );
 		if ( false === $saved_feed ) {
