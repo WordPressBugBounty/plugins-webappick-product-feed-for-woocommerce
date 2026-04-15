@@ -46,9 +46,17 @@ class VariableProductPrice implements PriceInterface {
 	/**
 	 * Get Sale Price.
 	 *
-	 * @return float|int
+	 * Returns sale price only if the product is currently on sale.
+	 * If sale has a schedule and the schedule has expired, returns empty string.
+	 *
+	 * @return float|int|string
 	 */
 	public function sale_price() {
+		// Check if product is currently on sale (respects scheduled dates)
+		if ( ! $this->product->is_on_sale() ) {
+			return '';
+		}
+
 		$sale_price = $this->variation_price_by_type( 'sale_price' );
 		return apply_filters( 'woo_feed_parent_product_sale_price', $sale_price, $this->product, $this->config, false, 'sale_price' );
 	}

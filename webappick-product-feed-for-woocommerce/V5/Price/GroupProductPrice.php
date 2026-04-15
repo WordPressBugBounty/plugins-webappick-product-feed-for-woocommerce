@@ -85,7 +85,8 @@ class GroupProductPrice implements PriceInterface {
 						break;
 
 					case 'sale_price':
-						$get_price = $product->get_sale_price();
+						// Only get sale price if product is currently on sale (respects scheduled dates)
+						$get_price = $product->is_on_sale() ? $product->get_sale_price() : '';
 
 						break;
 

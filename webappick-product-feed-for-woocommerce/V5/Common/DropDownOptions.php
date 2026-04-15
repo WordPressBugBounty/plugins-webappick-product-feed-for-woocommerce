@@ -1200,6 +1200,27 @@ class DropDownOptions {
 					$currencies = array_combine( $currencies, $currencies );
 					$options    = $currencies;
 				}
+			} elseif ( is_plugin_active( 'yaycurrency/yay-currency.php' ) || defined( 'YAY_CURRENCY_VERSION' ) ) {
+				// Yay Currency by YayCommerce - uses custom post type 'yay-currency-manage'
+				$yay_currencies = get_posts(
+					array(
+						'posts_per_page' => -1,
+						'post_type'      => 'yay-currency-manage',
+						'post_status'    => 'publish',
+						'order'          => 'ASC',
+						'orderby'        => 'menu_order',
+					)
+				);
+				if ( ! empty( $yay_currencies ) ) {
+					$currencies = [];
+					foreach ( $yay_currencies as $currency_post ) {
+						$currency_code = $currency_post->post_title;
+						$currencies[ $currency_code ] = $currency_code;
+					}
+					if ( ! empty( $currencies ) ) {
+						$options = $currencies;
+					}
+				}
 			}
 		}
 

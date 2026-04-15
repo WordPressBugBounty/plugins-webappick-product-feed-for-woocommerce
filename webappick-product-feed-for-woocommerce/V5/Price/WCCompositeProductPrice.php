@@ -7,7 +7,8 @@ use WC_Product_Variable;
 use WC_Product_Variation;
 use WC_Product_Composite;
 
-class WCCompositeProductPrice implements PriceInterface {
+class
+WCCompositeProductPrice implements PriceInterface {
 
 	private $product;
 	private $config;

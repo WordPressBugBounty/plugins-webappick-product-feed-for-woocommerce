@@ -42,7 +42,8 @@ class SgGroupProductPrice implements PriceInterface {
 						$get_price = $child_product->get_regular_price();
 						break;
 					case 'sale_price':
-						$get_price = $child_product->get_sale_price();
+						// Only get sale price if product is currently on sale (respects scheduled dates)
+						$get_price = $child_product->is_on_sale() ? $child_product->get_sale_price() : '';
 						break;
 					default:
 						$get_price = $child_product->get_price();

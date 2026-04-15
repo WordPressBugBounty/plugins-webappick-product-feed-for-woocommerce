@@ -53,10 +53,18 @@ class SimpleProductPrice implements PriceInterface {
 
 	/**
 	 * Get Sale Price.
-     *
+	 *
+	 * Returns sale price only if the product is currently on sale.
+	 * If sale has a schedule and the schedule has expired, returns empty string.
+	 *
 	 * @return string
 	 */
 	public function sale_price() {
+		// Check if product is currently on sale (respects scheduled dates)
+		if ( ! $this->product->is_on_sale() ) {
+			return '';
+		}
+
 		return $this->product->get_sale_price();
 	}
 
