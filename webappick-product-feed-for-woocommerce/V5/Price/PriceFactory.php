@@ -16,6 +16,7 @@ class PriceFactory {
      * @return \CTXFeed\V5\Price\ProductPrice Product Price.
 	 */
 	public static function get( $product, $config ) {// phpcs:ignore
+
 		if ( $product->is_type( 'variable' ) ) {
 			/**
 			 * Variable Product does not have its price. So it depends on variations.
@@ -32,7 +33,10 @@ class PriceFactory {
 			 * Plugin Name: WPC Grouped Product for WooCommerce.
 			 */
 			$class = new ProductPrice( new SgGroupProductPrice( $product, $config ), $product );
-		}  else {
+		} elseif ( is_plugin_active( 'woo-product-bundle/wpc-product-bundles.php' ) && $product->is_type( 'woosb' ) ) {
+
+			$class =  new SbBundleProductPrice( $product, $config  );
+		} else {
 			/**
 			 * Simple Product, External Product, Product Variation, YITH Composite etc.
 			 * Note*: YITH does not auto select components. So no need to calculate component price.
