@@ -242,6 +242,9 @@ class Woo_Feed {
 	 */
 	public function run() {
 		if ( wooFeed_check_WC() && wooFeed_is_WC_supported() ) {
+            if ( ! is_admin() && ! wp_doing_cron() && ! wp_doing_ajax() && ! defined('REST_REQUEST') ) {
+                return;
+            }
 			$this->load_dependencies();
 			$this->set_locale();
 			$this->define_admin_hooks();

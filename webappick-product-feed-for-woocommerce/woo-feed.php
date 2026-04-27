@@ -10,7 +10,7 @@
  * Plugin Name:       CTX Feed
  * Plugin URI:        https://webappick.com/
  * Description:       Easily generate woocommerce product feed for any marketing channel like Google Shopping(Merchant), Facebook Remarketing, Bing, eBay & more. Support 100+ Merchants.
- * Version:           6.6.30
+ * Version:           6.6.31
  * Author:            WebAppick
  * Author URI:        https://webappick.com/
  * License:           GPL v2
@@ -212,7 +212,6 @@ if ( ! function_exists( 'run_woo_feed' ) ) {
 	function run_woo_feed() {
 		$plugin = new Woo_Feed();
 		register_activation_hook( WOO_FEED_FREE_FILE, array( 'Woo_Feed_installer', 'install' ) );
-		register_shutdown_function( 'woo_feed_log_errors_at_shutdown' );
 		add_action( 'woo_feed_cleanup_logs', 'woo_feed_cleanup_logs' );
 		/**
 		 * Ensure Feed Plugin runs only if WooCommerce loaded (installed and activated)
@@ -245,8 +244,21 @@ add_action('init', function(){
 
 });
 
-// Handle Ajax Actions
-require_once WOO_FEED_FREE_PATH . 'includes/action-handler.php';
+// Handle Ajax Actions - only load when needed (admin, cron, ajax, or REST requests)
+// Note: REST_REQUEST constant is not yet defined at plugin load time, so we detect REST via URL
+$is_rest_request = ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ||
+                   ( isset( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], '/wp-json/' ) !== false ) ||
+                   ( isset( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], 'rest_route=' ) !== false );
+
+if ( is_admin() || wp_doing_cron() || wp_doing_ajax() || $is_rest_request ) {
+	register_shutdown_function( 'woo_feed_log_errors_at_shutdown' );
+	require_once WOO_FEED_FREE_PATH . 'includes/action-handler.php';
+} else {
+	// Load MultiVendor frontend functionality separately (My Account page feed tab for vendors)
+	if ( CTXFeed\Compatibility\MultiVendor::woo_feed_is_multi_vendor() ) {
+		new CTXFeed\Compatibility\MultiVendor();
+	}
+}
 
 // ======================================================================================================================*
 //
