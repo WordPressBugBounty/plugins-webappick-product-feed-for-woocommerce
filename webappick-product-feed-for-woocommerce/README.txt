@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 6.9
 Requires PHP: 5.6
-Stable tag: 6.6.31
+Stable tag: 6.6.32
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -408,6 +408,9 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 6.6.32 (May 06, 2026) =
+* Code Optimization: Refactored codebase for improved efficiency.
 
 = Version 6.6.31 (April 27, 2026) =
 * Performance Improvement: On Frontend page load, Admin file load prevented.

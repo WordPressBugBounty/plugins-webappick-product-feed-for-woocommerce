@@ -185,6 +185,9 @@ class CompatibilityFactory {
 			'yaycurrency/yay-currency.php'                                              => 'YayCurrency',
 			// DONE
 			// https://yaycommerce.com/yaycurrency-woocommerce-multi-currency-switcher/
+			'x-currency/x-currency.php'                                                 => 'XCurrency',
+			// DONE
+			// https://wordpress.org/plugins/x-currency/
 
 
 			#################################################################################
