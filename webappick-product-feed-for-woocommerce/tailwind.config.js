@@ -14,6 +14,11 @@ module.exports = {
         "3xl": "2200px",
       },
     },
+    fontFamily: {
+      playfair: ["Playfair", "serif"],
+      intelonemono: ["Intel One Mono", "monospace"],
+      inter: ["Inter", "sans-serif"],
+    },
   },
   plugins: [],
 };

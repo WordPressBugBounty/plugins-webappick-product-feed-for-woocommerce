@@ -4,6 +4,7 @@ namespace CTXFeed\V5\API\V1;
 
 use CTXFeed\V5\API\RestConstants;
 use CTXFeed\V5\API\RestController;
+use CTXFeed\V5\Common\DisplayBanners;
 use CTXFeed\V5\Common\Helper;
 use CTXFeed\V5\Utility\Cache;
 use CTXFeed\V5\Utility\Status;
@@ -102,6 +103,34 @@ class WPStatus extends RestController {
 
 			]
 		);
+
+		register_rest_route(
+			$this->namespace,
+			$this->rest_base . '/lifetime-banner',[
+				/**
+				 * @endpoint wp-json/ctxfeed/v1/wp-status/lifetime-banner
+				 * @method GET
+				 * @description Get lifetime banner visibility status for the current user
+				 */
+				[
+					'methods'             => WP_REST_Server::READABLE,
+					'callback'            => [ $this, 'get_lifetime_banner_status' ],
+					'permission_callback' => [ $this, 'get_item_permissions_check' ],
+					'args'                => [],
+				],
+				/**
+				 * @endpoint wp-json/ctxfeed/v1/wp-status/lifetime-banner
+				 * @method POST
+				 * @description Dismiss lifetime banner for the current user for 15 days
+				 */
+				[
+					'methods'             => WP_REST_Server::CREATABLE,
+					'callback'            => [ $this, 'dismiss_lifetime_banner' ],
+					'permission_callback' => [ $this, 'get_item_permissions_check' ],
+					'args'                => [],
+				]
+			]
+		);
 	}
 
 	public function get_wp_status(){
@@ -135,6 +164,41 @@ class WPStatus extends RestController {
 		return $this->success( [
 			'result'=>$delete_cache
 		]);
+	}
+
+	/**
+	 * Get lifetime banner visibility status for the current user.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public function get_lifetime_banner_status() {
+		$status = DisplayBanners::get_lifetime_banner_status();
+
+		return $this->success( $status );
+	}
+
+	/**
+	 * Dismiss lifetime banner for the current user.
+	 *
+	 * @return \WP_REST_Response
+	 */
+	public function dismiss_lifetime_banner() {
+		$result = DisplayBanners::dismiss_lifetime_banner();
+
+		if ( $result ) {
+			$status = DisplayBanners::get_lifetime_banner_status();
+
+			return $this->success( array(
+				'dismissed' => true,
+				'status'    => $status,
+			) );
+		}
+
+		return $this->error(
+			__( 'Failed to dismiss banner.', 'woo-feed' ),
+			'banner_dismiss_failed',
+			500
+		);
 	}
 
 }
