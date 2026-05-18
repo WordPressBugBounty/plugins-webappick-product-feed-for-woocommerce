@@ -80,10 +80,28 @@ class Woo_Feed_installer {
 		self::migrate_db();
 		self::create_cron_jobs();
 		self::create_files();
+		self::maybe_set_onboarding_flag();
 		self::update_woo_feed_version();
 
 		// installation finished.
 		delete_transient( 'woo_feed_installing' );
+	}
+
+	/**
+	 * Set onboarding flag for new installations only.
+	 *
+	 * @since 6.6.33
+	 */
+	private static function maybe_set_onboarding_flag() {
+		// Only set onboarding for fresh installations, not updates
+		if ( ! defined( 'WOO_FEED_UPDATING' ) ) {
+			// Check if this is a fresh install (no previous version stored)
+			$existing_version = get_option( 'woo_feed_free_version', false );
+			if ( false === $existing_version ) {
+				update_option( 'woo_feed_onboarding_pending', 'yes', false );
+				set_transient( 'woo_feed_redirect_to_onboarding', 'yes', 30 );
+			}
+		}
 	}
 
 	private static function pro_version_warning() {

@@ -233,6 +233,8 @@ class Woo_Feed {
 		$this->loader->add_action( 'admin_menu', $plugin_admin, 'load_admin_pages' );
 		$this->loader->add_action( 'admin_page_access_denied', $plugin_admin, 'handle_old_menu_slugs' );
 		$this->loader->add_filter( 'plugin_action_links_' . WOO_FEED_PLUGIN_BASE_NAME, $plugin_admin, 'woo_feed_plugin_action_links' );
+		// Onboarding redirect for new users
+		$this->loader->add_action( 'admin_init', $plugin_admin, 'maybe_redirect_to_onboarding' );
 	}
 
 	/**

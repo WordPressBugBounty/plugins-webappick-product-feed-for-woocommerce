@@ -6274,8 +6274,8 @@ add_action('wp_ajax_woo_feed_plugin_installing', 'woo_feed_plugin_installing');
 if ( ! function_exists( 'woo_feed_install_and_activate_plugin' ) ) {
     function woo_feed_install_and_activate_plugin($plugin_slug)
     {
-
-        if ( ! current_user_can( 'manage_options' ) ) {
+        // Check for proper capabilities to install and activate plugins
+        if ( ! current_user_can( 'install_plugins' ) || ! current_user_can( 'activate_plugins' ) ) {
             return "failed";
         }
 
@@ -6321,6 +6321,80 @@ if ( ! function_exists( 'woo_feed_install_and_activate_plugin' ) ) {
 }
 
 #==== MERCHANT TEMPLATE OVERRIDE END ================#
+
+#==== ONBOARDING AJAX HANDLERS START ================#
+
+if ( ! function_exists( 'woo_feed_onboarding_install_plugin' ) ) {
+	/**
+	 * AJAX handler for installing plugins from onboarding wizard.
+	 *
+	 * @since 6.6.33
+	 */
+	function woo_feed_onboarding_install_plugin() {
+		// Verify nonce
+		if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'woo_feed_onboarding_nonce' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Security check failed.', 'woo-feed' ) ) );
+		}
+
+		// Check capabilities
+		if ( ! current_user_can( 'install_plugins' ) || ! current_user_can( 'activate_plugins' ) ) {
+			wp_send_json_error( array( 'message' => __( 'You do not have permission to install plugins.', 'woo-feed' ) ) );
+		}
+
+		// Get plugin slug
+		$plugin_slug = isset( $_POST['plugin_slug'] ) ? sanitize_text_field( wp_unslash( $_POST['plugin_slug'] ) ) : '';
+
+		if ( empty( $plugin_slug ) ) {
+			wp_send_json_error( array( 'message' => __( 'Invalid plugin slug.', 'woo-feed' ) ) );
+		}
+
+		// Allowed plugins for security
+		$allowed_plugins = array( 'disco', 'webappick-pdf-invoice-for-woocommerce' );
+		if ( ! in_array( $plugin_slug, $allowed_plugins, true ) ) {
+			wp_send_json_error( array( 'message' => __( 'Plugin not allowed.', 'woo-feed' ) ) );
+		}
+
+		// Install and activate the plugin
+		$result = woo_feed_install_and_activate_plugin( $plugin_slug );
+
+		if ( 'failed' === $result ) {
+			wp_send_json_error( array( 'message' => __( 'Failed to install plugin.', 'woo-feed' ) ) );
+		}
+
+		wp_send_json_success( array(
+			'message' => __( 'Plugin installed and activated successfully.', 'woo-feed' ),
+			'status'  => $result,
+		) );
+	}
+}
+add_action( 'wp_ajax_woo_feed_onboarding_install_plugin', 'woo_feed_onboarding_install_plugin' );
+
+if ( ! function_exists( 'woo_feed_complete_onboarding' ) ) {
+	/**
+	 * AJAX handler for completing the onboarding wizard.
+	 *
+	 * @since 6.6.33
+	 */
+	function woo_feed_complete_onboarding() {
+		// Verify nonce
+		if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'woo_feed_onboarding_nonce' ) ) {
+			wp_send_json_error( array( 'message' => __( 'Security check failed.', 'woo-feed' ) ) );
+		}
+
+		// Check capabilities
+		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+			wp_send_json_error( array( 'message' => __( 'You do not have permission to complete onboarding.', 'woo-feed' ) ) );
+		}
+
+		// Mark onboarding as complete
+		delete_option( 'woo_feed_onboarding_pending' );
+
+		wp_send_json_success( array( 'message' => __( 'Onboarding completed.', 'woo-feed' ) ) );
+	}
+}
+add_action( 'wp_ajax_woo_feed_complete_onboarding', 'woo_feed_complete_onboarding' );
+
+#==== ONBOARDING AJAX HANDLERS END ================#
 
 
 if( ! function_exists('get_plugin_file')){

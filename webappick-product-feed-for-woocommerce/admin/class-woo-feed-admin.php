@@ -127,6 +127,18 @@ class Woo_Feed_Admin {
         if ( isset( $_GET['page'] ) &&  'webappick-new-feed' === $_GET['page']  ) {
             wp_enqueue_style( 'codemirror' );
         }
+
+		// Enqueue onboarding styles
+		if ( isset( $_GET['page'] ) && 'webappick-feed-onboarding' === $_GET['page'] ) {
+			wp_enqueue_style(
+				'woo-feed-onboarding',
+				plugin_dir_url( __FILE__ ) . 'css/woo-feed-onboarding.css',
+				array(),
+				$this->version,
+				'all'
+			);
+		}
+
 		// Enqueue for react UI
 		wp_register_style(
 			'woo-feed-react',
@@ -540,6 +552,33 @@ class Woo_Feed_Admin {
                 wp_enqueue_script( 'codemirror-mode-xml' );
             }
 
+			// Enqueue onboarding scripts
+			if ( isset( $_GET['page'] ) && 'webappick-feed-onboarding' === $_GET['page'] ) {
+				wp_enqueue_script(
+					'woo-feed-onboarding',
+					plugin_dir_url( __FILE__ ) . 'js/woo-feed-onboarding.js',
+					array( 'jquery' ),
+					$this->version,
+					true
+				);
+
+				wp_localize_script(
+					'woo-feed-onboarding',
+					'wooFeedOnboarding',
+					array(
+						'ajaxUrl'      => admin_url( 'admin-ajax.php' ),
+						'nonce'        => wp_create_nonce( 'woo_feed_onboarding_nonce' ),
+						'redirectUrl'  => admin_url( 'admin.php?page=webappick-new-feed' ),
+						'totalPlugins' => 2,
+						'i18n'         => array(
+							'installing' => __( 'Installing.....', 'woo-feed' ),
+							'finished'   => __( 'Finished', 'woo-feed' ),
+							'error'      => __( 'Error installing plugin', 'woo-feed' ),
+						),
+					)
+				);
+			}
+
 			// Enqueue for react U
 			wp_register_script(
 				'woo-feed-react',
@@ -716,12 +755,70 @@ class Woo_Feed_Admin {
 				'webappick-feed-docs',
 				array( $this, 'woo_feed_manage_feed_react' )
 			);
+
+			// Hidden onboarding page (not shown in menu)
+			add_submenu_page(
+				null, // No parent - hidden page
+				__( 'CTX Feed Setup', 'woo-feed' ),
+				__( 'Setup', 'woo-feed' ),
+				'manage_woocommerce',
+				'webappick-feed-onboarding',
+				array( $this, 'woo_feed_onboarding_page' )
+			);
+		}
+	}
+
+	/**
+	 * Render the onboarding page.
+	 *
+	 * @since 6.6.33
+	 */
+	public function woo_feed_onboarding_page() {
+		// Add body class for onboarding page styling
+		add_filter( 'admin_body_class', function( $classes ) {
+			return $classes . ' ctx-feed-onboarding-page';
+		});
+
+		require_once WOO_FEED_FREE_ADMIN_PATH . 'partials/woo-feed-onboarding.php';
+	}
+
+	/**
+	 * Redirect new users to onboarding page after plugin activation.
+	 *
+	 * @since 6.6.33
+	 */
+	public function maybe_redirect_to_onboarding() {
+		// Check if we should redirect to onboarding
+		if ( get_transient( 'woo_feed_redirect_to_onboarding' ) ) {
+			delete_transient( 'woo_feed_redirect_to_onboarding' );
+
+			// Don't redirect if activating multiple plugins or doing bulk activation
+			if ( isset( $_GET['activate-multi'] ) || ! current_user_can( 'manage_woocommerce' ) ) {
+				return;
+			}
+
+			// Redirect to onboarding page
+			wp_safe_redirect( admin_url( 'admin.php?page=webappick-feed-onboarding' ) );
+			exit;
+		}
+
+		// If onboarding is pending and user visits any CTX Feed page, redirect to onboarding
+		if ( 'yes' === get_option( 'woo_feed_onboarding_pending', 'no' ) ) {
+			global $pagenow;
+			$page = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+
+			// Check if it's a CTX Feed page (except onboarding page itself)
+			if ( 'admin.php' === $pagenow && false !== strpos( $page, 'webappick' ) && 'webappick-feed-onboarding' !== $page ) {
+				wp_safe_redirect( admin_url( 'admin.php?page=webappick-feed-onboarding' ) );
+				exit;
+			}
 		}
 	}
 
 	public function woo_feed_manage_feed_react() {
+		$page = isset( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
 
-		if ( $_GET['page'] === 'webappick-manage-feeds' ) {
+		if ( 'webappick-manage-feeds' === $page ) {
 			?>
             <div class="wrap wapk-admin">
                 <div class="wapk-section">

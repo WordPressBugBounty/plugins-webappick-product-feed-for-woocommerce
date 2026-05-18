@@ -1,0 +1,585 @@
+/**
+ * CTX Feed Onboarding Wizard Styles
+ *
+ * @package    Woo_Feed
+ * @subpackage Woo_Feed/admin/css
+ * @since      6.6.33
+ */
+
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Poppins:wght@400;500;600&display=swap");
+
+/* Reset WordPress admin chrome around the wizard */
+.ctx-feed-onboarding-page #wpcontent {
+  padding-left: 0;
+}
+
+.ctx-feed-onboarding-page #wpbody-content {
+  padding-bottom: 0;
+}
+
+.ctx-feed-onboarding-page #wpfooter {
+  display: none;
+}
+
+.ctx-feed-onboarding-page .update-nag,
+.ctx-feed-onboarding-page .notice,
+.ctx-feed-onboarding-page #screen-meta,
+.ctx-feed-onboarding-page #screen-meta-links {
+  display: none !important;
+}
+
+/* Main wrapper – fills remaining viewport next to WP sidebar */
+.ctx-feed-onboarding-wrapper {
+  min-height: calc(100vh - 32px);
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  box-sizing: border-box;
+  font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+  color: #111827;
+}
+
+.ctx-feed-onboarding-container {
+  position: relative;
+  max-width: 860px;
+  width: 100%;
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 5px 15px rgba(20, 14, 8, 0.06), 0 1px 2px rgba(20, 14, 8, 0.04);
+  overflow: hidden;
+  padding: 28px 34px 32px;
+  box-sizing: border-box;
+}
+
+/* Header */
+.ctx-feed-onboarding-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.ctx-feed-onboarding-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ctx-feed-onboarding-logo img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+
+.ctx-feed-onboarding-logo-text {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 26px;
+  font-weight: 800;
+  color: #111827;
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.ctx-feed-onboarding-logo-text span {
+  color: #59c1e8;
+  background: linear-gradient(127.62deg, #59c1e8 0%, #0095cd 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.ctx-feed-version-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  background: rgba(128, 255, 130, 0.18);
+  border: 1px solid #659b09;
+  color: #659b09;
+  border-radius: 999px;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+/* Status pill */
+.ctx-feed-onboarding-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.ctx-feed-status-dot {
+  width: 8px;
+  height: 8px;
+  background: #75ab00;
+  border-radius: 100%;
+}
+
+.ctx-feed-status-text {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: #75ab00;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+}
+
+/* Title */
+.ctx-feed-onboarding-title {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 34px;
+  font-weight: 800;
+  color: #111827;
+  line-height: 1.22;
+  letter-spacing: -0.7px;
+  margin: 0 0 12px 0;
+}
+
+.ctx-feed-onboarding-title .ctx-feed-title-line,
+.ctx-feed-onboarding-title .ctx-feed-title-highlight {
+  display: block;
+}
+
+.ctx-feed-title-highlight {
+  background: linear-gradient(127.62deg, #59c1e8 0%, #0095cd 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.ctx-feed-onboarding-description {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 16px;
+  color: #6a6a6a;
+  line-height: 1.65;
+  margin: 0 0 22px 0;
+  max-width: 720px;
+}
+
+/* Trust bar */
+.ctx-feed-trust-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  background: #fafafa;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px 18px;
+  margin-bottom: 22px;
+  max-width: max-content;
+}
+
+.ctx-feed-trust-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ctx-feed-trust-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.ctx-feed-trust-text {
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+  white-space: nowrap;
+}
+
+.ctx-feed-trust-item:first-child .ctx-feed-trust-text {
+  color: #111827;
+}
+
+.ctx-feed-trust-divider {
+  width: 1px;
+  height: 18px;
+  background: #e5e7eb;
+  flex-shrink: 0;
+}
+
+/* Plugin Cards – 2-column grid */
+.ctx-feed-onboarding-plugins {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-bottom: 24px;
+}
+
+.ctx-feed-plugin-card {
+  position: relative;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  background: #ffffff;
+  transition: box-shadow 0.2s ease, transform 0.15s ease;
+  cursor: pointer;
+  box-sizing: border-box;
+  min-height: 140px;
+}
+
+.ctx-feed-plugin-card--green {
+  border-color: #75ab00;
+  background: linear-gradient(
+    180deg,
+    rgba(117, 171, 0, 0.07) 0%,
+    rgba(210, 255, 123, 0.13) 100%
+  );
+  box-shadow: 0 0 0 2.5px rgba(117, 171, 0, 0.1),
+    0 1px 2px rgba(20, 14, 8, 0.04);
+}
+
+.ctx-feed-plugin-card--blue {
+  border-color: #59c1e8;
+  background: linear-gradient(180deg, #f1fcff 0%, #feffff 100%);
+  box-shadow: 0 0 0 2.5px rgba(89, 193, 232, 0.1),
+    0 1px 2px rgba(20, 14, 8, 0.04);
+}
+
+.ctx-feed-plugin-card.is-installing {
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+/* Once install starts, cards are no longer selectable */
+.ctx-feed-plugin-card.is-locked {
+  cursor: default;
+}
+
+/* Hidden native checkbox + label takes whole-card click via JS */
+.ctx-feed-plugin-checkbox-wrapper {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.ctx-feed-plugin-checkbox {
+  position: absolute;
+  opacity: 0 !important;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.ctx-feed-checkbox-custom {
+  display: none;
+}
+
+/* Status indicator (top right circle with check) */
+.ctx-feed-plugin-status {
+  position: absolute;
+  top: 13px;
+  right: 13px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid #d0d5dd;
+  z-index: 2;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ctx-feed-plugin-status::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 12 12' xmlns='http://www.w3.org/2000/svg' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 6.2l2.4 2.4L9.5 3.6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 11px 11px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.ctx-feed-plugin-card.is-selected .ctx-feed-plugin-status::after,
+.ctx-feed-plugin-card.is-active .ctx-feed-plugin-status::after,
+.ctx-feed-plugin-card.is-installed .ctx-feed-plugin-status::after {
+  opacity: 1;
+}
+
+.ctx-feed-plugin-card--green.is-selected .ctx-feed-plugin-status,
+.ctx-feed-plugin-card--green.is-active .ctx-feed-plugin-status,
+.ctx-feed-plugin-card--green.is-installed .ctx-feed-plugin-status {
+  background: #75ab00;
+  border-color: #75ab00;
+  box-shadow: 0 3px 8px -1.5px rgba(117, 171, 0, 0.45);
+}
+
+.ctx-feed-plugin-card--blue.is-selected .ctx-feed-plugin-status,
+.ctx-feed-plugin-card--blue.is-active .ctx-feed-plugin-status,
+.ctx-feed-plugin-card--blue.is-installed .ctx-feed-plugin-status {
+  background: #59c1e8;
+  border-color: #59c1e8;
+  box-shadow: 0 3px 8px -1.5px rgba(89, 193, 232, 0.55);
+}
+
+/* Plugin body */
+.ctx-feed-plugin-body {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 12px;
+  align-items: start;
+  position: relative;
+  pointer-events: none;
+}
+
+.ctx-feed-plugin-icon {
+  width: 44px;
+  height: 44px;
+  background: #ffffff;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.ctx-feed-plugin-icon img {
+  width: 38px;
+  height: 38px;
+  object-fit: contain;
+}
+
+.ctx-feed-plugin-info {
+  min-width: 0;
+}
+
+.ctx-feed-plugin-title {
+  font-family: "Poppins", "Plus Jakarta Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1a1f;
+  line-height: 1.4;
+  letter-spacing: -0.1px;
+  margin: 0 0 4px 0;
+  padding-right: 30px;
+}
+
+.ctx-feed-plugin-description {
+  font-family: "Poppins", "Plus Jakarta Sans", sans-serif;
+  font-size: 11px;
+  color: #6b6b78;
+  line-height: 1.45;
+  margin: 0 0 10px 0;
+}
+
+.ctx-feed-plugin-author {
+  display: inline-block;
+  background: #d7f4ff;
+  color: #5a5a66;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  line-height: 1;
+}
+
+/* Progress section */
+.ctx-feed-onboarding-progress {
+  margin-top: 10px;
+}
+
+.ctx-feed-progress-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  min-height: 16px;
+}
+
+.ctx-feed-progress-text {
+  font-family: "Poppins", "Plus Jakarta Sans", sans-serif;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.ctx-feed-progress-count {
+  font-family: "Poppins", "Plus Jakarta Sans", sans-serif;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.ctx-feed-progress-track {
+  width: 100%;
+  height: 8px;
+  background: #d9d9d9;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.ctx-feed-progress-fill {
+  height: 100%;
+  background: #98d000;
+  border-radius: 5px;
+  width: 0%;
+  transition: width 0.4s ease;
+}
+
+/* Footer */
+.ctx-feed-onboarding-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 18px;
+}
+
+.ctx-feed-onboarding-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7280;
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.ctx-feed-onboarding-skip:hover,
+.ctx-feed-onboarding-skip:focus {
+  color: #111827;
+}
+
+.ctx-feed-onboarding-skip svg {
+  display: block;
+}
+
+.ctx-feed-onboarding-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ctx-feed-onboarding-continue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 22px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #24c9fc 0%, #28b1db 57%, #0496ff 100%);
+  color: #ffffff;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.06px;
+  cursor: pointer;
+  transition: filter 0.2s ease, transform 0.1s ease;
+  box-shadow: 0 12px 26px -8px rgba(89, 193, 232, 0.45),
+    0 2px 3px rgba(89, 193, 232, 0.18);
+}
+
+.ctx-feed-onboarding-continue:hover,
+.ctx-feed-onboarding-continue:focus {
+  filter: brightness(1.05);
+  color: #ffffff;
+}
+
+.ctx-feed-onboarding-continue:active {
+  transform: translateY(1px);
+}
+
+.ctx-feed-onboarding-continue:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.ctx-feed-onboarding-continue svg {
+  display: block;
+}
+
+.ctx-feed-onboarding-generate {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 38px;
+  padding: 0 22px;
+  background: linear-gradient(180deg, #24c9fc 0%, #28b1db 57%, #0496ff 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 10px;
+  font-family: "Plus Jakarta Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+  box-shadow: 0 12px 26px -8px rgba(89, 193, 232, 0.45),
+    0 2px 3px rgba(89, 193, 232, 0.18);
+}
+
+.ctx-feed-onboarding-generate:hover,
+.ctx-feed-onboarding-generate:focus {
+  filter: brightness(1.05);
+  color: #ffffff;
+}
+
+.ctx-feed-onboarding-generate svg {
+  display: block;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .ctx-feed-onboarding-wrapper {
+    padding: 20px 12px;
+  }
+
+  .ctx-feed-onboarding-container {
+    padding: 22px;
+  }
+
+  .ctx-feed-onboarding-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .ctx-feed-onboarding-title {
+    font-size: 24px;
+  }
+
+  .ctx-feed-onboarding-description {
+    font-size: 14px;
+  }
+
+  .ctx-feed-trust-bar {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .ctx-feed-trust-divider {
+    display: none;
+  }
+
+  .ctx-feed-onboarding-plugins {
+    grid-template-columns: 1fr;
+  }
+
+  .ctx-feed-onboarding-continue,
+  .ctx-feed-onboarding-generate {
+    flex: 1;
+  }
+}
