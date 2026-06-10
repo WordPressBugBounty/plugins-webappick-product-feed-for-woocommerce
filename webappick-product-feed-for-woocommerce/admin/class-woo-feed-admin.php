@@ -605,6 +605,22 @@ class Woo_Feed_Admin {
 
 
 		}
+
+		// Enqueue script for dashboard widget Disco plugin installation.
+		if ( 'index.php' === $hook && current_user_can( 'install_plugins' ) ) {
+			wp_enqueue_script(
+				'woo-feed-dashboard-widget',
+				plugin_dir_url( __FILE__ ) . 'js/woo-feed-our-plugins.js',
+				array( 'jquery' ),
+				$this->version,
+				true
+			);
+
+			wp_localize_script( 'woo-feed-dashboard-widget', 'woo_feed_our_plugins_info', array(
+				'url'   => admin_url( 'admin-ajax.php' ),
+				'nonce' => wp_create_nonce( 'woo-feed-our-plugins-nonce' ),
+			) );
+		}
 	}
 
 	/**

@@ -6394,6 +6394,41 @@ if ( ! function_exists( 'woo_feed_complete_onboarding' ) ) {
 }
 add_action( 'wp_ajax_woo_feed_complete_onboarding', 'woo_feed_complete_onboarding' );
 
+if ( ! function_exists( 'woo_feed_calculate_rating' ) ) {
+    function woo_feed_calculate_rating($ratings)
+    {
+        $totalRatings = array_sum($ratings); // Sum of all ratings
+        if ($totalRatings == 0) {
+            return 0;
+        }
+
+        $weightedSum = (5 * $ratings[5]) + (4 * $ratings[4]) + (3 * $ratings[3]) + (2 * $ratings[2]) + (1 * $ratings[1]);
+        $averageRating = $weightedSum / $totalRatings;
+
+        return round($averageRating, 1); // Round to 2 decimal places
+    }
+}
+
+if ( ! function_exists( 'woo_feed_is_plugin_activated' ) ) {
+    function woo_feed_is_plugin_activated($plugin_slug)
+    {
+
+        if ($plugin_slug == 'webappick-pdf-invoice-for-woocommerce') {
+            $plugin_index = 'woo-invoice';
+        } else {
+            $plugin_index = $plugin_slug;
+        }
+
+        $plugin_path = $plugin_slug . '/' . $plugin_index . ".php";
+
+        if (is_plugin_active($plugin_path)) {
+            return true; // Plugin is acive
+        } else {
+            return false; // Plugin is not active
+        }
+    }
+}
+
 #==== ONBOARDING AJAX HANDLERS END ================#
 
 
