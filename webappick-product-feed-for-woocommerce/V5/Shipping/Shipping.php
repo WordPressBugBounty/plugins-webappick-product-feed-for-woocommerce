@@ -9,7 +9,6 @@
 
 namespace CTXFeed\V5\Shipping;
 
-use CTXFeed\Compatibility\WOOMULTI_CURRENCYCompatibility;
 use CTXFeed\V5\Utility\Cache;
 use CTXFeed\V5\Utility\Settings;
 use WC_Shipping_Flat_Rate;
@@ -263,10 +262,8 @@ class Shipping {
 			$id = $this->product->get_id();
 		}
 
-		// add product to cart
-		if ( is_plugin_active( 'woocommerce-multi-currency/woocommerce-multi-currency.php' ) ) {
-			do_action('woo_feed_action_shipping_currency',$this->config);
-		}
+		// Allow multi-currency plugins to adjust shipping currency via action hook.
+		do_action( 'woo_feed_before_add_to_cart_for_shipping', $this->config, $id );
 
 		$woocommerce->cart->add_to_cart( $id, 1 );
 

@@ -11,8 +11,6 @@ use CTXFeed\V5\Query\QueryFactory;
 use CTXFeed\V5\Utility\Config;
 use DateTime;
 use Exception;
-use TRP_Settings;
-use TRP_Translation_Render;
 use WC_Product;
 use WC_Product_Composite;
 use WC_Product_External;
@@ -147,74 +145,25 @@ class ProductHelper {
 		$attachment_ids = [];
 
 		if ( $product->is_type( 'variation' ) ) {
-			$theme = wp_get_theme(); // gets the current theme
-//			if ( 'Woodmart Child' == $theme->name || 'Twenty Twelve' == $theme->parent_theme ) {
-//				// if you're here Twenty Twelve is the active theme or is
-//				// the current theme's parent theme
-//			}
-			if ( class_exists( 'Woo_Variation_Gallery' ) ) {
-				/**
-				 * Get Variation Additional Images for "Additional Variation Images Gallery for WooCommerce"
-				 *
-				 * @plugin Additional Variation Images Gallery for WooCommerce
-				 * @link   https://wordpress.org/plugins/woo-variation-gallery/
-				 */
-				$attachment_ids = \get_post_meta( $product->get_id(), 'woo_variation_gallery_images', true );
-			} elseif ( \class_exists( 'WooProductVariationGallery' ) ) {
-				/**
-				 * Get Variation Additional Images for "Variation Images Gallery for WooCommerce"
-				 *
-				 * @plugin Variation Images Gallery for WooCommerce
-				 * @link   https://wordpress.org/plugins/woo-product-variation-gallery/
-				 */
-				$attachment_ids = \get_post_meta( $product->get_id(), 'rtwpvg_images', true );
-			} elseif ( \class_exists( 'WC_Additional_Variation_Images' ) ) {
-				/**
-				 * Get Variation Additional Images for "WooCommerce Additional Variation Images"
-				 *
-				 * @plugin WooCommerce Additional Variation Images
-				 * @link   https://woocommerce.com/products/woocommerce-additional-variation-images/
-				 */
-				$attachment_ids = \explode( ',', \get_post_meta( $product->get_id(), '_wc_additional_variation_images', true ) );
-			} elseif ( \class_exists( 'WOODMART_Theme' ) ) {
-				/**
-				 * Get Variation Additional Images for "WOODMART Theme -> Variation Gallery Images Feature"
-				 *
-				 * @theme WOODMART
-				 * @link  https://themeforest.net/item/woodmart-woocommerce-wordpress-theme/20264492
-				 */
-				$var_id    = $product->get_id();
-				$parent_id = $product->get_parent_id();
+			/**
+			 * Filter to get variation gallery attachment IDs from compatible plugins.
+			 *
+			 * Compatibility classes can hook into this filter to provide gallery IDs.
+			 *
+			 * @param array       $attachment_ids Empty array to be populated.
+			 * @param \WC_Product $product        The variation product object.
+			 *
+			 * @return array Array of attachment IDs.
+			 */
+			$attachment_ids = \apply_filters( 'woo_feed_filter_variation_gallery_attachment_ids', [], $product );
 
-				$variation_obj = \get_post_meta( $parent_id, 'woodmart_variation_gallery_data', true );
-				if ( isset( $variation_obj, $variation_obj[ $var_id ] ) ) {
-					$attachment_ids = \explode( ',', $variation_obj[ $var_id ] );
-				} else {
-					$attachment_ids = \explode( ',', \get_post_meta( $var_id, 'wd_additional_variation_images_data', true ) );
+			// Fallback to parent product gallery if no gallery plugin provided IDs.
+			if ( empty( $attachment_ids ) ) {
+				$parent_product = \wc_get_product( $product->get_parent_id() );
+				if ( $parent_product ) {
+					$attachment_ids = $parent_product->get_gallery_image_ids();
 				}
-			} elseif ( 'Woodmart Child' == $theme->name ) {
-				/**
-				 * Get Variation Additional Images for "Woodmart Child Theme -> Variation Gallery Images Feature"
-				 *
-				 * @theme WOODMART
-				 * @link  https://themeforest.net/item/woodmart-woocommerce-wordpress-theme/20264492
-				 */
-				$var_id    = $product->get_id();
-				$parent_id = $product->get_parent_id();
-
-				$variation_obj = \get_post_meta( $parent_id, 'woodmart_variation_gallery_data', true );
-				if ( isset( $variation_obj, $variation_obj[ $var_id ] ) ) {
-					$attachment_ids = \explode( ',', $variation_obj[ $var_id ] );
-				} else {
-					$attachment_ids = \explode( ',', \get_post_meta( $var_id, 'wd_additional_variation_images_data', true ) );
-				}
-			} else {
-				/**
-				 * If any Variation Gallery Image plugin not installed then get Variable Product Additional Image Ids .
-				 */
-				$attachment_ids = \wc_get_product( $product->get_parent_id() )->get_gallery_image_ids();
 			}
-
 		}
 
 		/**
@@ -329,10 +278,17 @@ class ProductHelper {
 			$value     = \get_post_meta( $parent_id, $meta, true );
 		}
 
-		// Handling for RankMath integration.
-		if ( self::is_rank_math_active() && $meta === 'rank_math_primary_product_cat' && \is_numeric( $value ) ) {
-			$term  = \get_term( $value );
-			$value = $term instanceof WP_Term ? $term->name : $value;
+		// Handling for RankMath integration via filter.
+		if ( $meta === 'rank_math_primary_product_cat' && \is_numeric( $value ) ) {
+			/**
+			 * Filter to convert RankMath primary category term ID to term name.
+			 *
+			 * @param mixed $value The term ID or current value.
+			 * @param \WC_Product $product The product object.
+			 * @param mixed $config The feed config.
+			 * @return mixed The term name or original value.
+			 */
+			$value = apply_filters( 'woo_feed_filter_rank_math_primary_category', $value, $product, $config );
 		}
 
 		// Handle taxonomy-related meta keys.
@@ -346,11 +302,19 @@ class ProductHelper {
 
 	/**
 	 * Checks if Rank Math SEO plugin is active.
+	 * Uses filter to allow compatibility class to respond.
 	 *
 	 * @return bool True if Rank Math or Rank Math Pro is active, false otherwise.
 	 */
 	private static function is_rank_math_active() {
-		return \class_exists( 'RankMath' ) || \class_exists( 'RankMathPro' );
+		/**
+		 * Filter to check if RankMath SEO plugin is active.
+		 * RankMathCompatibility class hooks into this filter.
+		 *
+		 * @param bool $is_active Whether RankMath is active.
+		 * @return bool
+		 */
+		return apply_filters( 'woo_feed_is_rank_math_active', false );
 	}
 
 	/**
@@ -425,9 +389,7 @@ class ProductHelper {
 
 	/**
 	 * Get Product Taxonomy.
-=======
 	 * @return string A string containing the taxonomy terms separated by the specified separator.
->>>>>>> develop
 	 *
 	 * Note: Test case writing is pending for this function.
 	 */
@@ -588,17 +550,18 @@ class ProductHelper {
 	 * Note: Test case writing is pending for this function.
 	 */
 	public static function get_acf_field( $product, $field_key ) {
-		// Remove the prefix to get the actual ACF field key.
-		$acf_field_key = \str_replace( 'acf_fields_', '', $field_key );
-
-		// Check if ACF is installed and active.
-		if ( \class_exists( 'ACF' ) ) {
-			// Retrieve and return the ACF field value.
-			return \get_field( $acf_field_key, $product->get_id() );
-		}
-
-		// Return an empty string if ACF is not available.
-		return '';
+		/**
+		 * Filter to get ACF field value.
+		 *
+		 * Compatibility class hooks into this filter to provide ACF field values.
+		 *
+		 * @param mixed       $value     Empty string as default.
+		 * @param \WC_Product $product   The product object.
+		 * @param string      $field_key The ACF field key.
+		 *
+		 * @return mixed The ACF field value.
+		 */
+		return \apply_filters( 'woo_feed_filter_acf_field_value', '', $product, $field_key );
 	}
 
 	/**
@@ -1149,6 +1112,7 @@ class ProductHelper {
 
 	/**
 	 * Translates an attribute using the TranslatePress plugin.
+	 * Logic handled by TRP_Translate_PressCompatibility class via filter.
 	 *
 	 * @param string     $attribute       Name of the product attribute.
 	 * @param mixed      $attribute_value Value of the product attribute.
@@ -1159,25 +1123,16 @@ class ProductHelper {
 	 * @since 5.2.12
 	 */
 	public static function get_tp_translate( $attribute, $attribute_value, $product, $config ) {
-		if ( \is_plugin_active( 'translatepress-multilingual/index.php' ) ) {
-			$target_language = $config->get_feed_language( $attribute );
-
-			if ( ! empty( $target_language ) ) {
-				if ( \class_exists( 'TRP_Settings' ) && \class_exists( 'TRP_Translation_Render' ) ) {
-					$settings   = ( new TRP_Settings() )->get_settings();
-					$trp_render = new TRP_Translation_Render( $settings );
-					global $TRP_LANGUAGE;
-					$default_language = $TRP_LANGUAGE;
-					$TRP_LANGUAGE     = $target_language;
-					$attribute_value  = $trp_render->translate_page( $attribute_value );
-
-					// Resetting the global language to default
-					$TRP_LANGUAGE = $default_language;
-				}
-			}
-		}
-
-		return $attribute_value;
+		/**
+		 * Filter to allow TranslatePress compatibility class to translate the attribute value.
+		 *
+		 * @param mixed $attribute_value The attribute value to translate.
+		 * @param string $attribute The attribute name.
+		 * @param \WC_Product $product The product object.
+		 * @param mixed $config The feed config.
+		 * @return mixed Translated attribute value.
+		 */
+		return apply_filters( 'woo_feed_filter_translatepress_attribute', $attribute_value, $attribute, $product, $config );
 	}
 
 	/**

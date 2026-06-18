@@ -18,7 +18,7 @@ class WOOCSCompatibility {
 	private $woocs;
 	private $is_multiple_allowed;
 	/**
-	 * PolylangCompatibility Constructor.
+	 * WOOCSCompatibility Constructor.
 	 */
 	public function __construct() {
 		add_action( 'before_woo_feed_generate_batch_data', array( $this, 'switch_currency' ), 10, 1 );
@@ -31,6 +31,8 @@ class WOOCSCompatibility {
 		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_converted_price' ), 10, 5 );
 		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_converted_price' ), 10, 5 );
 
+		// Add WOOCS currencies to dropdown options.
+		add_filter( 'ctx_feed_active_currencies', array( $this, 'get_active_currencies' ), 10, 1 );
 	}
 
 	/**
@@ -129,5 +131,37 @@ class WOOCSCompatibility {
 		return $price;
 	}
 
+	/**
+	 * Get active WOOCS currencies for dropdown.
+	 *
+	 * @param array $currencies Existing currencies array.
+	 *
+	 * @return array
+	 */
+	public function get_active_currencies( $currencies ) {
+		global $WOOCS;// phpcs:ignore
+
+		// Try to get currencies from the $WOOCS object first.
+		if ( isset( $WOOCS ) && method_exists( $WOOCS, 'get_currencies' ) ) {
+			$get_currencies = $WOOCS->get_currencies();
+			if ( ! empty( $get_currencies ) ) {
+				foreach ( $get_currencies as $key => $currency ) {
+					$currencies[ $key ] = $key;
+				}
+			}
+		}
+
+		// Fallback to get currencies from the 'woocs' option.
+		if ( empty( $currencies ) ) {
+			$get_currencies = get_option( 'woocs', array() );
+			if ( ! empty( $get_currencies ) ) {
+				foreach ( $get_currencies as $key => $currency ) {
+					$currencies[ $key ] = $key;
+				}
+			}
+		}
+
+		return $currencies;
+	}
 
 }

@@ -60,6 +60,21 @@ class TRP_Translate_PressCompatibility {
 		$this->translatepress_renderer      = new \TRP_Translation_Render( $settings );
 		$this->translatepress_url_converter = new \TRP_Url_Converter( $settings );
 
+		// Add TranslatePress languages to dropdown options.
+		add_filter( 'ctx_feed_active_languages', array( $this, 'get_active_languages' ), 10, 1 );
+
+		// Add parent_lang output types for TranslatePress.
+		add_filter( 'woo_feed_output_types', array( $this, 'add_parent_lang_output_types' ), 10, 1 );
+
+		// Handle variation title with attributes translation.
+		add_filter( 'woo_feed_filter_variation_title_with_attributes', array( $this, 'translate_variation_title_with_attributes' ), 10, 6 );
+
+		// Skip description cleaning for TranslatePress (needs raw content for translation).
+		add_filter( 'woo_feed_skip_description_cleaning', array( $this, 'should_skip_description_cleaning' ), 10, 3 );
+
+		// Translate attribute via ProductHelper::get_tp_translate.
+		add_filter( 'woo_feed_filter_translatepress_attribute', array( $this, 'translate_attribute' ), 10, 4 );
+
 
 		/**
 		 * Apply the filter if any of the attribute is not translated by translatepress.
@@ -166,6 +181,18 @@ class TRP_Translate_PressCompatibility {
 	}
 
 	/**
+	 * Sanitize language code for safe use in table names.
+	 *
+	 * @param string $language The language code.
+	 *
+	 * @return string Sanitized language code.
+	 */
+	private function sanitize_language_code( $language ) {
+		// Only allow alphanumeric characters, underscores, and hyphens
+		return preg_replace( '/[^a-zA-Z0-9_-]/', '', $language );
+	}
+
+	/**
 	 * Get the translated string.
 	 *
 	 * @param string $output The output string.
@@ -177,8 +204,10 @@ class TRP_Translate_PressCompatibility {
 	public function translate_string( $output, $config, $product ) { // phpcs:ignore
 		global $wpdb;
 
-		$feed_language = $config->get_feed_language();
-		$table_name    = $wpdb->prefix . 'trp_dictionary_' . strtolower( $this->trp_settings['default-language'] ) . '_' . strtolower( $feed_language );
+		$feed_language     = $config->get_feed_language();
+		$default_language  = $this->sanitize_language_code( $this->trp_settings['default-language'] );
+		$safe_feed_language = $this->sanitize_language_code( $feed_language );
+		$table_name        = $wpdb->prefix . 'trp_dictionary_' . strtolower( $default_language ) . '_' . strtolower( $safe_feed_language );
 
 		/**
 		 * If the feed language is same as the default language or the table does not exist then return the output.
@@ -242,8 +271,10 @@ class TRP_Translate_PressCompatibility {
 	 */
 	public function translate_desc_string( $output, $config, $product ) { // phpcs:ignore
 		global $wpdb;
-		$feed_language = $config->get_feed_language();
-		$table_name    = $wpdb->prefix . 'trp_dictionary_' . strtolower( $this->trp_settings['default-language'] ) . '_' . strtolower( $feed_language );
+		$feed_language      = $config->get_feed_language();
+		$default_language   = $this->sanitize_language_code( $this->trp_settings['default-language'] );
+		$safe_feed_language = $this->sanitize_language_code( $feed_language );
+		$table_name         = $wpdb->prefix . 'trp_dictionary_' . strtolower( $default_language ) . '_' . strtolower( $safe_feed_language );
 
 		/**
 		 * If the feed language is same as the default language or the table does not exist then return the output.
@@ -273,13 +304,21 @@ class TRP_Translate_PressCompatibility {
 			if ( count( $trp_original_meta_ids ) ) {
 				$ids = array();
 				foreach ( $trp_original_meta_ids as $value ) {
-					array_push( $ids, $value['original_id'] );
+					// Sanitize: ensure only integers are added to the array
+					$id = absint( $value['original_id'] );
+					if ( $id > 0 ) {
+						$ids[] = $id;
+					}
 				}
 				if ( count( $ids ) < 1 ) {
 					return $output;
 				}
-				$ids_str                = implode( ', ', $ids );
-				$trp_dictionary_sql     = "SELECT `original`,`translated` FROM {$table_name} WHERE `original_id` IN ({$ids_str})";
+				// Use placeholders for safe SQL query
+				$placeholders           = implode( ', ', array_fill( 0, count( $ids ), '%d' ) );
+				$trp_dictionary_sql     = $wpdb->prepare(
+					"SELECT `original`,`translated` FROM {$table_name} WHERE `original_id` IN ({$placeholders})", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared
+					$ids
+				);
 				$trp_dictionary_strings = $wpdb->get_results( $trp_dictionary_sql ); // phpcs:ignore
 
 				$translated_strings_new = array();
@@ -491,6 +530,121 @@ class TRP_Translate_PressCompatibility {
 		}
 
 		return $url;
+	}
+
+	/**
+	 * Get active TranslatePress languages for dropdown.
+	 *
+	 * @param array $languages Existing languages array.
+	 *
+	 * @return array
+	 */
+	public function get_active_languages( $languages ) {
+		if ( ! function_exists( 'trp_get_languages' ) ) {
+			return $languages;
+		}
+
+		$tr_press_languages = trp_get_languages( 'default' );
+
+		if ( ! empty( $tr_press_languages ) ) {
+			foreach ( $tr_press_languages as $key => $value ) {
+				$languages[ $key ] = $value;
+			}
+		}
+
+		return $languages;
+	}
+
+	/**
+	 * Add parent_lang output types for translation plugins.
+	 *
+	 * @param array $output_types Existing output types array.
+	 *
+	 * @return array
+	 */
+	public function add_parent_lang_output_types( $output_types ) {
+		if ( ! in_array( 'parent_lang', $output_types, true ) ) {
+			$output_types[] = 'parent_lang';
+		}
+		if ( ! in_array( 'parent_lang_if_empty', $output_types, true ) ) {
+			$output_types[] = 'parent_lang_if_empty';
+		}
+
+		return $output_types;
+	}
+
+	/**
+	 * Handle variation title with attributes translation.
+	 *
+	 * @param string|null $filtered_title The filtered title (null to use default behavior).
+	 * @param string $title The base title.
+	 * @param string $variation_attributes The variation attributes string.
+	 * @param string $merger The merger string.
+	 * @param \WC_Product $product The product object.
+	 * @param mixed $config The feed config.
+	 *
+	 * @return string|null The translated title or null.
+	 */
+	public function translate_variation_title_with_attributes( $filtered_title, $title, $variation_attributes, $merger, $product, $config ) {
+		// Translate the base title first.
+		$title = $this->trp_translate_strings( $title, $product, $config );
+
+		// Merge product title with translated variation attributes.
+		if ( ! empty( $variation_attributes ) ) {
+			$variation_attrs = explode( '-', $variation_attributes );
+			if ( ! empty( $variation_attrs ) ) {
+				foreach ( $variation_attrs as $value ) {
+					$translated_attr = $this->trp_translate_strings( $value, $product, $config );
+					$title .= $merger . $translated_attr;
+				}
+			}
+		}
+
+		return $title;
+	}
+
+	/**
+	 * Determine if description cleaning should be skipped for TranslatePress.
+	 *
+	 * @param bool $skip_cleaning Whether to skip content cleaning.
+	 * @param \WC_Product $product The product object.
+	 * @param mixed $config The feed config.
+	 *
+	 * @return bool
+	 */
+	public function should_skip_description_cleaning( $skip_cleaning, $product, $config ) {
+		// TranslatePress needs raw content for proper translation.
+		return true;
+	}
+
+	/**
+	 * Translate an attribute value using TranslatePress.
+	 *
+	 * @param mixed $attribute_value The attribute value to translate.
+	 * @param string $attribute The attribute name.
+	 * @param \WC_Product $product The product object.
+	 * @param mixed $config The feed config.
+	 *
+	 * @return mixed Translated attribute value.
+	 */
+	public function translate_attribute( $attribute_value, $attribute, $product, $config ) {
+		$target_language = $config->get_feed_language( $attribute );
+
+		if ( empty( $target_language ) ) {
+			return $attribute_value;
+		}
+
+		if ( $this->translatepress_renderer ) {
+			global $TRP_LANGUAGE;
+			$default_language = $TRP_LANGUAGE;
+			$TRP_LANGUAGE     = $target_language;
+			$attribute_value  = $this->translatepress_renderer->translate_page( $attribute_value );
+
+			// Resetting the global language to default
+			$TRP_LANGUAGE = $default_language;
+		}
+
+		return $attribute_value;
 	}
 
 }

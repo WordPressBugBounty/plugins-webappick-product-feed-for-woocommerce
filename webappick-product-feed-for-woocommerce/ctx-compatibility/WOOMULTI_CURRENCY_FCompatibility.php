@@ -27,6 +27,9 @@ class WOOMULTI_CURRENCY_FCompatibility {
 
 		// Add currency suffix to product link.
 		add_filter( 'woo_feed_filter_product_link', array( $this, 'get_product_link_with_suffix' ), 10, 3 );
+
+		// Add VillaTheme currencies to dropdown options.
+		add_filter( 'ctx_feed_active_currencies', array( $this, 'get_active_currencies' ), 10, 1 );
 	}
 
 	/**
@@ -73,6 +76,24 @@ class WOOMULTI_CURRENCY_FCompatibility {
 		$link .= $currency_suffix;
 
 		return $link;
+	}
+
+	/**
+	 * Get active VillaTheme Multi Currency currencies for dropdown.
+	 *
+	 * @param array $currencies Existing currencies array.
+	 *
+	 * @return array
+	 */
+	public function get_active_currencies( $currencies ) {
+		$settings = get_option( 'woo_multi_currency_params' );
+		if ( isset( $settings['currency'] ) && is_array( $settings['currency'] ) ) {
+			foreach ( $settings['currency'] as $currency ) {
+				$currencies[ $currency ] = $currency;
+			}
+		}
+
+		return $currencies;
 	}
 
 }

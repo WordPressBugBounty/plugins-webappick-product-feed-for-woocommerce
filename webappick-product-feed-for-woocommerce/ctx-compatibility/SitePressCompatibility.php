@@ -27,7 +27,49 @@ class SitePressCompatibility {
 
 			add_action('before_woo_feed_get_product_information', array($this, 'switch_language'), 10, 1);
 			add_action('after_woo_feed_get_product_information', array($this, 'restore_language'), 10, 1);
+
+			// Add WPML languages to dropdown options.
+			add_filter( 'ctx_feed_active_languages', array( $this, 'get_active_languages' ), 10, 1 );
+
+			// Add parent_lang output types for WPML.
+			add_filter( 'woo_feed_output_types', array( $this, 'add_parent_lang_output_types' ), 10, 1 );
 		}
+	}
+
+	/**
+	 * Get active WPML languages for dropdown.
+	 *
+	 * @param array $languages Existing languages array.
+	 *
+	 * @return array
+	 */
+	public function get_active_languages( $languages ) {
+		$get_languages = apply_filters( 'wpml_active_languages', null, 'orderby=id&order=desc' );
+		if ( ! empty( $get_languages ) ) {
+			foreach ( $get_languages as $key => $language ) {
+				$languages[ $key ] = $language['translated_name'];
+			}
+		}
+
+		return $languages;
+	}
+
+	/**
+	 * Add parent_lang output types for translation plugins.
+	 *
+	 * @param array $output_types Existing output types array.
+	 *
+	 * @return array
+	 */
+	public function add_parent_lang_output_types( $output_types ) {
+		if ( ! in_array( 'parent_lang', $output_types, true ) ) {
+			$output_types[] = 'parent_lang';
+		}
+		if ( ! in_array( 'parent_lang_if_empty', $output_types, true ) ) {
+			$output_types[] = 'parent_lang_if_empty';
+		}
+
+		return $output_types;
 	}
 
 	/**

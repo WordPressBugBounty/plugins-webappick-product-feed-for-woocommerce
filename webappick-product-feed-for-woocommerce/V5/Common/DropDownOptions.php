@@ -12,7 +12,6 @@ use CTXFeed\V5\Query\WPQuery;
 use CTXFeed\V5\Utility\Cache;
 use CTXFeed\V5\Utility\Config;
 use CTXFeed\V5\Utility\DropDown;
-use WOOMC\DAO\Factory;
 
 /**
  * @package    CTXFeed
@@ -923,15 +922,8 @@ class DropDownOptions {
 			'22' => 'htmlspecialchars_decode',
 		);
 
-		//when wpml or polylang plugin is activated
-		if (
-			class_exists( 'SitePress', false ) || defined( 'POLYLANG_BASENAME' ) || function_exists( 'PLL' ) // When WPML is active
-			|| is_plugin_active( 'translatepress-multilingual/index.php' ) // Translatepress
-		) {
-			array_push( $output_types, 'parent_lang' );
-			array_push( $output_types, 'parent_lang_if_empty' );
-		}
-
+		// Translation plugin-specific output types are added via ctx_feed_output_types filter
+		// in respective compatibility classes (SitePress, Polylang, TranslatePress)
 		return apply_filters( 'woo_feed_output_types', $output_types );
 	}
 
@@ -1054,223 +1046,62 @@ class DropDownOptions {
 	/**
 	 * Get Active Languages for current site.
 	 *
+	 * Languages are provided by translation plugin compatibility classes via ctx_feed_active_languages filter.
+	 * Each compatibility class (SitePress, Polylang, TranslatePress) hooks into this filter
+	 * to provide their available languages.
+	 *
 	 * @param string $selected
 	 *
-	 * @return string
+	 * @return array|false
 	 */
 	public static function getActiveLanguages( $selected = '' ) {
-		$options = false;
-		if ( false === $options ) {
-			$languages = [];
-			if ( class_exists( 'SitePress' ) ) {
-				$get_languages = apply_filters( 'wpml_active_languages', null, 'orderby=id&order=desc' );
-				if ( ! empty( $get_languages ) ) {
-					foreach ( $get_languages as $key => $language ) {
-						$languages[ $key ] = $language['translated_name'];
-					}
-				}
-			}
+		$languages = [];
 
-			// when polylang plugin is activated
-			if ( defined( 'POLYLANG_BASENAME' ) || function_exists( 'PLL' ) ) {
-				// polylang language names
-				$poly_languages_names = pll_languages_list( [ 'fields' => 'name' ] );
+		/**
+		 * Filter to get active languages from translation plugins.
+		 *
+		 * Compatibility classes should hook into this filter to provide their languages.
+		 * Each plugin should merge their languages with the existing array.
+		 *
+		 * @param array $languages Array of languages in format ['code' => 'name']
+		 *
+		 * @return array
+		 * @since 7.x.x
+		 */
+		$languages = apply_filters( 'ctx_feed_active_languages', $languages );
 
-				// polylang language locales
-				$poly_languages_slugs = pll_languages_list( [ 'fields' => 'slug' ] );
-
-				// polylang language lists
-				$get_languages = array_combine( $poly_languages_slugs, $poly_languages_names );
-
-				if ( ! empty( $get_languages ) ) {
-					$languages = [];
-					foreach ( $get_languages as $key => $value ) {
-						$languages[ $key ] = $value;
-					}
-				}
-			}
-
-
-			//when translatepress is activated
-			if ( is_plugin_active( 'translatepress-multilingual/index.php' ) ) {
-				if ( class_exists( 'TRP_Translate_Press' ) ) {
-					$tr_press_languages = trp_get_languages( 'default' );
-
-					if ( ! empty( $tr_press_languages ) ) {
-						foreach ( $tr_press_languages as $key => $value ) {
-							$languages[ $key ] = $value;
-						}
-					}
-				}
-			}
-
-			//language dropdown
-			$options = $languages;
-
-		}
-
-		return $options;
+		return ! empty( $languages ) ? $languages : false;
 	}
 
 	/**
 	 * Get Active Currency
 	 *
+	 * Currencies are provided by currency plugin compatibility classes via ctx_feed_active_currencies filter.
+	 * Each compatibility class (WOOCS, Aelia, WPML, YayCurrency, XCurrency, etc.) hooks into this filter
+	 * to provide their available currencies.
+	 *
 	 * @param string $selected
 	 *
-	 * @return false|mixed|string
+	 * @return array|false
 	 * @since 3.3.2
 	 */
 	public static function getActiveCurrencies( $selected = '' ) {
-		$options = false;
-		if ( false === $options ) {
-			global $woocommerce_wpml;
-			if ( class_exists( 'SitePress' ) && class_exists( 'woocommerce_wpml' ) && wcml_is_multi_currency_on() && isset( $woocommerce_wpml->multi_currency->currencies ) ) {
-				$get_currencies = $woocommerce_wpml->multi_currency->currencies;
-				if ( ! empty( $get_currencies ) ) {
-					$currencies = [];
-					foreach ( $get_currencies as $key => $currency ) {
-						$currencies[ $key ] = $key;
-					}
-					$options = $currencies;
-				}
-			} elseif ( class_exists( 'WC_Aelia_CurrencySwitcher' ) ) {
-				$base_currency  = get_woocommerce_currency();
-				$get_currencies = apply_filters( 'wc_aelia_cs_enabled_currencies', $base_currency );
+		$currencies = [];
 
-				// Fixed warning with Alia Currency Plugin's initial settings when activated.
-				if ( ! empty( $get_currencies ) ) {
+		/**
+		 * Filter to get active currencies from currency plugins.
+		 *
+		 * Compatibility classes should hook into this filter to provide their currencies.
+		 * Each plugin should merge their currencies with the existing array.
+		 *
+		 * @param array $currencies Array of currencies in format ['code' => 'code']
+		 *
+		 * @return array
+		 * @since 7.x.x
+		 */
+		$currencies = apply_filters( 'ctx_feed_active_currencies', $currencies );
 
-					if ( is_array( $get_currencies ) ) {
-						$currencies = [];
-						foreach ( $get_currencies as $currency ) {
-							$currencies[ $currency ] = $currency;
-						}
-					} elseif ( gettype( $get_currencies ) === 'string' ) {
-						$currencies = [
-							$get_currencies => $get_currencies,
-						];
-					} else {
-						$currencies = [];
-					}
-
-
-					$options = $currencies;
-				}
-			}  elseif (is_plugin_active('woocommerce-currency-switcher/index.php') || class_exists('WOOCS')) {
-				global $WOOCS;
-				// Try to get currencies from the $WOOCS object first
-				if (isset($WOOCS) && method_exists($WOOCS, 'get_currencies')) {
-					$get_currencies = $WOOCS->get_currencies();
-					if (! empty($get_currencies)) {
-						foreach ($get_currencies as $key => $currency) {
-							$options[$key] = $key;
-						}
-					}
-				}
-
-				// Fallback to get currencies from the 'woocs' option
-				if (empty($options)) {
-					$get_currencies = get_option('woocs', array());
-					if (! empty($get_currencies)) {
-						foreach ($get_currencies as $key => $currency) {
-							$options[$key] = $key;
-						}
-					}
-				}
-			} elseif ( is_plugin_active( 'currency-switcher-woocommerce/currency-switcher-woocommerce.php' ) ) {
-
-				if ( function_exists( 'alg_get_enabled_currencies' ) ) {
-					$currencies = alg_get_enabled_currencies();
-					$currencies = array_combine( $currencies, $currencies );
-
-					$options = $currencies;
-				}
-			} elseif ( is_plugin_active( 'woocommerce-multicurrency/woocommerce-multicurrency.php' ) ) {
-
-				if ( class_exists( 'WOOMC\DAO\Factory' ) ) {
-					$currencies = Factory::getDao()->getEnabledCurrencies();
-					$currencies = array_combine( $currencies, $currencies );
-
-					$options = $currencies;
-				}
-			} elseif ( is_plugin_active( 'woo-multi-currency/woo-multi-currency.php' ) || is_plugin_active( 'woocommerce-multi-currency/woocommerce-multi-currency.php' ) ) {
-				$settings = get_option( 'woo_multi_currency_params' );
-				if ( isset( $settings['currency'] ) ) {
-					$currencies = $settings['currency'];
-					$currencies = array_combine( $currencies, $currencies );
-					$options    = $currencies;
-				}
-			} elseif ( is_plugin_active( 'yaycurrency/yay-currency.php' ) || defined( 'YAY_CURRENCY_VERSION' ) ) {
-				// Yay Currency by YayCommerce - uses custom post type 'yay-currency-manage'
-				$yay_currencies = get_posts(
-					array(
-						'posts_per_page' => -1,
-						'post_type'      => 'yay-currency-manage',
-						'post_status'    => 'publish',
-						'order'          => 'ASC',
-						'orderby'        => 'menu_order',
-					)
-				);
-				if ( ! empty( $yay_currencies ) ) {
-					$currencies = [];
-					foreach ( $yay_currencies as $currency_post ) {
-						$currency_code = $currency_post->post_title;
-						$currencies[ $currency_code ] = $currency_code;
-					}
-					if ( ! empty( $currencies ) ) {
-						$options = $currencies;
-					}
-				}
-			} elseif ( is_plugin_active( 'x-currency/x-currency.php' ) || function_exists( 'x_currency_selected' ) ) {
-				// X-Currency by Crafium - uses custom database table 'x_currency'
-				$currencies = [];
-
-				// Get base currency first
-				if ( function_exists( 'x_currency_base_code' ) ) {
-					$base_currency_code = x_currency_base_code();
-					if ( ! empty( $base_currency_code ) ) {
-						$currencies[ $base_currency_code ] = $base_currency_code;
-					}
-				}
-
-				// Get active currencies from repository
-				if ( function_exists( 'x_currency_singleton' ) && class_exists( 'XCurrency\App\Repositories\CurrencyRepository' ) ) {
-					try {
-						$currency_repository = x_currency_singleton( 'XCurrency\App\Repositories\CurrencyRepository' );
-						if ( method_exists( $currency_repository, 'get' ) ) {
-							$x_currencies = $currency_repository->get();
-							if ( ! empty( $x_currencies ) ) {
-								foreach ( $x_currencies as $currency ) {
-									if ( isset( $currency->code ) ) {
-										$currencies[ $currency->code ] = $currency->code;
-									}
-								}
-							}
-						}
-					} catch ( \Exception $e ) {
-						// Fallback: try to get currencies from database directly.
-						global $wpdb;
-						$x_currencies = $wpdb->get_results(
-							$wpdb->prepare(
-								"SELECT code FROM {$wpdb->prefix}x_currency WHERE active = %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table prefix is safe.
-								1
-							)
-						);
-						if ( ! empty( $x_currencies ) ) {
-							foreach ( $x_currencies as $currency ) {
-								$currencies[ $currency->code ] = $currency->code;
-							}
-						}
-					}
-				}
-
-				if ( ! empty( $currencies ) ) {
-					$options = $currencies;
-				}
-			}
-		}
-
-		return $options;
+		return ! empty( $currencies ) ? $currencies : false;
 	}
 
 	/**

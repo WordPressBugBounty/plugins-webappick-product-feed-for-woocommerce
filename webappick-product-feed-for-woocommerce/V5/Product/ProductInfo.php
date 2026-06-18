@@ -9,10 +9,6 @@ use CTXFeed\V5\Shipping\ShippingFactory;
 use CTXFeed\V5\Tax\TaxFactory;
 use CTXFeed\V5\Utility\Settings;
 use Exception;
-use RankMath\Helper;
-use WPSEO_Meta;
-use WPSEO_Option_Titles;
-use WPSEO_Primary_Term;
 use CTXFeed\V5\Common\Helper as CTX_Helper;
 
 class ProductInfo {
@@ -82,9 +78,7 @@ class ProductInfo {
 		// Add all available variation attributes to variation title.
 		if ( $this->product->is_type( 'variation' ) && ! empty( $this->product->get_attributes() ) && $this->parent_product ) {
 			$title = $this->parent_product->get_title();
-			/**
-			 * Translate press plugin support.
-			 */
+
 			$attributes = [];
 			foreach ( $this->product->get_attributes() as $slug => $value ) {
 				$attribute = $this->product->get_attribute( $slug );
@@ -100,32 +94,26 @@ class ProductInfo {
 			$product_title_and_attribute_merger = apply_filters( "woo_feed_product_title_and_attributes_merger", " - ", $this->product, $this->config );
 
 			/**
-			 * Translate press plugin support.
+			 * Filter to allow compatibility plugins to handle variation title construction.
+			 * Used by TranslatePress and other translation plugins.
 			 *
 			 * @since 8.0.0
-			 * @package CTXFeed
-			 * @subpackage CTXFeed/V5/Product
-			 * @see https://webappick.atlassian.net/browse/CBT-324
-			 * @see https://webappick.atlassian.net/browse/CBT-304
+			 * @param string $title The base title.
+			 * @param string $variation_attributes The variation attributes string.
+			 * @param string $product_title_and_attribute_merger The merger string.
+			 * @param \WC_Product $product The product object.
+			 * @param mixed $config The feed config.
+			 * @return string|null Return modified title or null to use default behavior.
 			 */
-			if ( class_exists( 'TRP_Translate_Press' ) ) {
-				$title = apply_filters( 'woo_feed_filter_product_title', $title, $this->product, $this->config );
-				// Merge product title with variation attributes.
-				if ( ! empty( $variation_attributes ) ) {
-					$variation_attributes = explode('-', $variation_attributes);
-					if(!empty($variation_attributes)){
-						foreach($variation_attributes as $key => $value){
-							$variation_attribute = apply_filters( 'woo_feed_filter_product_title', $value, $this->product, $this->config );
-							$title .= $product_title_and_attribute_merger . $variation_attribute;
-						}
-					}
-				}
-				return $title;
-			} else {
-				// Merge product title with variation attributes.
-				if ( ! empty( $variation_attributes ) ) {
-					$title .= $product_title_and_attribute_merger . $variation_attributes;
-				}
+			$filtered_title = apply_filters( 'woo_feed_filter_variation_title_with_attributes', null, $title, $variation_attributes, $product_title_and_attribute_merger, $this->product, $this->config );
+
+			if ( $filtered_title !== null ) {
+				return $filtered_title;
+			}
+
+			// Default behavior: Merge product title with variation attributes.
+			if ( ! empty( $variation_attributes ) ) {
+				$title .= $product_title_and_attribute_merger . $variation_attributes;
 			}
 		}
 
@@ -156,16 +144,19 @@ class ProductInfo {
 	 * @since 8.0.0
 	 */
 	public function description() {
-
 		/**
-		 * Translate press plugin support.
+		 * Filter to allow compatibility plugins to skip content cleaning.
+		 * Used by TranslatePress and other translation plugins that need raw content.
 		 *
 		 * @since 8.0.0
-		 * @package CTXFeed
-		 * @subpackage CTXFeed/V5/Product
-		 * @see https://webappick.atlassian.net/browse/CBT-304
+		 * @param bool $skip_cleaning Whether to skip content cleaning.
+		 * @param \WC_Product $product The product object.
+		 * @param mixed $config The feed config.
+		 * @return bool
 		 */
-		if ( class_exists( 'TRP_Translate_Press' ) ) {
+		$skip_cleaning = apply_filters( 'woo_feed_skip_description_cleaning', false, $this->product, $this->config );
+
+		if ( $skip_cleaning ) {
 			$description = $this->product->get_description();
 			// For variation product.
 			if ( ! is_null( $this->parent_product ) && $this->product->is_type( 'variation' ) && empty( $description ) ) {
@@ -1276,11 +1267,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function subscription_period() {
-		if ( class_exists( 'WC_Subscriptions' ) ) {
-			return ProductHelper::get_product_meta( '_subscription_period', $this->product, $this->config );
-		}
-
-		return '';
+		return apply_filters( 'woo_feed_filter_subscription_period', '', $this->product, $this->config );
 	}
 
 	/**
@@ -1290,11 +1277,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function subscription_period_interval() {
-		if ( class_exists( 'WC_Subscriptions' ) ) {
-			return ProductHelper::get_product_meta( '_subscription_period_interval', $this->product, $this->config );
-		}
-
-		return '';
+		return apply_filters( 'woo_feed_filter_subscription_period_interval', '', $this->product, $this->config );
 	}
 
 	/**
@@ -1324,11 +1307,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function installment_months() {
-		if ( class_exists( 'WC_Subscriptions' ) ) {
-			return ProductHelper::get_product_meta( '_subscription_length', $this->product, $this->config );
-		}
-
-		return '';
+		return apply_filters( 'woo_feed_filter_installment_months', '', $this->product, $this->config );
 	}
 
 	/**
@@ -1353,15 +1332,6 @@ class ProductInfo {
 			}
 		}
 
-		// For WooCommerce Germanized Plugin
-		// TODO:: Move to compatibility class
-		if ( empty( $unit_price_measure ) && class_exists( 'WooCommerce_Germanized' ) ) {
-			$unit               = ProductHelper::get_product_meta( '_unit', $this->product, $this->config );
-			$unit_price_measure = ProductHelper::get_product_meta( '_unit_product', $this->product, $this->config );
-
-			$unit_price_measure .= ' ' . $unit;
-		}
-
 		return apply_filters( 'woo_feed_filter_unit_price_measure', $unit_price_measure, $this->product, $this->config );
 	}
 
@@ -1382,14 +1352,6 @@ class ProductInfo {
 
 			$unit                    = ProductHelper::get_custom_filed( 'woo_feed_unit', $this->product, $this->config );
 			$unit_price_base_measure = ProductHelper::get_custom_filed( 'woo_feed_unit_pricing_base_measure', $this->product, $this->config );
-			$unit_price_base_measure .= ' ' . $unit;
-		}
-
-		// For WooCommerce Germanized Plugin
-		// TODO:: Move to compatibility class
-		if ( empty( $unit_price_base_measure ) && class_exists( 'WooCommerce_Germanized' ) ) {
-			$unit                    = ProductHelper::get_product_meta( '_unit', $this->product, $this->config );
-			$unit_price_base_measure = ProductHelper::get_product_meta( '_unit_base', $this->product, $this->config );
 			$unit_price_base_measure .= ' ' . $unit;
 		}
 
@@ -1449,17 +1411,7 @@ class ProductInfo {
 	}
 
 	public function yoast_primary_category() {
-		$primary_category = '';
-		$product_id       = CommonHelper::parent_product_id( $this->product );
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$primary_term_id = yoast_get_primary_term_id( 'product_cat', $product_id );
-			$term            = get_term( $primary_term_id );
-			if ( ! is_wp_error( $term ) && ! empty( $term ) ) {
-				$primary_category = $term->name;
-			}
-		}
-
-		return apply_filters( 'woo_feed_filter_product_yoast_primary_category', $primary_category, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_yoast_primary_category', '', $this->product, $this->config );
 	}
 
 	# SEO Plugins
@@ -1471,26 +1423,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function yoast_wpseo_title() {
-
-		$product_id = $this->product->get_id();
-
-		if ( $this->product->is_type( 'variation' ) ) {
-			$product_id = $this->product->get_parent_id();
-		}
-
-		$yoast_title = $this->title();
-
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$yoast_title = get_post_meta( $product_id, '_yoast_wpseo_title', true );
-
-			// Get an instance of WPSEO_Replace_Vars
-			$replace_vars = new \WPSEO_Replace_Vars;
-
-			// Replace variables in the title
-			$yoast_title = $replace_vars->replace( $yoast_title, get_post( $product_id ) );
-		}
-
-		return apply_filters( 'woo_feed_filter_product_yoast_wpseo_title', $yoast_title, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_yoast_wpseo_title', $this->title(), $this->product, $this->config );
 	}
 
 	/**
@@ -1500,26 +1433,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function yoast_wpseo_metadesc() {
-
-		$product_id = $this->product->get_id();
-
-		if ( $this->product->is_type( 'variation' ) ) {
-			$product_id = $this->product->get_parent_id();
-		}
-
-		$meta_description = $this->description();
-
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$meta_description = get_post_meta( $product_id, '_yoast_wpseo_metadesc', true );
-
-			// Get an instance of WPSEO_Replace_Vars
-			$replace_vars = new \WPSEO_Replace_Vars;
-
-			// Replace variables in the title
-			$meta_description = $replace_vars->replace( $meta_description, get_post( $product_id ) );
-		}
-
-		return apply_filters( 'woo_feed_filter_product_yoast_wpseo_metadesc', $meta_description, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_yoast_wpseo_metadesc', $this->description(), $this->product, $this->config );
 	}
 
 	# SEO Plugins
@@ -1531,19 +1445,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function yoast_canonical_url() {
-
-		$product_id = $this->product->get_id();
-
-		if ( $this->product->is_type( 'variation' ) ) {
-			$product_id = $this->product->get_parent_id();
-		}
-
-		$yoast_canonical_url = '';
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$yoast_canonical_url = get_post_meta( $product_id, '_yoast_wpseo_canonical', true );
-		}
-
-		return apply_filters( 'woo_feed_filter_product_yoast_canonical_url', $yoast_canonical_url, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_yoast_canonical_url', '', $this->product, $this->config );
 	}
 
 	/**
@@ -1553,13 +1455,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function yoast_gtin8() {
-
-		$yoast_gtin8_value = '';
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$yoast_gtin8_value = woo_feed_get_yoast_identifiers_value( 'gtin8', $this->product );
-		}
-
-		return apply_filters( 'yoast_gtin8_attribute_value', $yoast_gtin8_value, $this->product );
+		return apply_filters( 'yoast_gtin8_attribute_value', '', $this->product );
 	}
 
 	/**
@@ -1569,12 +1465,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function yoast_gtin12() {
-		$yoast_gtin8_value = '';
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$yoast_gtin8_value = woo_feed_get_yoast_identifiers_value( 'gtin12', $this->product );
-		}
-
-		return apply_filters( 'yoast_gtin12_attribute_value', $yoast_gtin8_value, $this->product );
+		return apply_filters( 'yoast_gtin12_attribute_value', '', $this->product );
 	}
 
 	/**
@@ -1584,12 +1475,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function yoast_gtin13() {
-		$yoast_gtin8_value = '';
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$yoast_gtin8_value = woo_feed_get_yoast_identifiers_value( 'gtin13', $this->product );
-		}
-
-		return apply_filters( 'yoast_gtin13_attribute_value', $yoast_gtin8_value, $this->product );
+		return apply_filters( 'yoast_gtin13_attribute_value', '', $this->product );
 	}
 
 	/**
@@ -1599,12 +1485,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function yoast_gtin14() {
-		$yoast_gtin8_value = '';
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$yoast_gtin8_value = woo_feed_get_yoast_identifiers_value( 'gtin14', $this->product );
-		}
-
-		return apply_filters( 'yoast_gtin14_attribute_value', $yoast_gtin8_value, $this->product );
+		return apply_filters( 'yoast_gtin14_attribute_value', '', $this->product );
 	}
 
 	/**
@@ -1614,12 +1495,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function yoast_isbn() {
-		$yoast_gtin8_value = '';
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$yoast_gtin8_value = woo_feed_get_yoast_identifiers_value( 'isbn', $this->product );
-		}
-
-		return apply_filters( 'yoast_isbn_attribute_value', $yoast_gtin8_value, $this->product );
+		return apply_filters( 'yoast_isbn_attribute_value', '', $this->product );
 	}
 
 	/**
@@ -1629,12 +1505,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function yoast_mpn() {
-		$yoast_gtin8_value = '';
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$yoast_gtin8_value = woo_feed_get_yoast_identifiers_value( 'mpn', $this->product );
-		}
-
-		return apply_filters( 'yoast_mpn_attribute_value', $yoast_gtin8_value, $this->product );
+		return apply_filters( 'yoast_mpn_attribute_value', '', $this->product );
 	}
 
 	/**
@@ -1644,24 +1515,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function rank_math_title() {
-		$rank_title = '';
-		if ( class_exists( 'RankMath' ) ) {
-			$title = get_post_meta( $this->product->get_id(), 'rank_math_title', true );
-			if ( empty( $title ) ) {
-				$title_format = Helper::get_settings( "titles.pt_product_title" );
-				$title_format = $title_format ? $title_format : '%title%';
-				$sep          = Helper::get_settings( 'titles.title_separator' );
-
-				$rank_title = str_replace( '%title%', $this->product->get_title(), $title_format );
-				$rank_title = str_replace( '%sep%', $sep, $rank_title );
-				$rank_title = str_replace( '%page%', '', $rank_title );
-				$rank_title = str_replace( '%sitename%', get_bloginfo( 'name' ), $rank_title );
-			} else {
-				$rank_title = $title;
-			}
-		}
-
-		return apply_filters( 'woo_feed_filter_product_rank_math_title', $rank_title, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_rank_math_title', '', $this->product, $this->config );
 	}
 
 	/**
@@ -1671,35 +1525,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function rank_math_description() {
-		$description = '';
-		if ( class_exists( 'RankMath' ) ) {
-			$description = get_post_meta( $this->product->get_id(), 'rank_math_description' );
-			$desc_format = Helper::get_settings( "titles.pt_post_description" );
-
-			if ( empty( $description ) ) {
-				if ( ! empty( $desc_format ) && strpos( (string) $desc_format, 'excerpt' ) !== false ) {
-					$description = str_replace( '%excerpt%', get_the_excerpt( $this->product->get_id() ), $desc_format );
-				}
-
-				// Get Variation Description
-				if ( empty( $description ) && $this->product->is_type( 'variation' ) && $this->parent_product ) {
-					$description = $this->parent_product->get_description();
-				}
-			}
-
-			if ( is_array( $description ) ) {
-				$description = reset( $description );
-			}
-
-			$description = CommonHelper::remove_shortcodes( $description );
-
-			//strip tags and spacial characters
-			$strip_description = CommonHelper::strip_all_tags( wp_specialchars_decode( $description ) );
-
-			$description = ! empty( strlen( $strip_description ) ) && 0 < strlen( $strip_description ) ? $strip_description : $description;
-		}
-
-		return apply_filters( 'woo_feed_filter_product_rank_math_description', $description, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_rank_math_description', '', $this->product, $this->config );
 	}
 
 	/**
@@ -1709,23 +1535,7 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function rank_math_canonical_url() {
-		$canonical_url = '';
-
-		if ( class_exists( 'RankMath' ) ) {
-			$post_canonical_url = get_post_meta( $this->product->get_id(), 'rank_math_canonical_url' );
-
-			if ( empty( $post_canonical_url ) ) {
-				$canonical_url = get_the_permalink( $this->product->get_id() );
-			} else {
-				$canonical_url = $post_canonical_url;
-			}
-
-			if ( is_array( $canonical_url ) ) {
-				$canonical_url = reset( $canonical_url );
-			}
-		}
-
-		return apply_filters( 'woo_feed_filter_product_rank_math_canonical_url', $canonical_url, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_rank_math_canonical_url', '', $this->product, $this->config );
 	}
 
 	/**
@@ -1735,50 +1545,19 @@ class ProductInfo {
 	 * @since      8.0.0
 	 */
 	public function rank_math_gtin() {
-		$product_id          = CommonHelper::parent_product_id( $this->product );
-		$rankmath_gtin_value = get_post_meta( $product_id, '_rank_math_gtin_code' );
-		$rankmath_gtin_value = ! empty( $rankmath_gtin_value ) && is_array( $rankmath_gtin_value ) ? $rankmath_gtin_value[0] : '';
-
-		return apply_filters( 'rankmath_gtin_attribute_value', $rankmath_gtin_value, $this->product, $this->config );
+		return apply_filters( 'rankmath_gtin_attribute_value', '', $this->product, $this->config );
 	}
 
 	public function _aioseop_title() {
-		$title = '';
-		if ( is_plugin_active( 'all-in-one-seo-pack/all_in_one_seo_pack.php' ) && class_exists( 'AIOSEO\Plugin\Common\Models\Post' ) ) {
-
-			$post  = \AIOSEO\Plugin\Common\Models\Post::getPost( $this->product->get_id() );
-			$title = ! empty( $post->title ) ? $post->title : aioseo()->meta->title->getPostTypeTitle( 'product' );
-		}
-
-		$title = ! empty( $title ) ? $title : $this->title();
-
-		return apply_filters( 'woo_feed_filter_product_aioseop_title', $title, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_aioseop_title', $this->title(), $this->product, $this->config );
 	}
 
 	public function _aioseop_description() {
-		$description = '';
-
-		if ( is_plugin_active( 'all-in-one-seo-pack/all_in_one_seo_pack.php' ) && class_exists( 'AIOSEO\Plugin\Common\Models\Post' ) ) {
-
-			$post        = \AIOSEO\Plugin\Common\Models\Post::getPost( $this->product->get_id() );
-			$description = ! empty( $post->description ) ? $post->description : aioseo()->meta->description->getPostTypeDescription( 'product' );
-		}
-
-		if ( empty( $description ) ) {
-			$description = $this->description();
-		}
-
-		return apply_filters( 'woo_feed_filter_product_aioseop_description', $description, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_aioseop_description', $this->description(), $this->product, $this->config );
 	}
 
 	public function _aioseop_canonical_url() {
-		$aioseop_canonical_url = '';
-		if ( is_plugin_active( 'all-in-one-seo-pack/all_in_one_seo_pack.php' ) && class_exists( 'AIOSEO\Plugin\Common\Models\Post' ) ) {
-			$post                  = \AIOSEO\Plugin\Common\Models\Post::getPost( $this->product->get_id() );
-			$aioseop_canonical_url = $post->canonical_url;
-		}
-
-		return apply_filters( 'woo_feed_filter_product_aioseop_canonical_url', $aioseop_canonical_url, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_aioseop_canonical_url', '', $this->product, $this->config );
 	}
 
 	public function tax( $key = '' ) {

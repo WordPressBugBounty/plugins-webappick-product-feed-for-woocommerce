@@ -27,6 +27,9 @@ class Alg_WC_Currency_SwitcherCompatibility {
 
 		// Add currency suffix to product link.
 		add_filter( 'woo_feed_filter_product_link', array( $this, 'get_product_link_with_suffix' ), 10, 3 );
+
+		// Add Alg currencies to dropdown options.
+		add_filter( 'ctx_feed_active_currencies', array( $this, 'get_active_currencies' ), 10, 1 );
 	}
 
 	/**
@@ -64,6 +67,28 @@ class Alg_WC_Currency_SwitcherCompatibility {
 		$link .= $currency_suffix;
 
 		return $link;
+	}
+
+	/**
+	 * Get active Alg currencies for dropdown.
+	 *
+	 * @param array $currencies Existing currencies array.
+	 *
+	 * @return array
+	 */
+	public function get_active_currencies( $currencies ) {
+		if ( ! function_exists( 'alg_get_enabled_currencies' ) ) {
+			return $currencies;
+		}
+
+		$enabled_currencies = alg_get_enabled_currencies();
+		if ( ! empty( $enabled_currencies ) && is_array( $enabled_currencies ) ) {
+			foreach ( $enabled_currencies as $currency ) {
+				$currencies[ $currency ] = $currency;
+			}
+		}
+
+		return $currencies;
 	}
 
 }

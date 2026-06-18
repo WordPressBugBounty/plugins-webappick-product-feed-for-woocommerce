@@ -27,6 +27,9 @@ class WOOMC_APICompatibility {
 		add_filter( 'woo_feed_filter_product_regular_price_with_tax', array( $this, 'get_converted_price' ), 10, 5 );
 		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_converted_price' ), 10, 5 );
 		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_converted_price' ), 10, 5 );
+
+		// Add WOOMC currencies to dropdown options.
+		add_filter( 'ctx_feed_active_currencies', array( $this, 'get_active_currencies' ), 10, 1 );
 	}
 
 	/**
@@ -49,6 +52,28 @@ class WOOMC_APICompatibility {
 		}
 
 		return $price;
+	}
+
+	/**
+	 * Get active WOOMC currencies for dropdown.
+	 *
+	 * @param array $currencies Existing currencies array.
+	 *
+	 * @return array
+	 */
+	public function get_active_currencies( $currencies ) {
+		if ( ! class_exists( 'WOOMC\DAO\Factory' ) ) {
+			return $currencies;
+		}
+
+		$enabled_currencies = \WOOMC\DAO\Factory::getDao()->getEnabledCurrencies();
+		if ( ! empty( $enabled_currencies ) && is_array( $enabled_currencies ) ) {
+			foreach ( $enabled_currencies as $currency ) {
+				$currencies[ $currency ] = $currency;
+			}
+		}
+
+		return $currencies;
 	}
 
 }

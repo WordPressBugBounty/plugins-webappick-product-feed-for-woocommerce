@@ -40,15 +40,23 @@ class WOOMULTI_CURRENCYCompatibility
 		add_filter('woo_feed_filter_product_price_with_tax', array($this, 'get_converted_price'), 10, 5);
 		add_filter('woo_feed_filter_product_sale_price_with_tax', array($this, 'get_converted_price'), 10, 5);
 
-		add_action('woo_feed_action_shipping_currency',array($this,'shipping_currency_switch'),10,1);
+		// Hook for shipping currency switch (legacy hook for backward compatibility).
+		add_action( 'woo_feed_action_shipping_currency', array( $this, 'shipping_currency_switch' ), 10, 1 );
+
+		// New hook for shipping currency switch before add to cart.
+		add_action( 'woo_feed_before_add_to_cart_for_shipping', array( $this, 'shipping_currency_switch' ), 10, 2 );
+
+		// Add VillaTheme Pro currencies to dropdown options.
+		add_filter( 'ctx_feed_active_currencies', array( $this, 'get_active_currencies' ), 10, 1 );
 	}
 
 	/**
 	 * Switch currency before shipping
 	 *
-	 * @param \CTXFeed\V5\Utility\Config $config feed config array.
+	 * @param \CTXFeed\V5\Utility\Config $config     Feed config array.
+	 * @param int|null                   $product_id Product ID (optional, used by new hook).
 	 */
-	public function shipping_currency_switch( $config ) {
+	public function shipping_currency_switch( $config, $product_id = null ) {
 		$data             = \WOOMULTI_CURRENCY_Data::get_ins();
 		$default_currency = $data->get_default_currency();
 
@@ -174,6 +182,24 @@ class WOOMULTI_CURRENCYCompatibility
 		}
 
 		return $price;
+	}
+
+	/**
+	 * Get active VillaTheme Multi Currency Pro currencies for dropdown.
+	 *
+	 * @param array $currencies Existing currencies array.
+	 *
+	 * @return array
+	 */
+	public function get_active_currencies( $currencies ) {
+		$settings = get_option( 'woo_multi_currency_params' );
+		if ( isset( $settings['currency'] ) && is_array( $settings['currency'] ) ) {
+			foreach ( $settings['currency'] as $currency ) {
+				$currencies[ $currency ] = $currency;
+			}
+		}
+
+		return $currencies;
 	}
 
 }

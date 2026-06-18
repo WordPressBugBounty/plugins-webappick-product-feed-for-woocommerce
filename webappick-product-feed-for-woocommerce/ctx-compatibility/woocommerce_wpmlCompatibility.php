@@ -39,6 +39,9 @@ class woocommerce_wpmlCompatibility {
 		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'wcml_currency_convert' ), 99, 5 );
 		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'wcml_currency_convert' ), 99, 5 );
 
+		// Add WPML multi-currency to dropdown options.
+		add_filter( 'ctx_feed_active_currencies', array( $this, 'get_active_currencies' ), 10, 1 );
+
 		add_action( 'before_woo_feed_get_product_information', function ( $config ) {
 			if ( ! class_exists( 'WCML\MultiCurrency\Settings' ) ) {
 				include_once WP_CONTENT_DIR . '/plugins/woocommerce-multilingual/classes/Multicurrency/Settings.php';
@@ -113,6 +116,32 @@ class woocommerce_wpmlCompatibility {
 		}
 
 		return $converted_price;
+	}
+
+	/**
+	 * Get active WPML Multi-Currency currencies for dropdown.
+	 *
+	 * @param array $currencies Existing currencies array.
+	 *
+	 * @return array
+	 */
+	public function get_active_currencies( $currencies ) {
+		global $woocommerce_wpml;
+
+		if ( ! class_exists( 'woocommerce_wpml' ) || ! function_exists( 'wcml_is_multi_currency_on' ) || ! wcml_is_multi_currency_on() ) {
+			return $currencies;
+		}
+
+		if ( isset( $woocommerce_wpml->multi_currency->currencies ) ) {
+			$get_currencies = $woocommerce_wpml->multi_currency->currencies;
+			if ( ! empty( $get_currencies ) ) {
+				foreach ( $get_currencies as $key => $currency ) {
+					$currencies[ $key ] = $key;
+				}
+			}
+		}
+
+		return $currencies;
 	}
 
 }

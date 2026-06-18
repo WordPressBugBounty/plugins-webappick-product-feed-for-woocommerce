@@ -1176,58 +1176,24 @@ class ProductInfos {//phpcs:ignore
 
 	/**
 	 * Get product Yoast WP SEO title.
+	 * Logic handled by WPSEO_FrontendCompatibility class via filter.
 	 *
 	 * @return string
 	 * @since      8.0.0
 	 */
 	public function yoast_wpseo_title() {
-		$product_id = $this->product->get_id();
-
-		if ( $this->product->is_type( 'variation' ) ) {
-			$product_id = $this->product->get_parent_id();
-		}
-
-		$yoast_title = $this->title();
-
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$yoast_title = get_post_meta( $product_id, '_yoast_wpseo_title', true );
-
-			// Get an instance of WPSEO_Replace_Vars
-			$replace_vars = new \WPSEO_Replace_Vars;
-
-			// Replace variables in the title
-			$yoast_title = $replace_vars->replace( $yoast_title, get_post( $product_id ) );
-		}
-
-		return apply_filters( 'woo_feed_filter_product_yoast_wpseo_title', $yoast_title, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_yoast_wpseo_title', $this->title(), $this->product, $this->config );
 	}
 
 	/**
 	 * Get product Yoast WP SEO description.
+	 * Logic handled by WPSEO_FrontendCompatibility class via filter.
 	 *
 	 * @return string
 	 * @since      8.0.0
 	 */
 	public function yoast_wpseo_metadesc() {
-		$product_id = $this->product->get_id();
-
-		if ( $this->product->is_type( 'variation' ) ) {
-			$product_id = $this->product->get_parent_id();
-		}
-
-		$meta_description = $this->description();
-
-		if ( class_exists( 'WPSEO_Frontend' ) ) {
-			$meta_description = get_post_meta( $product_id, '_yoast_wpseo_metadesc', true );
-
-			// Get an instance of WPSEO_Replace_Vars
-			$replace_vars = new \WPSEO_Replace_Vars;
-
-			// Replace variables in the title
-			$meta_description = $replace_vars->replace( $meta_description, get_post( $product_id ) );
-		}
-
-		return apply_filters( 'woo_feed_filter_product_yoast_wpseo_metadesc', $meta_description, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_yoast_wpseo_metadesc', $this->description(), $this->product, $this->config );
 	}
 
 	/**
@@ -1322,146 +1288,79 @@ class ProductInfos {//phpcs:ignore
 
 	/**
 	 * Get product Rank Math Title.
+	 * Logic handled by RankMathCompatibility class via filter.
 	 *
 	 * @return string
 	 * @since      8.0.0
 	 */
 	public function rank_math_title() {
-		$rank_title = '';
-		if ( class_exists( 'RankMath' ) ) {
-			$title = get_post_meta( $this->product->get_id(), 'rank_math_title', true );
-			if ( empty( $title ) ) {
-				$title_format = Helper::get_settings( "titles.pt_product_title" );
-				$title_format = $title_format ? $title_format : '%title%';
-				$sep          = Helper::get_settings( 'titles.title_separator' );
-
-				$rank_title = str_replace( '%title%', $this->product->get_title(), $title_format );
-				$rank_title = str_replace( '%sep%', $sep, $rank_title );
-				$rank_title = str_replace( '%page%', '', $rank_title );
-				$rank_title = str_replace( '%sitename%', get_bloginfo( 'name' ), $rank_title );
-			} else {
-				$rank_title = $title;
-			}
-		}
-
-		return apply_filters( 'woo_feed_filter_product_rank_math_title', $rank_title, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_rank_math_title', '', $this->product, $this->config );
 	}
 
 	/**
 	 * Get product Rank Math Description.
+	 * Logic handled by RankMathCompatibility class via filter.
 	 *
 	 * @return string
 	 * @since      8.0.0
 	 */
 	public function rank_math_description() {
-		$description = '';
-		if ( class_exists( 'RankMath' ) ) {
-			$description = get_post_meta( $this->product->get_id(), 'rank_math_description' );
-			$desc_format = Helper::get_settings( "titles.pt_post_description" );
-
-			if ( empty( $description ) ) {
-				if ( ! empty( $desc_format ) && strpos( (string) $desc_format, 'excerpt' ) !== false ) {
-					$description = str_replace( '%excerpt%', get_the_excerpt( $this->product->get_id() ), $desc_format );
-				}
-
-				// Get Variation Description
-				if ( empty( $description ) && $this->product->is_type( 'variation' ) ) {
-					$description = $this->parent_product->get_description();
-				}
-			}
-
-			if ( is_array( $description ) ) {
-				$description = reset( $description );
-			}
-
-			$description = CommonHelper::remove_shortcodes( $description );
-
-			//strip tags and spacial characters
-			$strip_description = CommonHelper::strip_all_tags( wp_specialchars_decode( $description ) );
-
-			$description = ! empty( strlen( $strip_description ) ) && 0 < strlen( $strip_description ) ? $strip_description : $description;
-		}
-
-		return apply_filters( 'woo_feed_filter_product_rank_math_description', $description, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_rank_math_description', '', $this->product, $this->config );
 	}
 
 	/**
 	 * Get product Rank Math Canonical URL.
+	 * Logic handled by RankMathCompatibility class via filter.
 	 *
 	 * @return string
 	 * @since      8.0.0
 	 */
 	public function rank_math_canonical_url() {
-		$canonical_url = '';
-
-		if ( class_exists( 'RankMath' ) ) {
-			$post_canonical_url = get_post_meta( $this->product->get_id(), 'rank_math_canonical_url' );
-
-			if ( empty( $post_canonical_url ) ) {
-				$canonical_url = get_the_permalink( $this->product->get_id() );
-			} else {
-				$canonical_url = $post_canonical_url;
-			}
-
-			if ( is_array( $canonical_url ) ) {
-				$canonical_url = reset( $canonical_url );
-			}
-		}
-
-		return apply_filters( 'woo_feed_filter_product_rank_math_canonical_url', $canonical_url, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_rank_math_canonical_url', '', $this->product, $this->config );
 	}
 
 	/**
 	 * Get product Rank Math GTIN.
+	 * Logic handled by RankMathCompatibility class via filter.
 	 *
 	 * @return string
 	 * @since      8.0.0
 	 */
 	public function rank_math_gtin() {
-		$product_id          = CommonHelper::parent_product_id( $this->product );
-		$rankmath_gtin_value = get_post_meta( $product_id, '_rank_math_gtin_code' );
-		$rankmath_gtin_value = ! empty( $rankmath_gtin_value ) && is_array( $rankmath_gtin_value ) ? $rankmath_gtin_value[0] : '';
-
-		return apply_filters( 'rankmath_gtin_attribute_value', $rankmath_gtin_value, $this->product, $this->config );
+		return apply_filters( 'rankmath_gtin_attribute_value', '', $this->product, $this->config );
 	}
 
+	/**
+	 * Get product AIOSEO title.
+	 * Logic handled by AIOSEOCompatibility class via filter.
+	 *
+	 * @return string
+	 * @since      8.0.0
+	 */
 	public function _aioseop_title() {
-		$title = '';
-		if ( is_plugin_active( 'all-in-one-seo-pack/all_in_one_seo_pack.php' ) && class_exists( 'AIOSEO\Plugin\Common\Models\Post' ) ) {
-
-			$post  = \AIOSEO\Plugin\Common\Models\Post::getPost( $this->product->get_id() );
-			$title = ! empty( $post->title ) ? $post->title : aioseo()->meta->title->getPostTypeTitle( 'product' );
-		}
-
-		$title = ! empty( $title ) ? $title : $this->title();
-
-		return apply_filters( 'woo_feed_filter_product_aioseop_title', $title, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_aioseop_title', $this->title(), $this->product, $this->config );
 	}
 
+	/**
+	 * Get product AIOSEO description.
+	 * Logic handled by AIOSEOCompatibility class via filter.
+	 *
+	 * @return string
+	 * @since      8.0.0
+	 */
 	public function _aioseop_description() {
-		$description = '';
-
-		if ( is_plugin_active( 'all-in-one-seo-pack/all_in_one_seo_pack.php' ) && class_exists( 'AIOSEO\Plugin\Common\Models\Post' ) ) {
-
-			$post        = \AIOSEO\Plugin\Common\Models\Post::getPost( $this->product->get_id() );
-			$description = ! empty( $post->description ) ? $post->description : aioseo()->meta->description->getPostTypeDescription( 'product' );
-		}
-
-		if ( empty( $description ) ) {
-			$description = $this->description();
-		}
-
-		return apply_filters( 'woo_feed_filter_product_aioseop_description', $description, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_aioseop_description', $this->description(), $this->product, $this->config );
 	}
 
+	/**
+	 * Get product AIOSEO canonical URL.
+	 * Logic handled by AIOSEOCompatibility class via filter.
+	 *
+	 * @return string
+	 * @since      8.0.0
+	 */
 	public function _aioseop_canonical_url() {
-		$aioseop_canonical_url = '';
-		if ( is_plugin_active( 'all-in-one-seo-pack/all_in_one_seo_pack.php' ) && class_exists( 'AIOSEO\Plugin\Common\Models\Post' ) ) {
-			$post                  = \AIOSEO\Plugin\Common\Models\Post::getPost( $this->product->get_id() );
-			$aioseop_canonical_url = $post->canonical_url;
-		}
-
-		return apply_filters( 'woo_feed_filter_product_aioseop_canonical_url', $aioseop_canonical_url, $this->product, $this->config );
+		return apply_filters( 'woo_feed_filter_product_aioseop_canonical_url', '', $this->product, $this->config );
 	}
 
 }

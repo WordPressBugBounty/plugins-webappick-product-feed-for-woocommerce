@@ -299,71 +299,18 @@ class ProductAttributeFactory {
 
 	/**
 	 * Get installed SEO plugin attributes.
+	 * Uses filter hooks to allow compatibility classes to provide their attributes.
 	 *
 	 * @return array
 	 */
 	private static function getSeoPluginAttributes() {
-
-		$seoAttributes = [];
 		/**
-		 * Get Yoast SEO Plugin Attributes.
+		 * Filter to allow SEO compatibility plugins to add their attributes.
 		 *
-		 * @link https://wordpress.org/plugins/wordpress-seo/
+		 * @param array $seoAttributes Empty array to be populated by compatibility classes.
+		 * @return array SEO plugin attributes array with 'optionGroup' and 'options' keys.
 		 */
-		if ( class_exists( 'WPSEO_Frontend' ) || class_exists( 'WPSEO_Premium' ) ) {
-
-			$seoAttributes = [
-				'optionGroup' => esc_html__( 'Yoast SEO', 'woo-feed' ),
-				'options'     => [
-					'yoast_wpseo_title'    => esc_html__( 'Title [Yoast SEO]', 'woo-feed' ),
-					'yoast_wpseo_metadesc' => esc_html__( 'Description [Yoast SEO]', 'woo-feed' ),
-					'yoast_canonical_url'  => esc_html__( 'Canonical URL [Yoast SEO]', 'woo-feed' ),
-					'yoast_primary_category'  => esc_html__( 'Primary Category [Yoast SEO]', 'woo-feed' ),
-				],
-			];
-
-			/**
-			 * Get Yoast WooCommerce SEO plugins Identifier Attributes.
-			 *
-			 * @link https://yoast.com/wordpress/plugins/yoast-woocommerce-seo/
-			 */
-			if ( class_exists( 'Yoast_WooCommerce_SEO' ) ) {
-				$seoAttributes['options'] += [
-					'yoast_gtin8'  => esc_html__( 'GTIN8 [Yoast SEO]', 'woo-feed' ),
-					'yoast_gtin12' => esc_html__( 'GTIN12 / UPC [Yoast SEO]', 'woo-feed' ),
-					'yoast_gtin13' => esc_html__( 'GTIN13 / EAN [Yoast SEO]', 'woo-feed' ),
-					'yoast_gtin14' => esc_html__( 'GTIN14 / ITF-14 [Yoast SEO]', 'woo-feed' ),
-					'yoast_isbn'   => esc_html__( 'ISBN [Yoast SEO]', 'woo-feed' ),
-					'yoast_mpn'    => esc_html__( 'MPN [Yoast SEO]', 'woo-feed' ),
-				];
-			}
-		}
-
-		if ( class_exists( 'RankMath' ) || class_exists( 'RankMathPro' ) ) {
-			$seoAttributes = [
-				'optionGroup' => esc_html__( 'RANK MATH SEO', 'woo-feed' ),
-				'options'     => [
-					'rank_math_title'         => esc_html__( 'Title [RankMath SEO]', 'woo-feed' ),
-					'rank_math_description'   => esc_html__( 'Description [RankMath SEO]', 'woo-feed' ),
-					'rank_math_canonical_url' => esc_html__( 'Canonical URL [RankMath SEO]', 'woo-feed' )
-				],
-			];
-
-			if ( class_exists( 'RankMathPro' ) ) {
-				$seoAttributes['options'] += [ 'rank_math_gtin' => esc_html__( 'GTIN [RankMath Pro SEO]', 'woo-feed' ) ];
-			}
-		}
-
-		if ( class_exists( 'AIOSEO\Plugin\AIOSEO' ) ) {
-			$seoAttributes = [
-				'optionGroup' => esc_html__( 'ALL IN ONE SEO', 'woo-feed' ),
-				'options'     => [
-					'_aioseop_title'         => esc_html__( 'Title [All in One SEO]', 'woo-feed' ),
-					'_aioseop_description'   => esc_html__( 'Description [All in One SEO]', 'woo-feed' ),
-					'_aioseop_canonical_url' => esc_html__( 'Canonical URL [All in One SEO]', 'woo-feed' ),
-				],
-			];
-		}
+		$seoAttributes = apply_filters( 'woo_feed_seo_plugin_attributes', [] );
 
 		return $seoAttributes;
 	}
@@ -557,39 +504,19 @@ class ProductAttributeFactory {
 	}
 
 	/**
-	 * Get Advance Custom Field (ACF) field list
+	 * Get Advance Custom Field (ACF) field list.
+	 * Uses filter hooks to allow compatibility classes to provide ACF fields.
 	 *
 	 * @return array
 	 */
 	private static function getACFAttributes() {
-		$options = [];
-		if ( class_exists( 'ACF' ) ) {
-			$acf_fields = Cache::get( 'acf_field_list' );
-			if ( false === $acf_fields && function_exists( 'acf_get_field_groups' ) ) {
-				$field_groups = acf_get_field_groups();
-				foreach ( $field_groups as $group ) {
-					// DO NOT USE here: $fields = acf_get_fields($group['key']);
-					// because it causes repeater field bugs and returns "trashed" fields
-					$fields = get_posts(
-						array(
-							'posts_per_page'         => - 1,
-							'post_type'              => 'acf-field',
-							'orderby'                => 'menu_order',
-							'order'                  => 'ASC',
-							'suppress_filters'       => true, // DO NOT allow WPML to modify the query
-							'post_parent'            => $group['ID'],
-							'post_status'            => 'any',
-							'update_post_meta_cache' => false,
-						)
-					);
-					foreach ( $fields as $field ) {
-						$options[ 'acf_fields_' . $field->post_name ] = $field->post_title;
-					}
-				}
-
-				Cache::set( 'acf_field_list', $options );
-			}
-		}
+		/**
+		 * Filter to allow ACF compatibility plugin to provide field list.
+		 *
+		 * @param array $options Empty array to be populated by ACF compatibility class.
+		 * @return array ACF fields array with field key => field title.
+		 */
+		$options = apply_filters( 'woo_feed_acf_field_list', [] );
 
 		return [
 			'optionGroup' => esc_html__( 'Advance Custom Fields (ACF)', 'woo-feed' ),

@@ -69,6 +69,9 @@ class XCurrencyCompatibility {
 
 		// Add currency suffix to product link.
 		add_filter( 'woo_feed_filter_product_link', array( $this, 'get_product_link_with_suffix' ), 10, 3 );
+
+		// Add X-Currency currencies to dropdown options.
+		add_filter( 'ctx_feed_active_currencies', array( $this, 'get_active_currencies' ), 10, 1 );
 	}
 
 	/**
@@ -309,6 +312,56 @@ class XCurrencyCompatibility {
 		if ( isset( $x_currency ) && is_array( $x_currency ) ) {
 			$x_currency['selected_currency'] = $currency;
 		}
+	}
+
+	/**
+	 * Get active X-Currency currencies for dropdown.
+	 *
+	 * @param array $currencies Existing currencies array.
+	 *
+	 * @return array
+	 */
+	public function get_active_currencies( $currencies ) {
+		// Get base currency first.
+		if ( function_exists( 'x_currency_base_code' ) ) {
+			$base_currency_code = x_currency_base_code();
+			if ( ! empty( $base_currency_code ) ) {
+				$currencies[ $base_currency_code ] = $base_currency_code;
+			}
+		}
+
+		// Get active currencies from repository.
+		if ( function_exists( 'x_currency_singleton' ) && class_exists( 'XCurrency\App\Repositories\CurrencyRepository' ) ) {
+			try {
+				$currency_repository = x_currency_singleton( 'XCurrency\App\Repositories\CurrencyRepository' );
+				if ( method_exists( $currency_repository, 'get' ) ) {
+					$x_currencies = $currency_repository->get();
+					if ( ! empty( $x_currencies ) ) {
+						foreach ( $x_currencies as $currency ) {
+							if ( isset( $currency->code ) ) {
+								$currencies[ $currency->code ] = $currency->code;
+							}
+						}
+					}
+				}
+			} catch ( \Exception $e ) {
+				// Fallback: try to get currencies from database directly.
+				global $wpdb;
+				$x_currencies = $wpdb->get_results(
+					$wpdb->prepare(
+						"SELECT code FROM {$wpdb->prefix}x_currency WHERE active = %d", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Table prefix is safe.
+						1
+					)
+				);
+				if ( ! empty( $x_currencies ) ) {
+					foreach ( $x_currencies as $currency ) {
+						$currencies[ $currency->code ] = $currency->code;
+					}
+				}
+			}
+		}
+
+		return $currencies;
 	}
 
 }

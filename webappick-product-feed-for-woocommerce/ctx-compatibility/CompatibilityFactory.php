@@ -157,6 +157,20 @@ class CompatibilityFactory {
 			'woocommerce-product-bundles/woocommerce-product-bundles.php'               => 'WC_Product_Bundle',
 			// DONE
 			// https://woocommerce.com/products/product-bundles/
+			'woo-product-bundle/wpc-product-bundles.php'                                => 'WPCProductBundles',
+			// DONE
+			// https://wordpress.org/plugins/woo-product-bundle/
+			'iconic-woo-bundled-products/iconic-woo-bundled-products.php'               => 'IconicBundleProduct',
+			// DONE
+			// https://iconicwp.com/products/woocommerce-bundled-products/
+
+
+			#################################################################################
+			# WPC Grouped Product plugin                                                    #
+			#################################################################################
+			'wpc-grouped-product/wpc-grouped-product.php'                               => 'WPCGroupedProduct',
+			// DONE
+			// https://wordpress.org/plugins/wpc-grouped-product/
 
 
 			#################################################################################
@@ -203,6 +217,53 @@ class CompatibilityFactory {
 			// DONE
 
 			'divigrid/divigrid.php' => 'DIVI_GRID_PLUGIN',
+
+
+			#################################################################################
+			# WooCommerce Subscriptions plugin                                              #
+			#################################################################################
+			'woocommerce-subscriptions/woocommerce-subscriptions.php'                   => 'WC_Subscriptions',
+			// https://woocommerce.com/products/woocommerce-subscriptions/
+
+
+			#################################################################################
+			# WooCommerce Germanized plugin                                                 #
+			#################################################################################
+			'woocommerce-germanized/woocommerce-germanized.php'                         => 'WooCommerce_Germanized',
+			// https://wordpress.org/plugins/woocommerce-germanized/
+
+
+			#################################################################################
+			# SEO plugins                                                                   #
+			#################################################################################
+			'wordpress-seo/wp-seo.php'                                                  => 'WPSEO_Frontend',
+			// Yoast SEO - https://wordpress.org/plugins/wordpress-seo/
+			'wordpress-seo-premium/wp-seo-premium.php'                                  => 'WPSEO_Frontend',
+			// Yoast SEO Premium
+			'seo-by-rank-math/rank-math.php'                                            => 'RankMath',
+			// RankMath - https://wordpress.org/plugins/seo-by-rank-math/
+			'all-in-one-seo-pack/all_in_one_seo_pack.php'                               => 'AIOSEO',
+			// All in One SEO - https://wordpress.org/plugins/all-in-one-seo-pack/
+
+
+			#################################################################################
+			# ACF (Advanced Custom Fields) plugin                                           #
+			#################################################################################
+			'advanced-custom-fields/acf.php'                                            => 'ACF',
+			// ACF Free - https://wordpress.org/plugins/advanced-custom-fields/
+			'advanced-custom-fields-pro/acf.php'                                        => 'ACF',
+			// ACF Pro
+
+
+			#################################################################################
+			# Variation Gallery plugins                                                     #
+			#################################################################################
+			'woo-variation-gallery/woo-variation-gallery.php'                           => 'VariationGallery',
+			// https://wordpress.org/plugins/woo-variation-gallery/
+			'woo-product-variation-gallery/woo-product-variation-gallery.php'           => 'VariationGallery',
+			// https://wordpress.org/plugins/woo-product-variation-gallery/
+			'woocommerce-additional-variation-images/woocommerce-additional-variation-images.php' => 'VariationGallery',
+			// https://woocommerce.com/products/woocommerce-additional-variation-images/
 		];
 		$compatible_plugins = array_merge( $compatible_plugins, $AWDP_Discount, $polylang );
 
@@ -233,6 +294,30 @@ class CompatibilityFactory {
 			'wc-dynamic-pricing-and-discounts/wc-dynamic-pricing-and-discounts.php'     => 'RP_WCDPD',
 			// DONE
 			// https://codecanyon.net/item/woocommerce-dynamic-pricing-discounts/7119279
+
+
+			#################################################################################
+			# SEO plugins (also available in free)                                          #
+			#################################################################################
+			'wordpress-seo/wp-seo.php'                                                  => 'WPSEO_Frontend',
+			'wordpress-seo-premium/wp-seo-premium.php'                                  => 'WPSEO_Frontend',
+			'seo-by-rank-math/rank-math.php'                                            => 'RankMath',
+			'all-in-one-seo-pack/all_in_one_seo_pack.php'                               => 'AIOSEO',
+
+
+			#################################################################################
+			# ACF (Advanced Custom Fields) plugin (also available in free)                  #
+			#################################################################################
+			'advanced-custom-fields/acf.php'                                            => 'ACF',
+			'advanced-custom-fields-pro/acf.php'                                        => 'ACF',
+
+
+			#################################################################################
+			# Variation Gallery plugins (also available in free)                            #
+			#################################################################################
+			'woo-variation-gallery/woo-variation-gallery.php'                           => 'VariationGallery',
+			'woo-product-variation-gallery/woo-product-variation-gallery.php'           => 'VariationGallery',
+			'woocommerce-additional-variation-images/woocommerce-additional-variation-images.php' => 'VariationGallery',
 
 		];
 		$compatible_plugins_for_free = array_merge( $compatible_plugins_for_free, $AWDP_Discount );

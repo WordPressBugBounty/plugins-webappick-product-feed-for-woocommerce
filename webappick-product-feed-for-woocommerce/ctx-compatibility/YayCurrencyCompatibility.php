@@ -52,6 +52,9 @@ class YayCurrencyCompatibility {
 
 		// Add currency suffix to product link.
 		add_filter( 'woo_feed_filter_product_link', array( $this, 'get_product_link_with_suffix' ), 10, 3 );
+
+		// Add YayCurrency currencies to dropdown options.
+		add_filter( 'ctx_feed_active_currencies', array( $this, 'get_active_currencies' ), 10, 1 );
 	}
 
 	/**
@@ -196,6 +199,35 @@ class YayCurrencyCompatibility {
 		$link .= $currency_suffix;
 
 		return $link;
+	}
+
+	/**
+	 * Get active YayCurrency currencies for dropdown.
+	 *
+	 * @param array $currencies Existing currencies array.
+	 *
+	 * @return array
+	 */
+	public function get_active_currencies( $currencies ) {
+		// YayCurrency uses custom post type 'yay-currency-manage'.
+		$yay_currencies = get_posts(
+			array(
+				'posts_per_page' => -1,
+				'post_type'      => 'yay-currency-manage',
+				'post_status'    => 'publish',
+				'order'          => 'ASC',
+				'orderby'        => 'menu_order',
+			)
+		);
+
+		if ( ! empty( $yay_currencies ) ) {
+			foreach ( $yay_currencies as $currency_post ) {
+				$currency_code                = $currency_post->post_title;
+				$currencies[ $currency_code ] = $currency_code;
+			}
+		}
+
+		return $currencies;
 	}
 
 }
