@@ -28,17 +28,253 @@ class CompatibilityFactory {
 	 */
 	public static function init() {
 		$classes            = self::get_classes();
-		$compatible_plugins = self::compatible_plugins();
+		$compatible_plugins = self::compatible_plugins_grouped();
 		foreach ( $classes as $class ) {
 			$class_name = __NAMESPACE__ . '\\' . $class . 'Compatibility';
 
-			if ( ! isset( $compatible_plugins[ $class ] ) || ! is_plugin_active( $compatible_plugins[ $class ] ) || ! class_exists( $class_name ) ) {
+			// Skip if no plugins are mapped to this class or class doesn't exist
+			if ( ! isset( $compatible_plugins[ $class ] ) || ! class_exists( $class_name ) ) {
+				continue;
+			}
+
+			// Check if ANY of the plugins mapped to this class are active
+			$is_any_plugin_active = false;
+			foreach ( $compatible_plugins[ $class ] as $plugin_path ) {
+				if ( is_plugin_active( $plugin_path ) ) {
+					$is_any_plugin_active = true;
+					break;
+				}
+			}
+
+			if ( ! $is_any_plugin_active ) {
 				continue;
 			}
 
 			new $class_name;
 		}
 
+	}
+
+	/**
+	 * Get compatible plugins grouped by class name.
+	 *
+	 * This method returns an array where keys are class names and values are arrays
+	 * of plugin paths that can trigger that compatibility class.
+	 *
+	 * This fixes the issue where array_flip() would lose duplicate mappings
+	 * (e.g., multiple variation gallery plugins mapping to 'VariationGallery').
+	 *
+	 * @return array Array with class names as keys and arrays of plugin paths as values.
+	 */
+	private static function compatible_plugins_grouped() {
+		$plugins = self::get_compatible_plugins_raw();
+		$grouped = [];
+
+		foreach ( $plugins as $plugin_path => $class_name ) {
+			if ( empty( $class_name ) ) {
+				continue;
+			}
+			if ( ! isset( $grouped[ $class_name ] ) ) {
+				$grouped[ $class_name ] = [];
+			}
+			$grouped[ $class_name ][] = $plugin_path;
+		}
+
+		return $grouped;
+	}
+
+	/**
+	 * Get the raw compatible plugins list (plugin path => class name).
+	 *
+	 * @return array
+	 */
+	private static function get_compatible_plugins_raw() {
+		if ( Helper::is_pro() ) {
+			return self::get_pro_compatible_plugins();
+		} else {
+			return self::get_free_compatible_plugins();
+		}
+	}
+
+	/**
+	 * Get pro compatible plugins list.
+	 *
+	 * @return array
+	 */
+	private static function get_pro_compatible_plugins() {
+		$compatible_plugins = self::get_base_compatible_plugins();
+		$compatible_plugins = array_merge( $compatible_plugins, self::get_awdp_discount_plugins(), self::get_polylang_plugins() );
+
+		// If WooCommerce Multi Currency Pro version by VillaTheme is active, Free version will be removed from the list.
+		if ( is_plugin_active( 'woocommerce-multi-currency/woocommerce-multi-currency.php' ) ) {
+			$compatible_plugins['woocommerce-multi-currency/woocommerce-multi-currency.php'] = 'WOOMULTI_CURRENCY';
+			unset( $compatible_plugins['woo-multi-currency/woo-multi-currency.php'] );
+		}
+
+		return $compatible_plugins;
+	}
+
+	/**
+	 * Get free compatible plugins list.
+	 *
+	 * @return array
+	 */
+	private static function get_free_compatible_plugins() {
+		$compatible_plugins = self::get_base_free_compatible_plugins();
+		return array_merge( $compatible_plugins, self::get_awdp_discount_plugins() );
+	}
+
+	/**
+	 * Get AWDP Discount plugins based on which is active.
+	 *
+	 * @return array
+	 */
+	private static function get_awdp_discount_plugins() {
+		if ( is_plugin_active( 'aco-woo-dynamic-pricing/start.php' ) ) {
+			return [ 'aco-woo-dynamic-pricing/start.php' => 'CTX_AWDP_Discount' ];
+		} elseif ( is_plugin_active( 'aco-woo-dynamic-pricing-pro/start.php' ) ) {
+			return [ 'aco-woo-dynamic-pricing-pro/start.php' => 'CTX_AWDP_Discount' ];
+		}
+		return [];
+	}
+
+	/**
+	 * Get Polylang plugins based on which is active.
+	 *
+	 * @return array
+	 */
+	private static function get_polylang_plugins() {
+		if ( is_plugin_active( 'polylang-pro/polylang.php' ) ) {
+			return [ 'polylang-pro/polylang.php' => 'Polylang' ];
+		} elseif ( is_plugin_active( 'polylang-wc/polylang-wc.php' ) ) {
+			return [ 'polylang-wc/polylang-wc.php' => 'Polylang' ];
+		}
+		return [];
+	}
+
+	/**
+	 * Get base compatible plugins for pro version.
+	 *
+	 * @return array
+	 */
+	private static function get_base_compatible_plugins() {
+		return [
+			#################################################################################
+			# WooCommerce Dynamic Pricing & Discounts plugins                               #
+			#################################################################################
+			'woo-discount-rules/woo-discount-rules.php'                                 => 'Wdr_Configuration',
+			'woo-advanced-discounts/wad.php'                                            => 'WAD_Discount',
+			'easy-woocommerce-discounts/easy-woocommerce-discounts.php'                 => 'WCCS_Pricing',
+			'wc-dynamic-pricing-and-discounts/wc-dynamic-pricing-and-discounts.php'     => 'RP_WCDPD',
+
+			#################################################################################
+			# Composite Products for WooCommerce plugins                                    #
+			#################################################################################
+			'woocommerce-composite-products/woocommerce-composite-products.php'         => 'WC_Composite_Products',
+			'wpc-composite-products/wpc-composite-products.php'                         => 'WPCleverWooco',
+
+			#################################################################################
+			# WooCommerce Product Bundles plugins                                           #
+			#################################################################################
+			'woocommerce-product-bundles/woocommerce-product-bundles.php'               => 'WC_Product_Bundle',
+			'woo-product-bundle/wpc-product-bundles.php'                                => 'WPCProductBundles',
+			'iconic-woo-bundled-products/iconic-woo-bundled-products.php'               => 'IconicBundleProduct',
+
+			#################################################################################
+			# WPC Grouped Product plugin                                                    #
+			#################################################################################
+			'wpc-grouped-product/wpc-grouped-product.php'                               => 'WPCGroupedProduct',
+
+			#################################################################################
+			# WooCommerce Currency Switcher plugins                                         #
+			#################################################################################
+			'woocommerce-currency-switcher/index.php'                                   => 'WOOCS',
+			'currency-switcher-woocommerce/currency-switcher-woocommerce.php'           => 'Alg_WC_Currency_Switcher',
+			'woocommerce-multicurrency/woocommerce-multicurrency.php'                   => 'WOOMC_API',
+			'woocommerce-multi-currency/woocommerce-multi-currency.php'                 => '',
+			'woocommerce-multilingual/wpml-woocommerce.php'                             => 'woocommerce_wpml',
+			'woocommerce-aelia-currencyswitcher/woocommerce-aelia-currencyswitcher.php' => 'WC_Aelia_CurrencySwitcher',
+			'woo-multi-currency/woo-multi-currency.php'                                 => 'WOOMULTI_CURRENCY_F',
+			'yaycurrency/yay-currency.php'                                              => 'YayCurrency',
+			'x-currency/x-currency.php'                                                 => 'XCurrency',
+
+			#################################################################################
+			# WooCommerce Translation plugins                                               #
+			#################################################################################
+			'sitepress-multilingual-cms/sitepress.php'                                  => 'SitePress',
+			'translatepress-multilingual/index.php'                                     => 'TRP_Translate_Press',
+
+			'divigrid/divigrid.php'                                                     => 'DIVI_GRID_PLUGIN',
+
+			#################################################################################
+			# WooCommerce Subscriptions plugin                                              #
+			#################################################################################
+			'woocommerce-subscriptions/woocommerce-subscriptions.php'                   => 'WC_Subscriptions',
+
+			#################################################################################
+			# WooCommerce Germanized plugin                                                 #
+			#################################################################################
+			'woocommerce-germanized/woocommerce-germanized.php'                         => 'WooCommerce_Germanized',
+
+			#################################################################################
+			# SEO plugins                                                                   #
+			#################################################################################
+			'wordpress-seo/wp-seo.php'                                                  => 'WPSEO_Frontend',
+			'wordpress-seo-premium/wp-seo-premium.php'                                  => 'WPSEO_Frontend',
+			'seo-by-rank-math/rank-math.php'                                            => 'RankMath',
+			'all-in-one-seo-pack/all_in_one_seo_pack.php'                               => 'AIOSEO',
+
+			#################################################################################
+			# ACF (Advanced Custom Fields) plugin                                           #
+			#################################################################################
+			'advanced-custom-fields/acf.php'                                            => 'ACF',
+			'advanced-custom-fields-pro/acf.php'                                        => 'ACF',
+
+			#################################################################################
+			# Variation Gallery plugins                                                     #
+			#################################################################################
+			'woo-variation-gallery/woo-variation-gallery.php'                           => 'VariationGallery',
+			'woo-product-variation-gallery/woo-product-variation-gallery.php'           => 'VariationGallery',
+			'woocommerce-additional-variation-images/woocommerce-additional-variation-images.php' => 'VariationGallery',
+		];
+	}
+
+	/**
+	 * Get base compatible plugins for free version.
+	 *
+	 * @return array
+	 */
+	private static function get_base_free_compatible_plugins() {
+		return [
+			#################################################################################
+			# WooCommerce Dynamic Pricing & Discounts plugins                               #
+			#################################################################################
+			'woo-discount-rules/woo-discount-rules.php'                                 => 'Wdr_Configuration',
+			'woo-advanced-discounts/wad.php'                                            => 'WAD_Discount',
+			'easy-woocommerce-discounts/easy-woocommerce-discounts.php'                 => 'WCCS_Pricing',
+			'wc-dynamic-pricing-and-discounts/wc-dynamic-pricing-and-discounts.php'     => 'RP_WCDPD',
+
+			#################################################################################
+			# SEO plugins (also available in free)                                          #
+			#################################################################################
+			'wordpress-seo/wp-seo.php'                                                  => 'WPSEO_Frontend',
+			'wordpress-seo-premium/wp-seo-premium.php'                                  => 'WPSEO_Frontend',
+			'seo-by-rank-math/rank-math.php'                                            => 'RankMath',
+			'all-in-one-seo-pack/all_in_one_seo_pack.php'                               => 'AIOSEO',
+
+			#################################################################################
+			# ACF (Advanced Custom Fields) plugin (also available in free)                  #
+			#################################################################################
+			'advanced-custom-fields/acf.php'                                            => 'ACF',
+			'advanced-custom-fields-pro/acf.php'                                        => 'ACF',
+
+			#################################################################################
+			# Variation Gallery plugins (also available in free)                            #
+			#################################################################################
+			'woo-variation-gallery/woo-variation-gallery.php'                           => 'VariationGallery',
+			'woo-product-variation-gallery/woo-product-variation-gallery.php'           => 'VariationGallery',
+			'woocommerce-additional-variation-images/woocommerce-additional-variation-images.php' => 'VariationGallery',
+		];
 	}
 
 	/**
@@ -68,273 +304,6 @@ class CompatibilityFactory {
 			},
 			$filtered_files
 		);
-	}
-
-	/**
-	 * Get the compatible plugins list by CTX-Feed with their class name and absolute path
-	 * Some plugins don't have class name, so we have to check them by their absolute path
-	 *
-	 * @return array
-	 */
-	private static function compatible_plugins() {
-		/**
-		 * IMPORTANT: Never change the key and value of the array below. Never remove any key or value from the array below.
-		 * If you want to add any plugin, just add the plugin absolute path as key and the plugin class name as value.
-		 * Create a file name with value ( class name ) as well as "Compatibility" as suffix. Other-wise it will not work.
-		 *
-		 * Example: 'woocommerce-multilingual/wpml-woocommerce.php' => 'woocommerce_wpml',
-		 * Here 'woocommerce-multilingual/wpml-woocommerce.php' is the plugin absolute path and 'woocommerce_wpml' is the plugin class name.
-		 * And the file name is 'woocommerce_wpmlCompatibility.php' with value 'Compatibility' as suffix.
-		 * So, the file name is 'woocommerce_wpmlCompatibility.php' and the class name is 'woocommerce_wpmlCompatibility'.
-		 */
-
-		$AWDP_Discount = [];
-		if ( is_plugin_active('aco-woo-dynamic-pricing/start.php' ) ){
-			/**
-			 * This class name changed from 'AWDP_Discount' to 'CTX_AWDP_Discount'
-			 * To make compatible with this plugin's latest version.
-			 * This plugin's 4.3.0 was ok but 4.5.4 is not working.
-			 * That's why we did change the class name.
-			 *
-			 * @link : https://webappick.atlassian.net/browse/CTX-772
-			 */
-			$AWDP_Discount = [ 'aco-woo-dynamic-pricing/start.php'  => 'CTX_AWDP_Discount' ];
-		}else if( is_plugin_active('aco-woo-dynamic-pricing-pro/start.php') ){
-			$AWDP_Discount = [ 'aco-woo-dynamic-pricing-pro/start.php'  => 'CTX_AWDP_Discount'];
-		}
-
-		$polylang = [];
-		if ( is_plugin_active('polylang-pro/polylang.php' ) ){
-			$polylang = [ 'polylang-pro/polylang.php' => 'Polylang' ];
-		}else if( is_plugin_active('polylang-wc/polylang-wc.php' ) ){
-//			$polylang = [ 'polylang-wc/polylang-wc.php' => 'polylang-wc'];
-			$polylang = [ 'polylang-wc/polylang-wc.php' => 'Polylang'];
-		}
-
-		$compatible_plugins = [
-			#################################################################################
-			# WooCommerce Dynamic Pricing & Discounts plugins                               #
-			#################################################################################
-			/**
-			 * This plugin has been closed as of September 12, 2023 and is not available for download. Reason: Security Issue.
-			 * // TODO remove this plugin from the list
-			 */
-//			'pricing-deals-for-woocommerce/vt-pricing-deals.php'                        => 'PricingDealsForWoocommerceVT',
-			// https://wordpress.org/plugins/pricing-deals-for-woocommerce/
-//			'aco-woo-dynamic-pricing/start.php'                                         => 'AWDP_Discount',
-			// DONE
-			// https://wordpress.org/plugins/aco-woo-dynamic-pricing/
-//			'aco-woo-dynamic-pricing-pro/start.php'                                     => 'AWDP_Discount',
-			// https://codecanyon.net/item/woocommerce-dynamic-pricing-discounts/7119279
-			'woo-discount-rules/woo-discount-rules.php'                                 => 'Wdr_Configuration',
-			// DONE
-			// https://wordpress.org/plugins/woo-discount-rules/
-			'woo-advanced-discounts/wad.php'                                            => 'WAD_Discount',
-			// DONE
-			// https://wordpress.org/plugins/woo-advanced-discounts/
-			'easy-woocommerce-discounts/easy-woocommerce-discounts.php'                 => 'WCCS_Pricing',
-			// DONE
-			// https://wordpress.org/plugins/easy-woocommerce-discounts/
-			'wc-dynamic-pricing-and-discounts/wc-dynamic-pricing-and-discounts.php'     => 'RP_WCDPD',
-			// DONE
-			// https://codecanyon.net/item/woocommerce-dynamic-pricing-discounts/7119279
-
-
-			#################################################################################
-			# Composite Products for WooCommerce plugins                                    #
-			#################################################################################
-			'woocommerce-composite-products/woocommerce-composite-products.php'         => 'WC_Composite_Products',
-			// DONE
-			// https://woocommerce.com/products/composite-products/
-			'wpc-composite-products/wpc-composite-products.php'                         => 'WPCleverWooco',
-			// DONE
-			// https://wordpress.org/plugins/wpc-composite-products/
-
-
-			#################################################################################
-			# WooCommerce Product Bundles plugins                                           #
-			#################################################################################
-			'woocommerce-product-bundles/woocommerce-product-bundles.php'               => 'WC_Product_Bundle',
-			// DONE
-			// https://woocommerce.com/products/product-bundles/
-			'woo-product-bundle/wpc-product-bundles.php'                                => 'WPCProductBundles',
-			// DONE
-			// https://wordpress.org/plugins/woo-product-bundle/
-			'iconic-woo-bundled-products/iconic-woo-bundled-products.php'               => 'IconicBundleProduct',
-			// DONE
-			// https://iconicwp.com/products/woocommerce-bundled-products/
-
-
-			#################################################################################
-			# WPC Grouped Product plugin                                                    #
-			#################################################################################
-			'wpc-grouped-product/wpc-grouped-product.php'                               => 'WPCGroupedProduct',
-			// DONE
-			// https://wordpress.org/plugins/wpc-grouped-product/
-
-
-			#################################################################################
-			# WooCommerce Currency Switcher plugins                                         #
-			#################################################################################
-			'woocommerce-currency-switcher/index.php'                                   => 'WOOCS',
-			// DONE
-			// https://wordpress.org/plugins/woocommerce-currency-switcher/
-			'currency-switcher-woocommerce/currency-switcher-woocommerce.php'           => 'Alg_WC_Currency_Switcher',
-			// DONE
-			// https://wordpress.org/plugins/currency-switcher-woocommerce/
-			'woocommerce-multicurrency/woocommerce-multicurrency.php'                   => 'WOOMC_API',
-			// DONE // TODO this plugin is not tested because plugin is not found anywhere.
-			// https://wordpress.org/plugins/woocommerce-multicurrency/
-			'woocommerce-multi-currency/woocommerce-multi-currency.php'                 => '',
-			// https://woo.com/products/multi-currency/
-			'woocommerce-multilingual/wpml-woocommerce.php'                             => 'woocommerce_wpml',
-			// DONE
-			// https://wordpress.org/plugins/woocommerce-multilingual/
-			'woocommerce-aelia-currencyswitcher/woocommerce-aelia-currencyswitcher.php' => 'WC_Aelia_CurrencySwitcher',
-			// DONE
-			// https://aelia.co/shop/currency-switcher-woocommerce/
-			'woo-multi-currency/woo-multi-currency.php'                                 => 'WOOMULTI_CURRENCY_F',
-			// DONE
-			// https://wordpress.org/plugins/woo-multi-currency/
-			'yaycurrency/yay-currency.php'                                              => 'YayCurrency',
-			// DONE
-			// https://yaycommerce.com/yaycurrency-woocommerce-multi-currency-switcher/
-			'x-currency/x-currency.php'                                                 => 'XCurrency',
-			// DONE
-			// https://wordpress.org/plugins/x-currency/
-
-
-			#################################################################################
-			# WooCommerce Translation plugins                                               #
-			#################################################################################
-			'sitepress-multilingual-cms/sitepress.php'                                  => 'SitePress',
-			// DONE
-			// https://wpml.org/
-			'translatepress-multilingual/index.php'                                     => 'TRP_Translate_Press',
-			// DONE
-			// https://wordpress.org/plugins/translatepress-multilingual/
-			// 'polylang-pro/polylang.php'                                                     => 'Polylang',
-			// DONE
-
-			'divigrid/divigrid.php' => 'DIVI_GRID_PLUGIN',
-
-
-			#################################################################################
-			# WooCommerce Subscriptions plugin                                              #
-			#################################################################################
-			'woocommerce-subscriptions/woocommerce-subscriptions.php'                   => 'WC_Subscriptions',
-			// https://woocommerce.com/products/woocommerce-subscriptions/
-
-
-			#################################################################################
-			# WooCommerce Germanized plugin                                                 #
-			#################################################################################
-			'woocommerce-germanized/woocommerce-germanized.php'                         => 'WooCommerce_Germanized',
-			// https://wordpress.org/plugins/woocommerce-germanized/
-
-
-			#################################################################################
-			# SEO plugins                                                                   #
-			#################################################################################
-			'wordpress-seo/wp-seo.php'                                                  => 'WPSEO_Frontend',
-			// Yoast SEO - https://wordpress.org/plugins/wordpress-seo/
-			'wordpress-seo-premium/wp-seo-premium.php'                                  => 'WPSEO_Frontend',
-			// Yoast SEO Premium
-			'seo-by-rank-math/rank-math.php'                                            => 'RankMath',
-			// RankMath - https://wordpress.org/plugins/seo-by-rank-math/
-			'all-in-one-seo-pack/all_in_one_seo_pack.php'                               => 'AIOSEO',
-			// All in One SEO - https://wordpress.org/plugins/all-in-one-seo-pack/
-
-
-			#################################################################################
-			# ACF (Advanced Custom Fields) plugin                                           #
-			#################################################################################
-			'advanced-custom-fields/acf.php'                                            => 'ACF',
-			// ACF Free - https://wordpress.org/plugins/advanced-custom-fields/
-			'advanced-custom-fields-pro/acf.php'                                        => 'ACF',
-			// ACF Pro
-
-
-			#################################################################################
-			# Variation Gallery plugins                                                     #
-			#################################################################################
-			'woo-variation-gallery/woo-variation-gallery.php'                           => 'VariationGallery',
-			// https://wordpress.org/plugins/woo-variation-gallery/
-			'woo-product-variation-gallery/woo-product-variation-gallery.php'           => 'VariationGallery',
-			// https://wordpress.org/plugins/woo-product-variation-gallery/
-			'woocommerce-additional-variation-images/woocommerce-additional-variation-images.php' => 'VariationGallery',
-			// https://woocommerce.com/products/woocommerce-additional-variation-images/
-		];
-		$compatible_plugins = array_merge( $compatible_plugins, $AWDP_Discount, $polylang );
-
-		$compatible_plugins_for_free = [
-			#################################################################################
-			# WooCommerce Dynamic Pricing & Discounts plugins                               #
-			#################################################################################
-			/**
-			 * This plugin has been closed as of September 12, 2023 and is not available for download. Reason: Security Issue.
-			 * // TODO remove this plugin from the list
-			 */
-//			'pricing-deals-for-woocommerce/vt-pricing-deals.php'                        => 'PricingDealsForWoocommerceVT',
-			// https://wordpress.org/plugins/pricing-deals-for-woocommerce/
-//			'aco-woo-dynamic-pricing/start.php'                                         => 'AWDP_Discount',
-			// DONE
-			// https://wordpress.org/plugins/aco-woo-dynamic-pricing/
-//			'aco-woo-dynamic-pricing-pro/start.php'                                     => 'AWDP_Discount',
-			// https://codecanyon.net/item/woocommerce-dynamic-pricing-discounts/7119279
-			'woo-discount-rules/woo-discount-rules.php'                                 => 'Wdr_Configuration',
-			// DONE
-			// https://wordpress.org/plugins/woo-discount-rules/
-			'woo-advanced-discounts/wad.php'                                            => 'WAD_Discount',
-			// DONE
-			// https://wordpress.org/plugins/woo-advanced-discounts/
-			'easy-woocommerce-discounts/easy-woocommerce-discounts.php'                 => 'WCCS_Pricing',
-			// DONE
-			// https://wordpress.org/plugins/easy-woocommerce-discounts/
-			'wc-dynamic-pricing-and-discounts/wc-dynamic-pricing-and-discounts.php'     => 'RP_WCDPD',
-			// DONE
-			// https://codecanyon.net/item/woocommerce-dynamic-pricing-discounts/7119279
-
-
-			#################################################################################
-			# SEO plugins (also available in free)                                          #
-			#################################################################################
-			'wordpress-seo/wp-seo.php'                                                  => 'WPSEO_Frontend',
-			'wordpress-seo-premium/wp-seo-premium.php'                                  => 'WPSEO_Frontend',
-			'seo-by-rank-math/rank-math.php'                                            => 'RankMath',
-			'all-in-one-seo-pack/all_in_one_seo_pack.php'                               => 'AIOSEO',
-
-
-			#################################################################################
-			# ACF (Advanced Custom Fields) plugin (also available in free)                  #
-			#################################################################################
-			'advanced-custom-fields/acf.php'                                            => 'ACF',
-			'advanced-custom-fields-pro/acf.php'                                        => 'ACF',
-
-
-			#################################################################################
-			# Variation Gallery plugins (also available in free)                            #
-			#################################################################################
-			'woo-variation-gallery/woo-variation-gallery.php'                           => 'VariationGallery',
-			'woo-product-variation-gallery/woo-product-variation-gallery.php'           => 'VariationGallery',
-			'woocommerce-additional-variation-images/woocommerce-additional-variation-images.php' => 'VariationGallery',
-
-		];
-		$compatible_plugins_for_free = array_merge( $compatible_plugins_for_free, $AWDP_Discount );
-
-		// If WooCommerce Multi Currency Pro version by VillaTheme is active, Free version will be removed from the list.
-		if ( is_plugin_active( 'woocommerce-multi-currency/woocommerce-multi-currency.php' ) ) {
-			$compatible_plugins['woocommerce-multi-currency/woocommerce-multi-currency.php'] = 'WOOMULTI_CURRENCY'; // DONE
-			// https://villatheme.com/extensions/woo-multi-currency/
-			unset( $compatible_plugins['woo-multi-currency/woo-multi-currency.php'] );
-		}
-
-		if( Helper::is_pro() ){
-			return array_flip( $compatible_plugins );
-		}else{
-			return array_flip( $compatible_plugins_for_free );
-		}
-
 	}
 
 }

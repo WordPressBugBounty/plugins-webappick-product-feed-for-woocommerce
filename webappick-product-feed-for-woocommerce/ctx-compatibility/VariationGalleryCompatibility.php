@@ -37,6 +37,8 @@ class VariationGalleryCompatibility {
 	 * @return array
 	 */
 	public function get_variation_gallery_ids( $attachment_ids, $product ) {
+
+
 		// Only process variation products.
 		if ( ! $product->is_type( 'variation' ) ) {
 			return $attachment_ids;
@@ -55,8 +57,9 @@ class VariationGalleryCompatibility {
 			}
 		}
 
-		// Check Variation Images Gallery for WooCommerce.
-		if ( class_exists( 'WooProductVariationGallery' ) ) {
+		// Check Variation Images Gallery for WooCommerce (woo-product-variation-gallery plugin).
+		// The class is namespaced as Rtwpvg\WooProductVariationGallery, so we check for function or constant.
+		if ( function_exists( 'rtwpvg' ) || defined( 'RTWPVG_VERSION' ) || class_exists( 'Rtwpvg\\WooProductVariationGallery' ) ) {
 			$gallery_ids = get_post_meta( $product->get_id(), 'rtwpvg_images', true );
 			if ( ! empty( $gallery_ids ) && is_array( $gallery_ids ) ) {
 				return $gallery_ids;

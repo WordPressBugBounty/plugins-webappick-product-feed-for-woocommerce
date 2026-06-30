@@ -157,6 +157,7 @@ class ProductHelper {
 			 */
 			$attachment_ids = \apply_filters( 'woo_feed_filter_variation_gallery_attachment_ids', [], $product );
 
+
 			// Fallback to parent product gallery if no gallery plugin provided IDs.
 			if ( empty( $attachment_ids ) ) {
 				$parent_product = \wc_get_product( $product->get_parent_id() );
