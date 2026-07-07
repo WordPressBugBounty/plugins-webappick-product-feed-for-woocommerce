@@ -6397,6 +6397,9 @@ add_action( 'wp_ajax_woo_feed_complete_onboarding', 'woo_feed_complete_onboardin
 if ( ! function_exists( 'woo_feed_calculate_rating' ) ) {
     function woo_feed_calculate_rating($ratings)
     {
+        if (!is_array($ratings) || empty($ratings)) {
+            return 0;
+        }
         $totalRatings = array_sum($ratings); // Sum of all ratings
         if ($totalRatings == 0) {
             return 0;
