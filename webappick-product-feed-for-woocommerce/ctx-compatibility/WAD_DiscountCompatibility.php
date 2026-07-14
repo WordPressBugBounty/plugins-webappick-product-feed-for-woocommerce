@@ -145,6 +145,8 @@ class WAD_DiscountCompatibility {
 		// Get the WAD List settings from 'o-list' meta key.
 		$list_settings = get_post_meta( $list_id, 'o-list', true );
 
+		//error_log(print_r($list_settings,true))
+
 		if ( empty( $list_settings ) || ! is_array( $list_settings ) ) {
 			return true;
 		}
@@ -153,18 +155,14 @@ class WAD_DiscountCompatibility {
 		$check_ids  = $parent_id ? array( $product_id, $parent_id ) : array( $product_id );
 
 		// Check if using "By ID" mode with specific product IDs.
-		if ( isset( $list_settings['ids'] ) && ! empty( $list_settings['ids'] ) && 'ids' === $list_settings['type'] ) {
+		if ( isset( $list_settings['ids'] ) && ! empty( $list_settings['ids'] ) && 'by-id' === $list_settings['type'] ) {
 			$product_ids = array_map( 'intval', explode( ',', $list_settings['ids'] ) );
-			$found       = false;
-			foreach ( $check_ids as $check_id ) {
-				if ( in_array( $check_id, $product_ids, true ) ) {
-					$found = true;
-					break;
+			foreach ( $product_ids as $check_id ) {
+				if ( $check_id == $product_id ) {
+					return true;
 				}
 			}
-			if ( ! $found ) {
-				return false;
-			}
+			return false;
 		}
 
 		// Check excluded products.

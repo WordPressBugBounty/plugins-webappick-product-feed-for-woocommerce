@@ -102,9 +102,9 @@ class PinterestTax  implements TaxInterface  {
 			if ( "xml" === $feedType ) {
 				$i = 1;
 				foreach ( $taxes as $tax ) {
-					$country  = htmlentities( $tax['country'], ENT_XML1 | ENT_QUOTES, 'UTF-8' );
-					$state    = htmlentities( $tax['state'], ENT_XML1 | ENT_QUOTES, 'UTF-8' );
-					$rate     = htmlentities( $tax['rate'], ENT_XML1 | ENT_QUOTES, 'UTF-8' );
+					$country  = htmlentities( isset( $tax['country'] ) && is_string( $tax['country'] ) ? $tax['country'] : '', ENT_XML1 | ENT_QUOTES, 'UTF-8' );
+					$state    = htmlentities( isset( $tax['state'] ) && is_string( $tax['state'] ) ? $tax['state'] : '', ENT_XML1 | ENT_QUOTES, 'UTF-8' );
+					$rate     = htmlentities( isset( $tax['rate'] ) ? (string) $tax['rate'] : '', ENT_XML1 | ENT_QUOTES, 'UTF-8' );
 					$shipping = ( $tax['shipping'] ) ? "yes" : "no";
 
 					$str .= ( $i > 1 ) ? PHP_EOL . "<g:tax>" : PHP_EOL;

@@ -1199,10 +1199,10 @@ class FeedHelper {
 		$footer_value = '';
 		// Find header and footer indices
 		foreach ( $files as $key => $value ) {
-			if ( strpos( $value, 'header' ) !== false ) {
+			if ( \is_string( $value ) && strpos( $value, 'header' ) !== false ) {
 				$header_index = $key;
 			}
-			if ( strpos( $value, 'footer' ) !== false ) {
+			if ( \is_string( $value ) && strpos( $value, 'footer' ) !== false ) {
 				$footer_index = $key;
 			}
 		}
@@ -1252,6 +1252,7 @@ class FeedHelper {
 		$valid_files = [];
 		// Find header and footer indices
 		foreach ( $files as $key => $file ) {
+			$file = \is_string( $file ) ? $file : '';
 
 			if ( strpos( $file, $feed_type_ext ) === false || strpos( $file, $option_name ) === false || empty( $file ) ) {
 				continue;

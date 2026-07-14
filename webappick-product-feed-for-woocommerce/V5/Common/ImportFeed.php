@@ -52,14 +52,14 @@ class ImportFeed {
 				throw new RuntimeException( esc_html__( 'Unable to read data from file.', 'woo-feed' ));
 			}
 			$meta = unpack( 'A*', substr( $feed, 4, $meta_length[1] ) )[1];
-			if ( false === $meta || 0 !== strpos( $meta, '{' ) ) {
+			if ( false === $meta || ! \is_string( $meta ) || 0 !== strpos( $meta, '{' ) ) {
 				throw new RuntimeException( esc_html__( 'Unable to read file info.', 'woo-feed' ));
 			}
 			$meta = json_decode( $meta, true );
 			// unpack feed data.
 			$feed = substr( $feed, $meta_length[1] + 8 ); // 4 bytes for each V (length data)
 			$feed = unpack( 'A*', $feed )[1];
-			if ( false === $feed || 0 !== strpos( $feed, '{' ) ) {
+			if ( false === $feed || ! \is_string( $feed ) || 0 !== strpos( $feed, '{' ) ) {
 				throw new RuntimeException( esc_html__( 'Unable to read feed data from file.', 'woo-feed' ));
 			}
 			if ( md5( $feed ) !== $meta['hash'] ) {

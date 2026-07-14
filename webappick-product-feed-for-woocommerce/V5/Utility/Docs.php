@@ -63,8 +63,8 @@ class Docs
 			$icon = str_replace(' ', '_', $_icon);
 			if ( !isset($faq->icon ) ) $faq->icon = isset( $icons[$icon] ) ? $icons[$icon] : 'dashicons-admin-generic';
 
-			$result[$faq->id]['title'] =html_entity_decode($faq->title->rendered, ENT_QUOTES, 'UTF-8');
-			$result[$faq->id]['icon'] = $icons[$icon];
+			$result[$faq->id]['title'] = html_entity_decode($faq->title->rendered, ENT_QUOTES, 'UTF-8');
+			$result[$faq->id]['icon'] = isset( $icons[$icon] ) ? $icons[$icon] : 'dashicons dashicons-admin-generic';
 			$result[$faq->id]['id'] = $faq->id;
 
 			$faq_response = wp_remote_get('https://webappick.com/wp-json/wp/v2/docs/?per_page=60&parent=' . $faq->id . '&_fields=parent,title,link,id,doc_tag');

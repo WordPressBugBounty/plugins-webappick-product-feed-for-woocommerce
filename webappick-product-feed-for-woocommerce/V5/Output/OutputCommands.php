@@ -44,6 +44,8 @@ class OutputCommands extends FormatOutput {
 	 * @return string
 	 */
 	private function replace_string( $output, $command, $type = 'str_replace' ) {
+		$command        = \is_string( $command ) ? $command : '';
+		$this->commands = \is_string( $this->commands ) ? $this->commands : '';
 
 		if ( strpos( $command, $type ) && strpos( $this->commands, $type ) ) {
 			$command = $this->commands;
@@ -54,11 +56,11 @@ class OutputCommands extends FormatOutput {
 
 			list( $argument1, $argument2 ) = array_map( 'trim', array( $args[1], $args[2] ) );
 
-			if ( false !== strpos( $args[1], 'comma' ) ) {
+			if ( is_string( $args[1] ) && false !== strpos( $args[1], 'comma' ) ) {
 				$argument1 = str_replace( 'comma', ',', $args[1] );
 			}
 
-			if ( false !== strpos( $args[2], 'comma' ) ) {
+			if ( is_string( $args[2] ) && false !== strpos( $args[2], 'comma' ) ) {
 				$argument2 = str_replace( 'comma', ',', $args[2] );
 			}
 			if ( 'str_replace' === $type ) {
@@ -164,6 +166,7 @@ class OutputCommands extends FormatOutput {
 	 * @return mixed|string
 	 */
 	public function get_function_command( $string ) {
+		$string = \is_string( $string ) ? $string : '';
 		if ( strpos( $string, '=>' ) !== false ) {
 			$this->commands = $string;
 			$function       = explode( '=>', $string );
@@ -228,12 +231,12 @@ class OutputCommands extends FormatOutput {
 						$output = $this->format_number( $output, $command );
 						break;
 					case 'urltounsecure':
-						if ( strpos( $output, 'http' ) === 0 ) {
+						if ( \is_string( $output ) && strpos( $output, 'http' ) === 0 ) {
 							$output = str_replace( 'https://', 'http://', $output );
 						}
 						break;
 					case 'urltosecure':
-						if ( strpos( $output, 'http' ) === 0 ) {
+						if ( \is_string( $output ) && strpos( $output, 'http' ) === 0 ) {
 							$output = str_replace( 'http://', 'https://', $output );
 						}
 						break;

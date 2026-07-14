@@ -220,7 +220,8 @@ class Woo_Feed_Notices {
 	private function set_woo_feed_notices() {
 
 
-		if ( isset( $_GET['page'] ) && preg_match( '/^webappick\W+/', $_GET['page'] ) && ($_GET['page'] !="webappick-manage-feeds" && $_GET['page'] !="webappick-new-feed") ) { // After React UI finish it will be applied
+		$page_param = isset( $_GET['page'] ) && is_string( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+		if ( ! empty( $page_param ) && preg_match( '/^webappick\W+/', $page_param ) && ( $page_param !== "webappick-manage-feeds" && $page_param !== "webappick-new-feed" ) ) { // After React UI finish it will be applied
 //		if ( isset( $_GET['page'] ) && preg_match( '/^webappick\W+/', $_GET['page'] ) && ($_GET['page'] !="webappick-new-feed") ) {
 //			array_shift(self::$notices_message);
                 unset(self::$notices_message["woo_feed_attributes"]);
@@ -264,7 +265,8 @@ class Woo_Feed_Notices {
                     $wf_v5_notices->add( $key,  $this->get_woo_feed_notices_message( $key, 'title' ),  $this->get_woo_feed_notices_message( $key, 'message' ), $options );
 
 
-                    if ( isset( $_GET['page'] ) && preg_match( '/^webappick\W+/', $_GET['page'] ) ) {
+                    $page_value = isset( $_GET['page'] ) && is_string( $_GET['page'] ) ? sanitize_text_field( wp_unslash( $_GET['page'] ) ) : '';
+                    if ( ! empty( $page_value ) && preg_match( '/^webappick\W+/', $page_value ) ) {
 						$wf_v5_notices->boot();
 					}
 

@@ -125,20 +125,21 @@ class WF_Engine
         # Process Dynamic Attributes and Category Mapping
         if (!empty($this->mapping)) {
             foreach ($this->mapping as $mkey => $attr) {
-                if (strpos($attr['value'], 'wf_attr_') !== false) {
-                    $wf_attr[] = $attr['value'];
+                $attr_value = isset( $attr['value'] ) && is_string( $attr['value'] ) ? $attr['value'] : '';
+                if (strpos($attr_value, 'wf_attr_') !== false) {
+                    $wf_attr[] = $attr_value;
                 }
 
-                if ( strpos( $attr['value'], Woo_Feed_Products::WP_OPTION_PREFIX ) !== false ) {
-                    $wf_option[] = $attr['value'];
+                if ( strpos( $attr_value, Woo_Feed_Products::WP_OPTION_PREFIX ) !== false ) {
+                    $wf_option[] = $attr_value;
                 }
 
-                if (strpos($attr['value'], 'wf_cattr_') !== false) {
-                    $wf_cattr[] = $attr['value'];
+                if (strpos($attr_value, 'wf_cattr_') !== false) {
+                    $wf_cattr[] = $attr_value;
                 }
 
-                if ( strpos( $attr['value'], Woo_Feed_Products::PRODUCT_TAXONOMY_PREFIX ) !== false ) {
-                    $wf_taxo[] = $attr['value'];
+                if ( strpos( $attr_value, Woo_Feed_Products::PRODUCT_TAXONOMY_PREFIX ) !== false ) {
+                    $wf_taxo[] = $attr_value;
                 }
             }
 

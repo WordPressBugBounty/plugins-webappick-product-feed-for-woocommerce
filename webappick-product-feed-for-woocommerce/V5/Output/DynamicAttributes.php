@@ -89,7 +89,7 @@ class DynamicAttributes {
 							// Get the last decimals characters
 							$decimals_str = substr($conditionName, -($number_format['decimals']+1));
 							// Check if the character exists in that substring
-							if(!strpos($decimals_str, ',')){
+							if( ! \is_string( $decimals_str ) || ! strpos($decimals_str, ',')){
 								$decimals_dot = str_replace(",",".",$decimals_str);
 								$conditionName = str_replace($decimals_str,$decimals_dot ,$conditionName);
 								$conditionName = str_replace(',','' ,$conditionName);
@@ -98,7 +98,8 @@ class DynamicAttributes {
 					}
 
 					if ( 'weight' === $name ) {
-						$unit = ' ' . get_option( 'woocommerce_weight_unit' );
+						$weight_unit = get_option( 'woocommerce_weight_unit' );
+						$unit = ' ' . ( is_string( $weight_unit ) ? $weight_unit : '' );
 						if ( ! empty( $unit ) ) {
 							$conditionName = (float) str_replace( $unit, '', $conditionName );
 						}
@@ -194,7 +195,7 @@ class DynamicAttributes {
 							}
 							break;
 						case 'contains':
-							if ( false !== stripos( $conditionName, $conditionCompare ) ) {
+							if ( is_string( $conditionName ) && is_string( $conditionCompare ) && false !== stripos( $conditionName, $conditionCompare ) ) {
 								$result = ProductHelper::price_format( $name, $conditionName, $conditionValue );
 								if ( '' !== $result ) {
 									$result = $prefix[ $key ] . $result . $suffix[ $key ];
@@ -202,7 +203,7 @@ class DynamicAttributes {
 							}
 							break;
 						case 'nContains':
-							if ( stripos( $conditionName, $conditionCompare ) === false ) {
+							if ( is_string( $conditionName ) && is_string( $conditionCompare ) && stripos( $conditionName, $conditionCompare ) === false ) {
 								$result = ProductHelper::price_format( $name, $conditionName, $conditionValue );
 								if ( '' !== $result ) {
 									$result = $prefix[ $key ] . $result . $suffix[ $key ];
@@ -366,6 +367,7 @@ class DynamicAttributes {
 	 * @return false|mixed|null
 	 */
 	public function getDynamicAttribute( $attribute ) {
+		$attribute = \is_string( $attribute ) ? $attribute : '';
 		if ( strpos( $attribute, AttributeValueByType::PRODUCT_DYNAMIC_ATTRIBUTE_PREFIX ) === false ) {
 			$attribute = AttributeValueByType::PRODUCT_DYNAMIC_ATTRIBUTE_PREFIX . $attribute;
 		}
@@ -396,6 +398,7 @@ class DynamicAttributes {
 	 * @return bool
 	 */
 	public function deleteDynamicAttribute( $attribute ) {
+		$attribute = \is_string( $attribute ) ? $attribute : '';
 		if ( strpos( $attribute, AttributeValueByType::PRODUCT_DYNAMIC_ATTRIBUTE_PREFIX ) === false ) {
 			$attribute = AttributeValueByType::PRODUCT_DYNAMIC_ATTRIBUTE_PREFIX . $attribute;
 		}

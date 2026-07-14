@@ -100,6 +100,7 @@ class CategoryMapping {
 	 */
 
 	public function getCategoryMapping( $category ) {
+		$category = \is_string( $category ) ? $category : '';
 		if ( strpos( $category, ProductHelper::PRODUCT_CATEGORY_MAPPING_PREFIX ) === false ) {
 			$category = ProductHelper::PRODUCT_CATEGORY_MAPPING_PREFIX . $category;
 		}
@@ -141,6 +142,7 @@ class CategoryMapping {
 		// Set Option Name.
 		if ( isset( $categoryMappingConfig['option'] ) &&
 			 ! empty( $categoryMappingConfig['option'] ) &&
+			 \is_string( $categoryMappingConfig['option'] ) &&
 			 false !== strpos( $categoryMappingConfig['option'], ProductHelper::PRODUCT_CATEGORY_MAPPING_PREFIX ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		) {
 			$option = sanitize_text_field( $categoryMappingConfig['option'] );
@@ -165,6 +167,7 @@ class CategoryMapping {
 	 * @return bool
 	 */
 	public function deleteCategoryMapping( $category ) {
+		$category = \is_string( $category ) ? $category : '';
 		if ( strpos( $category, ProductHelper::PRODUCT_CATEGORY_MAPPING_PREFIX ) === false ) {
 			$category = ProductHelper::PRODUCT_CATEGORY_MAPPING_PREFIX . $category;
 		}

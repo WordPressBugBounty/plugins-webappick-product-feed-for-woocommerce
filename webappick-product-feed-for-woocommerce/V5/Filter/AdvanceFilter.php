@@ -95,12 +95,12 @@ class AdvanceFilter {
 						}
 						break;
 					case 'contains':
-						if ( false !== stripos( $conditionName, $conditionCompare ) ) {
+						if ( is_string( $conditionName ) && is_string( $conditionCompare ) && false !== stripos( $conditionName, $conditionCompare ) ) {
 							$flag = true;
 						}
 						break;
 					case 'nContains':
-						if ( false === stripos( $conditionName, $conditionCompare ) ) {
+						if ( is_string( $conditionName ) && is_string( $conditionCompare ) && false === stripos( $conditionName, $conditionCompare ) ) {
 							$flag = true;
 						}
 						break;

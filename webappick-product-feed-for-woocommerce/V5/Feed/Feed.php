@@ -44,6 +44,7 @@ class Feed {
 	 * @return bool True if valid feed option, false otherwise.
 	 */
 	public static function is_valid_feed_option( $option_name ) {
+		$option_name    = \is_string( $option_name ) ? $option_name : '';
 		$valid_prefixes = array( 'wf_feed_', 'wf_config' );
 		foreach ( $valid_prefixes as $prefix ) {
 			if ( strpos( $option_name, $prefix ) === 0 ) {

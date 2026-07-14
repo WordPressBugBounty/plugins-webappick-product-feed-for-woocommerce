@@ -60,7 +60,8 @@ class TiktokTemplate {
 	 */
 	public function woo_feed_get_tiktok_shipping_weight_attribute_callback( $output, $product, $config, $product_attribute ) { // phpcs:ignore
 
-		$wc_unit    = ' ' . get_option( 'woocommerce_weight_unit' );
+		$weight_unit = get_option( 'woocommerce_weight_unit' );
+		$wc_unit    = ' ' . ( is_string( $weight_unit ) ? $weight_unit : '' );
 		$attributes = false;
 
 		if ( $config->attributes ) {

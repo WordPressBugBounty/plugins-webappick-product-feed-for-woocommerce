@@ -129,6 +129,7 @@ class Custom2Structure implements StructureInterface {
 
 					// Set CDATA status and remove CDATA
 					$element_text_info                 = FeedHelper::get_string_between( $value, '>', '</' );
+					$element_text_info                 = \is_string( $element_text_info ) ? $element_text_info : '';
 					$elements[ $i ]['include_cdata'] = 'no';
 					if ( \stripos( $element_text_info, 'CDATA' ) !== false ) {
 						$elements[ $i ]['include_cdata'] = 'yes';

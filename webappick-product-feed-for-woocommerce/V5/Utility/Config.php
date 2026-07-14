@@ -793,7 +793,7 @@ class Config {// phpcs:ignore
 			return $output_types[ $attribute_index ];
 		}else{
 			$special_templates = FeedHelper::get_special_templates();
-			if ( in_array( $this->provider, $special_templates, true ) && strpos( $attribute, 'price' ) !== false) {
+			if ( in_array( $this->provider, $special_templates, true ) && \is_string( $attribute ) && strpos( $attribute, 'price' ) !== false) {
 				return array(6);
 			}
 		}

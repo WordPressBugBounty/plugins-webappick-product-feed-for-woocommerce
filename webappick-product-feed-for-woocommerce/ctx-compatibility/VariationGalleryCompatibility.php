@@ -69,7 +69,7 @@ class VariationGalleryCompatibility {
 		// Check WooCommerce Additional Variation Images.
 		if ( class_exists( 'WC_Additional_Variation_Images' ) ) {
 			$gallery_string = get_post_meta( $product->get_id(), '_wc_additional_variation_images', true );
-			if ( ! empty( $gallery_string ) ) {
+			if ( ! empty( $gallery_string ) && is_string( $gallery_string ) ) {
 				$gallery_ids = explode( ',', $gallery_string );
 				if ( ! empty( $gallery_ids ) ) {
 					return $gallery_ids;
@@ -83,7 +83,7 @@ class VariationGalleryCompatibility {
 			$parent_id = $product->get_parent_id();
 
 			$variation_obj = get_post_meta( $parent_id, 'woodmart_variation_gallery_data', true );
-			if ( isset( $variation_obj, $variation_obj[ $var_id ] ) ) {
+			if ( isset( $variation_obj, $variation_obj[ $var_id ] ) && is_string( $variation_obj[ $var_id ] ) ) {
 				$gallery_ids = explode( ',', $variation_obj[ $var_id ] );
 				if ( ! empty( $gallery_ids ) ) {
 					return $gallery_ids;
@@ -91,7 +91,7 @@ class VariationGalleryCompatibility {
 			}
 
 			$wd_data = get_post_meta( $var_id, 'wd_additional_variation_images_data', true );
-			if ( ! empty( $wd_data ) ) {
+			if ( ! empty( $wd_data ) && is_string( $wd_data ) ) {
 				$gallery_ids = explode( ',', $wd_data );
 				if ( ! empty( $gallery_ids ) ) {
 					return $gallery_ids;
@@ -106,7 +106,7 @@ class VariationGalleryCompatibility {
 			$parent_id = $product->get_parent_id();
 
 			$variation_obj = get_post_meta( $parent_id, 'woodmart_variation_gallery_data', true );
-			if ( isset( $variation_obj, $variation_obj[ $var_id ] ) ) {
+			if ( isset( $variation_obj, $variation_obj[ $var_id ] ) && is_string( $variation_obj[ $var_id ] ) ) {
 				$gallery_ids = explode( ',', $variation_obj[ $var_id ] );
 				if ( ! empty( $gallery_ids ) ) {
 					return $gallery_ids;
@@ -114,7 +114,7 @@ class VariationGalleryCompatibility {
 			}
 
 			$wd_data = get_post_meta( $var_id, 'wd_additional_variation_images_data', true );
-			if ( ! empty( $wd_data ) ) {
+			if ( ! empty( $wd_data ) && is_string( $wd_data ) ) {
 				$gallery_ids = explode( ',', $wd_data );
 				if ( ! empty( $gallery_ids ) ) {
 					return $gallery_ids;

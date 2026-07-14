@@ -16,7 +16,7 @@ class QueryFactory {
 		$queryType = Settings::get( 'product_query_type' );
 
 		$class = "\CTXFeed\V5\Query\\" . strtoupper( $queryType ) . "Query";
-		if ( strpos( $template, 'review' ) ) {
+		if ( \is_string( $template ) && strpos( $template, 'review' ) ) {
 			$class = WCReviewQuery::class;
 		}
 

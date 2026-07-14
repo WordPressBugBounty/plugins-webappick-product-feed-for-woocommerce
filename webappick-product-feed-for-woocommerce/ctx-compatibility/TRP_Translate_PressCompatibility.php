@@ -207,7 +207,9 @@ class TRP_Translate_PressCompatibility {
 		$feed_language     = $config->get_feed_language();
 		$default_language  = $this->sanitize_language_code( $this->trp_settings['default-language'] );
 		$safe_feed_language = $this->sanitize_language_code( $feed_language );
-		$table_name        = $wpdb->prefix . 'trp_dictionary_' . strtolower( $default_language ) . '_' . strtolower( $safe_feed_language );
+		$default_language_lower = is_string( $default_language ) ? strtolower( $default_language ) : '';
+		$safe_feed_language_lower = is_string( $safe_feed_language ) ? strtolower( $safe_feed_language ) : '';
+		$table_name        = $wpdb->prefix . 'trp_dictionary_' . $default_language_lower . '_' . $safe_feed_language_lower;
 
 		/**
 		 * If the feed language is same as the default language or the table does not exist then return the output.
@@ -274,7 +276,9 @@ class TRP_Translate_PressCompatibility {
 		$feed_language      = $config->get_feed_language();
 		$default_language   = $this->sanitize_language_code( $this->trp_settings['default-language'] );
 		$safe_feed_language = $this->sanitize_language_code( $feed_language );
-		$table_name         = $wpdb->prefix . 'trp_dictionary_' . strtolower( $default_language ) . '_' . strtolower( $safe_feed_language );
+		$default_language_lower = is_string( $default_language ) ? strtolower( $default_language ) : '';
+		$safe_feed_language_lower = is_string( $safe_feed_language ) ? strtolower( $safe_feed_language ) : '';
+		$table_name         = $wpdb->prefix . 'trp_dictionary_' . $default_language_lower . '_' . $safe_feed_language_lower;
 
 		/**
 		 * If the feed language is same as the default language or the table does not exist then return the output.
@@ -523,8 +527,8 @@ class TRP_Translate_PressCompatibility {
 				'utm_source'   => str_replace( ' ', '+', $utm['utm_source'] ),
 				'utm_medium'   => str_replace( ' ', '+', $utm['utm_medium'] ),
 				'utm_campaign' => str_replace( ' ', '+', $utm['utm_campaign'] ),
-				'utm_term'     => str_replace( ' ', '+', $utm['utm_term'] ),
-				'utm_content'  => str_replace( ' ', '+', $utm['utm_content'] ),
+				'utm_term'     => isset( $utm['utm_term'] ) && is_string( $utm['utm_term'] ) ? str_replace( ' ', '+', $utm['utm_term'] ) : '',
+				'utm_content'  => isset( $utm['utm_content'] ) && is_string( $utm['utm_content'] ) ? str_replace( ' ', '+', $utm['utm_content'] ) : '',
 			];
 			$url = add_query_arg( array_filter( $utm ), $url );
 		}

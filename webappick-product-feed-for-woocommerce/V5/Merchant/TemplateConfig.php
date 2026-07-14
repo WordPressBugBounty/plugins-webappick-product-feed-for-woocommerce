@@ -33,7 +33,7 @@ class TemplateConfig {
 		$url   = filter_var( site_url(), FILTER_SANITIZE_URL );
 		if ( false !== $url ) {
 			$url = wp_parse_url( $url );
-			if ( array_key_exists( 'host', $url ) ) {
+			if ( array_key_exists( 'host', $url ) && is_string( $url['host'] ) ) {
 				if ( strpos( $url['host'], "." ) !== false ) {
 					$arr   = explode( '.', $url['host'] );
 					$brand = $arr[ count( $arr ) - 2 ];

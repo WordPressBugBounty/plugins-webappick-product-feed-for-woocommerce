@@ -236,6 +236,7 @@ class CronHelper { // phpcs:ignore
 	public static function get_cron_hook_name( $feed_name, $is_single_hook = false ) {
 		$feed_name = str_replace( 'wf_feed_', '', $feed_name );
 		$feed_name = str_replace( 'wf_config', '', $feed_name );
+		$feed_name = \is_string( $feed_name ) ? $feed_name : '';
 		if(!isset(self::$settings['single_feed_hook_prefix'])) {
 			self::set_cron_settings();
 		}

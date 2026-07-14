@@ -83,12 +83,8 @@ if ( ! class_exists( 'WooFeedWebAppickAPI' ) ) {
 			$this->insights  = $this->client->insights(); // Plugin Insights
 			$this->promotion = $this->client->promotions(); // Promo offers
 
-			// Setup
-			$this->promotion->set_source( 'https://api.bitbucket.org/2.0/snippets/woofeed/RLbyop/files/woo-feed-notice.json' );
-
 			// Initialize
 			$this->insightInit();
-			$this->promotion->init();
 
 			// Housekeeping.
 			add_action( 'admin_menu', array( $this, 'premium_features' ), 999 );

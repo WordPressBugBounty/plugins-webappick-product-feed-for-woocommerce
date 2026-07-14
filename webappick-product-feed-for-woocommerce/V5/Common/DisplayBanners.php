@@ -67,7 +67,7 @@ class DisplayBanners {
 
 		if ( ! empty( $license_data ) && is_array( $license_data ) ) {
 			if (
-				strtolower( $license_data['status'] ) === 'active' &&
+				isset( $license_data['status'] ) && is_string( $license_data['status'] ) && strtolower( $license_data['status'] ) === 'active' &&
 				isset( $license_data['product_id'] ) &&
 				in_array( $license_data['product_id'], self::LIFETIME_PRODUCT_IDS )
 			) {

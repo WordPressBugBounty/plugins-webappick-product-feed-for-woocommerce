@@ -120,12 +120,14 @@ class GoogleTemplate {
 
 		if ( in_array( $merchant_attribute, $weight_attributes, true ) ) {
 			$override = true;
-			$wc_unit  = ' ' . get_option( 'woocommerce_weight_unit' );
+			$weight_unit = get_option( 'woocommerce_weight_unit' );
+			$wc_unit  = ' ' . ( is_string( $weight_unit ) ? $weight_unit : '' );
 		}
 
 		if ( in_array( $merchant_attribute, $dimension_attributes, true ) ) {
 			$override = true;
-			$wc_unit  = ' ' . get_option( 'woocommerce_dimension_unit' );
+			$dimension_unit = get_option( 'woocommerce_dimension_unit' );
+			$wc_unit  = ' ' . ( is_string( $dimension_unit ) ? $dimension_unit : '' );
 		}
 
 		if ( ! $override ) {

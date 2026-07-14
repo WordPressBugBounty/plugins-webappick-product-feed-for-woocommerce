@@ -472,10 +472,14 @@ class Status {
 
 
 		$message .= "<br/><b>Store Address</b><br/>";
-		$message .= get_option('woocommerce_store_address')."<br/>";
-		$message .= get_option('woocommerce_store_city')."<br/>";
-		$message .= get_option('woocommerce_default_country')."<br/>";
-		$message .= get_option('woocommerce_store_postcode')."<br/>";
+		$store_address = get_option('woocommerce_store_address');
+		$store_city = get_option('woocommerce_store_city');
+		$default_country = get_option('woocommerce_default_country');
+		$store_postcode = get_option('woocommerce_store_postcode');
+		$message .= ( is_string( $store_address ) ? $store_address : '' ) . "<br/>";
+		$message .= ( is_string( $store_city ) ? $store_city : '' ) . "<br/>";
+		$message .= ( is_string( $default_country ) ? $default_country : '' ) . "<br/>";
+		$message .= ( is_string( $store_postcode ) ? $store_postcode : '' ) . "<br/>";
 
 
 		return [

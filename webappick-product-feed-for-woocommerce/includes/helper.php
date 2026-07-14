@@ -2432,7 +2432,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 			unset( $args['unset'] );
 		}
 		if ( array_key_exists( 'product_query_type', $args ) ) {
-			$data['product_query_type'] = strtolower( $args['product_query_type'] );
+			$data['product_query_type'] = isset( $args['product_query_type'] ) && is_string( $args['product_query_type'] ) ? strtolower( $args['product_query_type'] ) : '';
 			$query_types                = array_keys( woo_feed_get_query_type_options() );
 			if ( ! in_array( $data['product_query_type'], $query_types ) ) {
 				$data['product_query_type'] = in_array( $_data['product_query_type'], $query_types ) ? $_data['product_query_type'] : $defaults['product_query_type'];
@@ -2440,7 +2440,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 			unset( $args['product_query_type'] );
 		}
 		if ( array_key_exists( 'variation_query_type', $args ) ) {
-			$data['variation_query_type'] = strtolower( $args['variation_query_type'] );
+			$data['variation_query_type'] = isset( $args['variation_query_type'] ) && is_string( $args['variation_query_type'] ) ? strtolower( $args['variation_query_type'] ) : '';
 			$query_types                  = array_keys( woo_feed_get_query_type_options( 'variation' ) );
 			if ( ! in_array( $data['variation_query_type'], $query_types, true ) ) {
 				$data['variation_query_type'] = in_array( $_data['variation_query_type'], $query_types, true ) ? $_data['variation_query_type'] : $defaults['variation_query_type'];
@@ -2448,7 +2448,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 			unset( $args['variation_query_type'] );
 		}
 		if ( array_key_exists( 'enable_error_debugging', $args ) ) {
-			$data['enable_error_debugging'] = strtolower( $args['enable_error_debugging'] );
+			$data['enable_error_debugging'] = isset( $args['enable_error_debugging'] ) && is_string( $args['enable_error_debugging'] ) ? strtolower( $args['enable_error_debugging'] ) : '';
 			if ( ! in_array( $data['enable_error_debugging'], array( 'on', 'off' ) ) ) {
 				$data['enable_error_debugging'] = in_array(
 					$_data['enable_error_debugging'],
@@ -2465,7 +2465,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 			unset( $args['cache_ttl'] );
 		}
 		if ( array_key_exists( 'overridden_structured_data', $args ) ) {
-			$data['overridden_structured_data'] = strtolower( $args['overridden_structured_data'] );
+			$data['overridden_structured_data'] = isset( $args['overridden_structured_data'] ) && is_string( $args['overridden_structured_data'] ) ? strtolower( $args['overridden_structured_data'] ) : '';
 			if ( ! in_array( $data['overridden_structured_data'], array( 'on', 'off' ) ) ) {
 				$data['overridden_structured_data'] = in_array(
 					$_data['overridden_structured_data'],
@@ -2479,7 +2479,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 		}
 
 		if ( array_key_exists( 'disable_pixel', $args ) ) {
-			$data['disable_pixel'] = strtolower( $args['disable_pixel'] );
+			$data['disable_pixel'] = isset( $args['disable_pixel'] ) && is_string( $args['disable_pixel'] ) ? strtolower( $args['disable_pixel'] ) : '';
 			if ( ! in_array( $data['disable_pixel'], array( 'enable', 'disable' ) ) ) {
 				$data['disable_pixel'] = in_array(
 					$_data['disable_pixel'],
@@ -2501,7 +2501,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 		}
 
 		if ( array_key_exists( 'disable_remarketing', $args ) ) {
-			$data['disable_remarketing'] = strtolower( $args['disable_remarketing'] );
+			$data['disable_remarketing'] = isset( $args['disable_remarketing'] ) && is_string( $args['disable_remarketing'] ) ? strtolower( $args['disable_remarketing'] ) : '';
 			if ( ! in_array( $data['disable_remarketing'], array( 'enable', 'disable' ) ) ) {
 				$data['disable_remarketing'] = in_array(
 					$_data['disable_remarketing'],
@@ -2531,7 +2531,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 		}
 
 		if ( array_key_exists( 'allow_all_shipping', $args ) ) {
-			$data['allow_all_shipping'] = strtolower( $args['allow_all_shipping'] );
+			$data['allow_all_shipping'] = isset( $args['allow_all_shipping'] ) && is_string( $args['allow_all_shipping'] ) ? strtolower( $args['allow_all_shipping'] ) : '';
 			if ( ! in_array( $data['allow_all_shipping'], array( 'yes', 'no' ) ) ) {
 				$data['allow_all_shipping'] = in_array(
 					$_data['allow_all_shipping'],
@@ -2545,7 +2545,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 		}
 
 		if ( array_key_exists( 'only_free_shipping', $args ) ) {
-			$data['only_free_shipping'] = strtolower( $args['only_free_shipping'] );
+			$data['only_free_shipping'] = isset( $args['only_free_shipping'] ) && is_string( $args['only_free_shipping'] ) ? strtolower( $args['only_free_shipping'] ) : '';
 			if ( ! in_array( $data['only_free_shipping'], array( 'yes', 'no' ) ) ) {
 				$data['only_free_shipping'] = in_array(
 					$_data['only_free_shipping'],
@@ -2559,7 +2559,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 		}
 
 		if ( array_key_exists( 'only_local_pickup_shipping', $args ) ) {
-			$data['only_local_pickup_shipping'] = strtolower( $args['only_local_pickup_shipping'] );
+			$data['only_local_pickup_shipping'] = isset( $args['only_local_pickup_shipping'] ) && is_string( $args['only_local_pickup_shipping'] ) ? strtolower( $args['only_local_pickup_shipping'] ) : '';
 			if ( ! in_array( $data['only_local_pickup_shipping'], array( 'yes', 'no' ) ) ) {
 				$data['only_local_pickup_shipping'] = in_array(
 					$_data['only_local_pickup_shipping'],
@@ -2573,7 +2573,7 @@ if ( ! function_exists( 'woo_feed_save_options' ) ) {
 		}
 
 		if ( array_key_exists( 'enable_ftp_upload', $args ) ) {
-			$data['enable_ftp_upload'] = strtolower( $args['enable_ftp_upload'] );
+			$data['enable_ftp_upload'] = isset( $args['enable_ftp_upload'] ) && is_string( $args['enable_ftp_upload'] ) ? strtolower( $args['enable_ftp_upload'] ) : '';
 			if ( ! in_array( $data['enable_ftp_upload'], array( 'yes', 'no' ) ) ) {
 				$data['enable_ftp_upload'] = in_array(
 					$_data['enable_ftp_upload'],
@@ -2782,7 +2782,7 @@ if ( ! function_exists( 'woo_feed_product_taxonomy_term_separator' ) ) {
 			$separator = ',';
 		}
 
-		if ( false !== strpos( $config['provider'], 'daisycon' ) ) {
+		if ( isset( $config['provider'] ) && is_string( $config['provider'] ) && false !== strpos( $config['provider'], 'daisycon' ) ) {
 			$separator = '|';
 		}
 
@@ -4415,7 +4415,8 @@ if ( ! function_exists( 'woo_feed_exclude_feed_from_wp_fastest_cache' ) ) {
 			return false;
 		}
 
-		$wp_fastest_cache_ex_paths = json_decode( get_option( 'WpFastestCacheExclude' ) );
+		$wp_fastest_cache_option = get_option( 'WpFastestCacheExclude' );
+		$wp_fastest_cache_ex_paths = json_decode( is_string( $wp_fastest_cache_option ) ? $wp_fastest_cache_option : '' );
 		if ( $wp_fastest_cache_ex_paths && is_array( $wp_fastest_cache_ex_paths ) ) {
 
 			$feed_path_exist = false;
@@ -4471,7 +4472,7 @@ if ( ! function_exists( 'woo_feed_exclude_feed_from_wp_super_cache' ) ) {
 		}
 
 		$wp_super_ex_paths = get_option( 'ossdl_off_exclude' );
-		if ( $wp_super_ex_paths && strpos( $wp_super_ex_paths, 'woo-feed' ) === false ) {
+		if ( is_string( $wp_super_ex_paths ) && strpos( $wp_super_ex_paths, 'woo-feed' ) === false ) {
 			$wp_super_ex_paths = explode( ',', $wp_super_ex_paths );
 			$wp_super_ex_paths = array_merge( $wp_super_ex_paths, array( 'woo-feed' ) );
 			update_option( 'ossdl_off_exclude', implode( ',', $wp_super_ex_paths ) );
@@ -4643,7 +4644,7 @@ if ( ! function_exists( 'woo_feed_exclude_feed_from_comet_cache' ) ) {
 
 		if ( $comet_cache_settings && isset( $comet_cache_settings['exclude_uris'] ) ) {
 			$exclude_uris = $comet_cache_settings['exclude_uris'];
-			if ( strpos( $exclude_uris, '/wp-content/uploads/woo-feed' ) === false ) {
+			if ( is_string( $exclude_uris ) && strpos( $exclude_uris, '/wp-content/uploads/woo-feed' ) === false ) {
 				$exclude_uris                        .= "\n/wp-content/uploads/woo-feed";
 				$comet_cache_settings['exclude_uris'] = $exclude_uris;
 				update_option( 'comet_cache_options', $comet_cache_settings );
@@ -5388,12 +5389,12 @@ if ( ! function_exists( 'woo_feed_strpos_array' ) ) {
 	 */
 	function woo_feed_strpos_array( $niddles, $haystack ) {
 
-		if ( empty( $haystack ) ) {
-			return;
+		if ( empty( $haystack ) || ! is_string( $haystack ) ) {
+			return false;
 		}
 
 		foreach ( $niddles as $niddle ) {
-			if ( strpos( $haystack, $niddle ) !== false ) {
+			if ( is_string( $niddle ) && strpos( $haystack, $niddle ) !== false ) {
 				return true;
 			}
 		}
@@ -5895,7 +5896,7 @@ if ( ! function_exists( 'woo_feed_after_wc_product_structured_data' ) ) {
 			return $markup;
 		}
 
-		if ( isset( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], 'attribute_' ) ) {
+		if ( ! empty( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) && false !== strpos( $_SERVER['REQUEST_URI'], 'attribute_' ) ) {
 			$url            = $_SERVER['REQUEST_URI'];
 			$url_components = parse_url( $url );
 			$currency       = get_option( 'woocommerce_currency' );

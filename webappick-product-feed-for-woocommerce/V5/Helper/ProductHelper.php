@@ -218,7 +218,7 @@ class ProductHelper {
 	 * @return mixed The formatted value of the custom field.
 	 */
 	public static function get_custom_field( $field, $product, $config ) {
-
+		$field      = \is_string( $field ) ? $field : '';
         $field_name = $field;
 		// Adjust the meta key for variation products.
         if ( strpos( $field, '_cattr') !== false ) {
@@ -293,7 +293,7 @@ class ProductHelper {
 		}
 
 		// Handle taxonomy-related meta keys.
-		if ( \strpos( $meta, self::PRODUCT_TAXONOMY_PREFIX ) !== false ) {
+		if ( \is_string( $meta ) && \strpos( $meta, self::PRODUCT_TAXONOMY_PREFIX ) !== false ) {
 			$meta_key = \str_replace( self::PRODUCT_TAXONOMY_PREFIX, '', $meta );
 			$value    = self::get_product_taxonomy( $meta_key, $product, $config );
 		}
@@ -367,9 +367,10 @@ class ProductHelper {
 	 * @return array|false
 	 */
 	private static function array_search_key( $needle_key, $structure ) {
+		$needle_key = \is_string( $needle_key ) ? $needle_key : '';
         if (is_array($structure) || is_object($structure)) {
             foreach ($structure as $key => $value) {
-                if (strpos($key, $needle_key) !== false) {
+                if (\is_string( $key ) && strpos($key, $needle_key) !== false) {
 
                     return [
                         'attribute' => $value,
@@ -417,7 +418,7 @@ class ProductHelper {
 	 * @return mixed Formatted value if specific formatting is required, otherwise returns the original value.
 	 */
 	private static function format_custom_field_value( $value, $meta_key ) {
-		if ( \strpos( $meta_key, 'availability_date' ) !== false ) {
+		if ( \is_string( $meta_key ) && \strpos( $meta_key, 'availability_date' ) !== false ) {
 			$formatted_date = \strtotime( $value );
 
 			if ( $formatted_date === false ) {
@@ -455,13 +456,13 @@ class ProductHelper {
 				return 1;
 			}
 
-			if ( $attribute_key !== '' && \strpos( $attribute_key, self::PRODUCT_ATTRIBUTE_PREFIX ) !== false ) {
+			if ( \is_string( $attribute_key ) && $attribute_key !== '' && \strpos( $attribute_key, self::PRODUCT_ATTRIBUTE_PREFIX ) !== false ) {
 				$attribute = \str_replace( self::PRODUCT_ATTRIBUTE_PREFIX, '', $attribute_key );
 
 				return self::get_product_attribute( $attribute, $product, $config ) !== '' ? 1 : 0;
 			}
 
-			if ( $attribute_key !== '' && \strpos( $attribute_key, self::PRODUCT_TAXONOMY_PREFIX ) !== false ) {
+			if ( \is_string( $attribute_key ) && $attribute_key !== '' && \strpos( $attribute_key, self::PRODUCT_TAXONOMY_PREFIX ) !== false ) {
 				return self::get_product_meta( $attribute_key, $product, $config ) !== '' ? 1 : 0;
 			}
 		}
@@ -898,6 +899,8 @@ class ProductHelper {
 	 * @since 3.2.0
 	 */
 	public static function price_format( $name, $condition_name, $result ) {
+		$name   = \is_string( $name ) ? $name : '';
+		$result = \is_string( $result ) ? $result : '';
 		// calc and return the output.
 		if ( false !== \strpos( $name, 'price' ) || false !== \strpos( $name, 'weight' ) ) {
 			if ( false !== \strpos( $result, '+' ) && false !== \strpos( $result, '%' ) ) {
@@ -1013,7 +1016,8 @@ class ProductHelper {
 
 			if ( ! empty( $str_replace['subject'] ) && ( $product_attribute == $str_replace['subject'] || self::PRODUCT_ATTRIBUTE_PREFIX . $product_attribute == $str_replace['subject'] ) ) {
 
-				if ( \strpos( $str_replace['search'], '/' ) === false ) {
+				$search_val = isset( $str_replace['search'] ) && is_string( $str_replace['search'] ) ? $str_replace['search'] : '';
+				if ( \strpos( $search_val, '/' ) === false ) {
 					$output = \preg_replace( \stripslashes( '/' . $str_replace['search'] . '/mi' ), $str_replace['replace'], $output );
 				} else {
 					$output = \str_replace( $str_replace['search'], $str_replace['replace'], $output );

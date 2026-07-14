@@ -148,7 +148,7 @@ class Settings {
 		}
 
 		if ( array_key_exists( 'product_query_type', $args ) ) {
-			$data['product_query_type'] = strtolower( $args['product_query_type'] );
+			$data['product_query_type'] = isset( $args['product_query_type'] ) && is_string( $args['product_query_type'] ) ? strtolower( $args['product_query_type'] ) : '';
 			$query_types                = array_keys( woo_feed_get_query_type_options() );
 			if ( ! in_array( $data['product_query_type'], $query_types, true ) ) {
 				$data['product_query_type'] = in_array( $_data['product_query_type'], $query_types, true ) ? $_data['product_query_type'] : $defaults['product_query_type'];
@@ -156,7 +156,7 @@ class Settings {
 			unset( $args['product_query_type'] );
 		}
 		if ( array_key_exists( 'variation_query_type', $args ) ) {
-			$data['variation_query_type'] = strtolower( $args['variation_query_type'] );
+			$data['variation_query_type'] = isset( $args['variation_query_type'] ) && is_string( $args['variation_query_type'] ) ? strtolower( $args['variation_query_type'] ) : '';
 			$query_types                  = array_keys( woo_feed_get_query_type_options( 'variation' ) );
 			if ( ! in_array( $data['variation_query_type'], $query_types, true ) ) {
 				$data['variation_query_type'] = in_array( $_data['variation_query_type'], $query_types, true ) ? $_data['variation_query_type'] : $defaults['variation_query_type'];
@@ -164,7 +164,7 @@ class Settings {
 			unset( $args['variation_query_type'] );
 		}
 		if ( array_key_exists( 'enable_error_debugging', $args ) ) {
-			$data['enable_error_debugging'] = strtolower( $args['enable_error_debugging'] );
+			$data['enable_error_debugging'] = isset( $args['enable_error_debugging'] ) && is_string( $args['enable_error_debugging'] ) ? strtolower( $args['enable_error_debugging'] ) : '';
 			if ( ! in_array( $data['enable_error_debugging'], [ 'on', 'off' ] ) ) {
 				$data['enable_error_debugging'] = in_array( $_data['enable_error_debugging'], [
 					'on',
@@ -178,7 +178,7 @@ class Settings {
 			unset( $args['cache_ttl'] );
 		}
 		if ( array_key_exists( 'overridden_structured_data', $args ) ) {
-			$data['overridden_structured_data'] = strtolower( $args['overridden_structured_data'] );
+			$data['overridden_structured_data'] = isset( $args['overridden_structured_data'] ) && is_string( $args['overridden_structured_data'] ) ? strtolower( $args['overridden_structured_data'] ) : '';
 			if ( ! in_array( $data['overridden_structured_data'], array( 'on', 'off' ) ) ) {
 				$data['overridden_structured_data'] = in_array( $_data['overridden_structured_data'], array(
 					'on',
@@ -189,7 +189,7 @@ class Settings {
 		}
 
 		if ( array_key_exists( 'disable_pixel', $args ) ) {
-			$data['disable_pixel'] = strtolower( $args['disable_pixel'] );
+			$data['disable_pixel'] = isset( $args['disable_pixel'] ) && is_string( $args['disable_pixel'] ) ? strtolower( $args['disable_pixel'] ) : '';
 			if ( ! in_array( $data['disable_pixel'], array( 'enable', 'disable' ) ) ) {
 				$data['disable_pixel'] = in_array( $_data['disable_pixel'], array(
 					'enable',
@@ -208,7 +208,7 @@ class Settings {
 		}
 
 		if ( array_key_exists( 'disable_remarketing', $args ) ) {
-			$data['disable_remarketing'] = strtolower( $args['disable_remarketing'] );
+			$data['disable_remarketing'] = isset( $args['disable_remarketing'] ) && is_string( $args['disable_remarketing'] ) ? strtolower( $args['disable_remarketing'] ) : '';
 			if ( ! in_array( $data['disable_remarketing'], array( 'enable', 'disable' ) ) ) {
 				$data['disable_remarketing'] = in_array( $_data['disable_remarketing'], array(
 					'enable',
@@ -235,7 +235,7 @@ class Settings {
 		}
 
 		if ( array_key_exists( 'allow_all_shipping', $args ) ) {
-			$data['allow_all_shipping'] = strtolower( $args['allow_all_shipping'] );
+			$data['allow_all_shipping'] = isset( $args['allow_all_shipping'] ) && is_string( $args['allow_all_shipping'] ) ? strtolower( $args['allow_all_shipping'] ) : '';
 			if ( ! in_array( $data['allow_all_shipping'], array( 'yes', 'no' ) ) ) {
 				$data['allow_all_shipping'] = in_array( $_data['allow_all_shipping'], array(
 					'yes',
@@ -246,7 +246,7 @@ class Settings {
 		}
 
 		if ( array_key_exists( 'only_free_shipping', $args ) ) {
-			$data['only_free_shipping'] = strtolower( $args['only_free_shipping'] );
+			$data['only_free_shipping'] = isset( $args['only_free_shipping'] ) && is_string( $args['only_free_shipping'] ) ? strtolower( $args['only_free_shipping'] ) : '';
 			if ( ! in_array( $data['only_free_shipping'], array( 'yes', 'no' ) ) ) {
 				$data['only_free_shipping'] = in_array( $_data['only_free_shipping'], array(
 					'yes',
@@ -257,7 +257,7 @@ class Settings {
 		}
 
 		if ( array_key_exists( 'only_local_pickup_shipping', $args ) ) {
-			$data['only_local_pickup_shipping'] = strtolower( $args['only_local_pickup_shipping'] );
+			$data['only_local_pickup_shipping'] = isset( $args['only_local_pickup_shipping'] ) && is_string( $args['only_local_pickup_shipping'] ) ? strtolower( $args['only_local_pickup_shipping'] ) : '';
 			if ( ! in_array( $data['only_local_pickup_shipping'], array( 'yes', 'no' ) ) ) {
 				$data['only_local_pickup_shipping'] = in_array( $_data['only_local_pickup_shipping'], array(
 					'yes',
@@ -269,7 +269,7 @@ class Settings {
 
 
 		if ( array_key_exists( 'enable_ftp_upload', $args ) ) {
-			$data['enable_ftp_upload'] = strtolower( $args['enable_ftp_upload'] );
+			$data['enable_ftp_upload'] = isset( $args['enable_ftp_upload'] ) && is_string( $args['enable_ftp_upload'] ) ? strtolower( $args['enable_ftp_upload'] ) : '';
 			if ( ! in_array( $data['enable_ftp_upload'], array( 'yes', 'no' ) ) ) {
 				$data['enable_ftp_upload'] = in_array( $_data['enable_ftp_upload'], array(
 					'yes',
@@ -280,7 +280,7 @@ class Settings {
 		}
 
 		if ( array_key_exists( 'enable_cdata', $args ) ) {
-			$data['enable_cdata'] = strtolower( $args['enable_cdata'] );
+			$data['enable_cdata'] = isset( $args['enable_cdata'] ) && is_string( $args['enable_cdata'] ) ? strtolower( $args['enable_cdata'] ) : '';
 			if ( ! in_array( $data['enable_cdata'], array( 'yes', 'no' ) ) ) {
 				$data['enable_cdata'] = in_array( $_data['enable_cdata'], array(
 					'yes',

@@ -73,7 +73,7 @@ class TranslatePress {
 		if ( $feed_language && $CTX_TRP_RENDERER ) {
 			// Remove empty strings.
 			$translatable_strings = array_filter( explode( PHP_EOL, $output ), function ( $paragragh ) {
-				if ( strlen( $paragragh ) > 1 ) {
+				if ( is_string( $paragragh ) && strlen( $paragragh ) > 1 ) {
 					return $paragragh;
 				}
 			} );

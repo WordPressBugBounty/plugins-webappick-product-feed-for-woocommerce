@@ -122,6 +122,7 @@ class PinterestStructure implements StructureInterface {
 		}
 
 		foreach ( $mattributes as $key => $attribute ) {
+			$attribute        = \is_string( $attribute ) ? $attribute : '';
 			$installment_sub  = \str_replace( "installment_", "", $attribute );
 			$installment_sub = MerchantAttributeReplaceFactory::replace_attribute( $installment_sub, $this->config );
 
@@ -209,6 +210,7 @@ class PinterestStructure implements StructureInterface {
 		}
 
 		foreach ( $mattributes as $key => $attribute ) {
+			$attribute          = \is_string( $attribute ) ? $attribute : '';
 			$installment_sub    = \str_replace( "installment_", "", $attribute );
 			$subscription_sub   = \str_replace( "subscription_", "", $attribute );
 			$attribute_value    = ( $type[ $key ] === 'pattern' ) ? $static[ $key ] : $attributes[ $key ];

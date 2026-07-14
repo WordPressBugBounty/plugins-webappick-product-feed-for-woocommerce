@@ -10,7 +10,7 @@
  * Plugin Name:       CTX Feed
  * Plugin URI:        https://webappick.com/
  * Description:       Easily generate woocommerce product feed for any marketing channel like Google Shopping(Merchant), Facebook Remarketing, Bing, eBay & more. Support 100+ Merchants.
- * Version:           6.6.40
+ * Version:           6.6.41
  * Author:            WebAppick
  * Author URI:        https://webappick.com/
  * License:           GPL v2
@@ -247,8 +247,8 @@ add_action('init', function(){
 // Handle Ajax Actions - only load when needed (admin, cron, ajax, or REST requests)
 // Note: REST_REQUEST constant is not yet defined at plugin load time, so we detect REST via URL
 $is_rest_request = ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ||
-                   ( isset( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], '/wp-json/' ) !== false ) ||
-                   ( isset( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], 'rest_route=' ) !== false );
+                   ( ! empty( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], '/wp-json/' ) !== false ) ||
+                   ( ! empty( $_SERVER['REQUEST_URI'] ) && is_string( $_SERVER['REQUEST_URI'] ) && strpos( $_SERVER['REQUEST_URI'], 'rest_route=' ) !== false );
 
 if ( is_admin() || wp_doing_cron() || wp_doing_ajax() || $is_rest_request ) {
 	register_shutdown_function( 'woo_feed_log_errors_at_shutdown' );

@@ -86,6 +86,7 @@ class FacebookStructure implements StructureInterface {
 		}
 
 		foreach ( $mattributes as $key => $attribute ) {
+			$attribute         = \is_string( $attribute ) ? $attribute : '';
 			$attribute_value   = ( $type[ $key ] === 'pattern' ) ? $static[ $key ] : $attributes[ $key ];
 			$additional_variant_sub  = \str_replace( "additional_variant_", "", $attribute );
 			$replaced_attribute = MerchantAttributeReplaceFactory::replace_attribute( $attribute, $this->config );
@@ -126,6 +127,7 @@ class FacebookStructure implements StructureInterface {
 		}
 
 		foreach ( $mattributes as $key => $attribute ) {
+			$attribute               = \is_string( $attribute ) ? $attribute : '';
 			$additional_variant_sub  = \str_replace( "additional_variant_", "", $attribute );
 			$attribute_value   = ( $type[ $key ] === 'pattern' ) ? $static[ $key ] : $attributes[ $key ];
 

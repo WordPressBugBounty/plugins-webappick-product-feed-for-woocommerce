@@ -85,11 +85,11 @@ class FormatOutput {
 				$output = mb_strtolower( $output );
 			}
 
-			if ( in_array( 16, $outputTypes ) && strpos( $output, 'http' ) === 0 ) {
+			if ( in_array( 16, $outputTypes ) && \is_string( $output ) && strpos( $output, 'http' ) === 0 ) {
 				$output = str_replace( 'http://', 'https://', $output );
 			}
 
-			if ( in_array( 17, $outputTypes ) && strpos( $output, 'http' ) === 0 ) {
+			if ( in_array( 17, $outputTypes ) && \is_string( $output ) && strpos( $output, 'http' ) === 0 ) {
 				$output = str_replace( 'https://', 'http://', $output );
 			}
 

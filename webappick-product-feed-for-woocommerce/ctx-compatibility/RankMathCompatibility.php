@@ -160,7 +160,8 @@ class RankMathCompatibility {
 
 		if ( empty( $rank_description ) ) {
 			if ( ! empty( $desc_format ) && strpos( (string) $desc_format, 'excerpt' ) !== false ) {
-				$rank_description = str_replace( '%excerpt%', get_the_excerpt( $product->get_id() ), $desc_format );
+				$excerpt = get_the_excerpt( $product->get_id() );
+				$rank_description = str_replace( '%excerpt%', is_string( $excerpt ) ? $excerpt : '', $desc_format );
 			}
 
 			// Get Variation Description.

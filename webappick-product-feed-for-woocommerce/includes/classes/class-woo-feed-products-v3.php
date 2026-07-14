@@ -1627,6 +1627,7 @@ class Woo_Feed_Products_v3 {
 	 *
 	 */
 	public function getAttributeValueByType( $product, $attribute, $merchant_attribute = '' ) {
+		$attribute = is_string( $attribute ) ? $attribute : '';
 
 		if ( method_exists( $this, $attribute ) ) {
 			$output = $this->$attribute( $product );
@@ -1836,7 +1837,7 @@ class Woo_Feed_Products_v3 {
 	protected function yoast_wpseo_title( $product ) {
 		$product_id  = woo_feed_parent_product_id( $product );
 		$yoast_title = get_post_meta( $product_id, '_yoast_wpseo_title', true );
-		if ( strpos( $yoast_title, '%%' ) !== false ) {
+		if ( is_string( $yoast_title ) && strpos( $yoast_title, '%%' ) !== false ) {
 			$title = strstr( $yoast_title, '%%', true );
 			if ( empty( $title ) ) {
 				$title = get_the_title( $product_id );
@@ -2467,8 +2468,8 @@ class Woo_Feed_Products_v3 {
 				'utm_source'   => str_replace( ' ', '+', $utm['utm_source'] ),
 				'utm_medium'   => str_replace( ' ', '+', $utm['utm_medium'] ),
 				'utm_campaign' => str_replace( ' ', '+', $utm['utm_campaign'] ),
-				'utm_term'     => str_replace( ' ', '+', $utm['utm_term'] ),
-				'utm_content'  => str_replace( ' ', '+', $utm['utm_content'] ),
+				'utm_term'     => isset( $utm['utm_term'] ) && is_string( $utm['utm_term'] ) ? str_replace( ' ', '+', $utm['utm_term'] ) : '',
+				'utm_content'  => isset( $utm['utm_content'] ) && is_string( $utm['utm_content'] ) ? str_replace( ' ', '+', $utm['utm_content'] ) : '',
 			];
 
 			$url = add_query_arg( array_filter( $utm ), $url );
@@ -2533,8 +2534,8 @@ class Woo_Feed_Products_v3 {
 					'utm_source'   => str_replace( ' ', '+', $utm['utm_source'] ),
 					'utm_medium'   => str_replace( ' ', '+', $utm['utm_medium'] ),
 					'utm_campaign' => str_replace( ' ', '+', $utm['utm_campaign'] ),
-					'utm_term'     => str_replace( ' ', '+', $utm['utm_term'] ),
-					'utm_content'  => str_replace( ' ', '+', $utm['utm_content'] ),
+					'utm_term'     => isset( $utm['utm_term'] ) && is_string( $utm['utm_term'] ) ? str_replace( ' ', '+', $utm['utm_term'] ) : '',
+					'utm_content'  => isset( $utm['utm_content'] ) && is_string( $utm['utm_content'] ) ? str_replace( ' ', '+', $utm['utm_content'] ) : '',
 				];
 
 				return add_query_arg( array_filter( $utm ), $product->get_product_url() );
@@ -2672,7 +2673,8 @@ class Woo_Feed_Products_v3 {
 				 * @plugin WooCommerce Additional Variation Images
 				 * @link   https://woocommerce.com/products/woocommerce-additional-variation-images/
 				 */
-				$attachmentIds = explode( ',', get_post_meta( $product->get_id(), '_wc_additional_variation_images', true ) );
+				$meta_value = get_post_meta( $product->get_id(), '_wc_additional_variation_images', true );
+				$attachmentIds = explode( ',', is_string( $meta_value ) ? $meta_value : '' );
 			} elseif ( class_exists( 'WOODMART_Theme' ) ) {
 				/**
 				 * Get Variation Additional Images for "WOODMART Theme -> Variation Gallery Images Feature"
@@ -2684,10 +2686,11 @@ class Woo_Feed_Products_v3 {
 				$parent_id = $product->get_parent_id();
 
 				$variation_obj = get_post_meta( $parent_id, 'woodmart_variation_gallery_data', true );
-				if ( isset( $variation_obj ) && isset( $variation_obj[ $var_id ] ) ) {
+				if ( isset( $variation_obj ) && isset( $variation_obj[ $var_id ] ) && is_string( $variation_obj[ $var_id ] ) ) {
 					$attachmentIds = explode( ',', $variation_obj[ $var_id ] );
 				} else {
-					$attachmentIds = explode( ',', get_post_meta( $var_id, 'wd_additional_variation_images_data', true ) );
+					$wd_meta_value = get_post_meta( $var_id, 'wd_additional_variation_images_data', true );
+					$attachmentIds = explode( ',', is_string( $wd_meta_value ) ? $wd_meta_value : '' );
 				}
 			} else {
 				/**
@@ -3993,6 +3996,8 @@ class Woo_Feed_Products_v3 {
 		$plus    = '+';
 		$minus   = '-';
 		$percent = '%';
+		$name    = is_string( $name ) ? $name : '';
+		$result  = is_string( $result ) ? $result : '';
 
 		if ( strpos( $name, 'price' ) !== false ) {
 			if ( strpos( $result, $plus ) !== false && strpos( $result, $percent ) !== false ) {

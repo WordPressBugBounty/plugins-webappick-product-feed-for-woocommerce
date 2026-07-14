@@ -139,7 +139,7 @@ class ExcludeCaching {
 		}
 
 		$wp_super_ex_paths = get_option( 'ossdl_off_exclude' );
-		if ( $wp_super_ex_paths && strpos( $wp_super_ex_paths, 'woo-feed' ) === false ) {
+		if ( $wp_super_ex_paths && is_string( $wp_super_ex_paths ) && strpos( $wp_super_ex_paths, 'woo-feed' ) === false ) {
 			$wp_super_ex_paths = explode( ',', $wp_super_ex_paths );
 			$wp_super_ex_paths = array_merge( $wp_super_ex_paths, [ 'woo-feed' ] );
 			update_option( 'ossdl_off_exclude', implode( ',', $wp_super_ex_paths ) );
@@ -299,7 +299,7 @@ class ExcludeCaching {
 
 		if ( $comet_cache_settings && isset( $comet_cache_settings['exclude_uris'] ) ) {
 			$exclude_uris = $comet_cache_settings['exclude_uris'];
-			if ( strpos( $exclude_uris, '/wp-content/uploads/woo-feed' ) === false ) {
+			if ( is_string( $exclude_uris ) && strpos( $exclude_uris, '/wp-content/uploads/woo-feed' ) === false ) {
 				$exclude_uris                         .= "\n/wp-content/uploads/woo-feed";
 				$comet_cache_settings['exclude_uris'] = $exclude_uris;
 				update_option( 'comet_cache_options', $comet_cache_settings );

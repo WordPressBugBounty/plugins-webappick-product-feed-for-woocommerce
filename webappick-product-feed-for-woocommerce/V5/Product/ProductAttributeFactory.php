@@ -400,7 +400,7 @@ class ProductAttributeFactory {
 				$product_attr = self::safe_unserialize( $value->type );
 				if ( is_array( $product_attr ) ) {
 					foreach ( $product_attr as $key => $arr_value ) {
-						if ( strpos( $key, 'pa_' ) === false && isset( $arr_value['name'] ) ) {
+						if ( \is_string( $key ) && strpos( $key, 'pa_' ) === false && isset( $arr_value['name'] ) ) {
 							$attributes[ AttributeValueByType::PRODUCT_ATTRIBUTE_PREFIX . $key ] = ucwords( str_replace( '-', ' ', $arr_value['name'] ) );
 						}
 					}
@@ -441,7 +441,7 @@ class ProductAttributeFactory {
 			$default_excludes = ! empty( $user_excludes ) ? array_merge( $default_excludes, $user_excludes ) : $default_excludes;
 
 			foreach ( get_object_taxonomies( 'product' ) as $value ) {
-				$value = ! empty( $value ) ? trim( $value ) : $value;
+				$value = \is_string( $value ) && ! empty( $value ) ? trim( $value ) : '';
 				if ( in_array( $value, $default_excludes, true ) || strpos( $value, 'pa_' ) !== false ) {
 					continue;
 				}

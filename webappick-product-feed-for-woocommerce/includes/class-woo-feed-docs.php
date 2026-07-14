@@ -83,7 +83,7 @@ if (!class_exists('WooFeedDocs')) {
 									<div class="docs-header">
 
 										<h2 class="hndle">
-											<span class="<?php printf('%s%s', (strpos($faq->icon, 'dashicons') !== false) ? 'dashicons ' : '', esc_attr($faq->icon)); ?>" aria-hidden="true"></span>
+											<span class="<?php printf('%s%s', ( ! empty( $faq->icon ) && is_string( $faq->icon ) && strpos($faq->icon, 'dashicons') !== false) ? 'dashicons ' : '', esc_attr( ! empty( $faq->icon ) ? $faq->icon : '' )); ?>" aria-hidden="true"></span>
 
 											<span><?php echo esc_html($faq->title->rendered); ?></span>
 										</h2>
@@ -114,7 +114,7 @@ if (!class_exists('WooFeedDocs')) {
 
 												?>
 													<li>
-														<span class="<?php printf('%s%s', (strpos($qa->icon, 'dashicons') !== false) ? 'dashicons ' : '', esc_attr($qa->icon)); ?>" aria-hidden="true"></span>
+														<span class="<?php printf('%s%s', ( ! empty( $qa->icon ) && is_string( $qa->icon ) && strpos($qa->icon, 'dashicons') !== false) ? 'dashicons ' : '', esc_attr( ! empty( $qa->icon ) ? $qa->icon : '' )); ?>" aria-hidden="true"></span>
 														<a href="<?php echo esc_url($doc_url); ?>" target="_blank"><?php echo esc_html($qa->title->rendered); ?></a>
 													</li>
 												<?php } ?>
@@ -184,7 +184,7 @@ if (!class_exists('WooFeedDocs')) {
 				}
 				set_transient('webappick_feed_help_docs', $help_docs, 12 * HOUR_IN_SECONDS);
 			}
-			$help_docs = json_decode(trim($help_docs));
+			$help_docs = json_decode( is_string( $help_docs ) ? trim( $help_docs ) : '' );
 
 			return $help_docs;
 		}

@@ -64,6 +64,7 @@ class AttributeMapping {
 	 * @return false|mixed|null
 	 */
 	public function getMapping( $attribute ) {
+		$attribute = \is_string( $attribute ) ? $attribute : '';
 		if ( strpos( $attribute, AttributeValueByType::PRODUCT_ATTRIBUTE_MAPPING_PREFIX ) === false ) {
 			$attribute = AttributeValueByType::PRODUCT_ATTRIBUTE_MAPPING_PREFIX . $attribute;
 		}
@@ -123,6 +124,7 @@ class AttributeMapping {
 		// Set Option Name.
 		if ( isset( $mappingConfig['option_name'] ) &&
 		     ! empty( $mappingConfig['option_name'] ) &&
+		     \is_string( $mappingConfig['option_name'] ) &&
 		     false !== strpos( $mappingConfig['option_name'], AttributeValueByType::PRODUCT_ATTRIBUTE_MAPPING_PREFIX ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		) {
 			$option = sanitize_text_field( $mappingConfig['option_name'] );
@@ -175,6 +177,7 @@ class AttributeMapping {
 		// Set Option Name.
 		if ( isset( $mappingConfig['option_name'] ) &&
 		     ! empty( $mappingConfig['option_name'] ) &&
+		     \is_string( $mappingConfig['option_name'] ) &&
 		     false !== strpos( $mappingConfig['option_name'], AttributeValueByType::PRODUCT_ATTRIBUTE_MAPPING_PREFIX ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
 		) {
 			$option = sanitize_text_field( $mappingConfig['option_name'] );
@@ -194,6 +197,7 @@ class AttributeMapping {
 	 * @return bool
 	 */
 	public function deleteMapping( $attribute ) {
+		$attribute = \is_string( $attribute ) ? $attribute : '';
 		if ( strpos( $attribute, AttributeValueByType::PRODUCT_ATTRIBUTE_MAPPING_PREFIX ) === false ) {
 			$attribute = AttributeValueByType::PRODUCT_ATTRIBUTE_MAPPING_PREFIX . $attribute;
 		}
@@ -235,6 +239,7 @@ class AttributeMapping {
 				if ( $attribute_mapping && isset( $attribute_mapping['mapping'] ) && count( $attribute_mapping['mapping'] ) ) {
 					$current_preview_data = '';
 					foreach ( $attribute_mapping['mapping'] as  $attribute ) {
+						$attribute = \is_string( $attribute ) ? $attribute : '';
 						//dynamic attribute value
 						if ( strpos( $attribute, 'wf_dattribute_' ) !== false ) {
 							$dynamic_attribute       = new DynamicAttributes();

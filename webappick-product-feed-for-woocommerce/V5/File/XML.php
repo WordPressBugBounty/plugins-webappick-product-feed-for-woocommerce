@@ -149,7 +149,7 @@ class XML implements FileInterface {
 			$output = $this->remove_CDATA( $output );
 
 			return '<![CDATA[' . $output . ']]>';
-		}else if( 'no' === $status && strpos( $output, '&lt;![CDATA[') !== false ){
+		}else if( 'no' === $status && \is_string( $output ) && strpos( $output, '&lt;![CDATA[') !== false ){
 
             return \html_entity_decode( $output );
         }
