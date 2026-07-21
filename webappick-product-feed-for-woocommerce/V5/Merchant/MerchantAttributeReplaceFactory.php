@@ -1,7 +1,7 @@
 <?php
 
 namespace CTXFeed\V5\Merchant;
-class MerchantAttributeReplaceFactory {
+class  MerchantAttributeReplaceFactory {
 	public static function data( $template, $file_type ) {
 		$data = [
 			'google'                 => [
@@ -29,6 +29,7 @@ class MerchantAttributeReplaceFactory {
 					'images_9'                      => array( 'g:additional_image_link', true ),
 					'images_10'                     => array( 'g:additional_image_link', true ),
 					'lifestyle_image'               => array( 'g:lifestyle_image_link', true ),
+					'video_link'                    => array( 'g:video_link', true ),
 					'condition'                     => array( 'g:condition', false ),
 					'availability'                  => array( 'g:availability', false ),
 					'availability_date'             => array( 'g:availability_date', false ),
@@ -198,6 +199,7 @@ class MerchantAttributeReplaceFactory {
 					'images_9'                            => array( 'additional image link', true ),
 					'images_10'                           => array( 'additional image link', true ),
 					'lifestyle_image'                     => array( 'lifestyle image link', true ),
+					'video_link'                          => array( 'video_link', true ),
 					'condition'                           => array( 'condition', false ),
 					'availability'                        => array( 'availability', false ),
 					'availability_date'                   => array( 'availability date', false ),

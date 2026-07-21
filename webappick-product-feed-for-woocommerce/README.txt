@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.0
 Requires PHP: 5.6
-Stable tag: 6.6.41
+Stable tag: 6.6.42
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -13,7 +13,7 @@ Create WooCommerce product feeds for Google Shopping, Facebook, TikTok & 220+ ch
 
 == Description ==
 
-🏆 **The #1 WooCommerce Product Feed Manager Plugin trusted by 70,000+ online stores worldwide.**
+🏆 **The #1 WooCommerce Product Feed Manager Plugin trusted by 80,000+ online stores worldwide.**
 
 Stop losing sales to rejected product feeds. **CTX Feed** is the most powerful **product feed plugin for WooCommerce**, designed to generate optimized, error-free feeds for **Google Shopping**, **Facebook Catalog**, **Instagram Shopping**, **TikTok Shop**, Pinterest, Bing, and **220+ global marketing channels**.
 
@@ -32,7 +32,7 @@ Whether you're managing 100 products or 100,000+ SKUs, CTX Feed handles your ent
 * **Variable Product Support** – Perfectly handle complex product variations that other plugins miss
 * **Zero Server Crashes** – Intelligent batch processing for stores with 50,000+ products
 
-**[Upgrade to Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) | [Complete Documentation](https://webappick.com/docs/ctx-feed/) | [Video Tutorials](https://www.youtube.com/@WebAppick) | [Get Support](https://webappick.com/my-account/contact-support/)**
+**[Upgrade to Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) | [View Demo](https://app.instawp.io/launch?s=ctx-feed-pro-live-demo&d=v2) | [Complete Documentation](https://webappick.com/docs/ctx-feed/) | [Video Tutorials](https://www.youtube.com/@WebAppick) | [Get Support](https://webappick.com/my-account/contact-support/)**
 
 ==🛒 Google Shopping Feed Manager==
 
@@ -408,6 +408,9 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 6.6.42 (July 21, 2026) =
+* * Added : Video link attribute to google template
 
 = Version 6.6.41 (July 14, 2026) =
 * Error Fix: Fixed PHP error issue
