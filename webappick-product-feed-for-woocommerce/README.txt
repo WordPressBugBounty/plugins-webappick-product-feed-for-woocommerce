@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.0
 Requires PHP: 5.6
-Stable tag: 6.6.42
+Stable tag: 6.6.43
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -409,8 +409,11 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 6.6.43 (July 29, 2026) =
+* Code Optimization: Refactored codebase for improved efficiency
+
 = Version 6.6.42 (July 21, 2026) =
-* * Added : Video link attribute to google template
+* Added : Video link attribute to google template
 
 = Version 6.6.41 (July 14, 2026) =
 * Error Fix: Fixed PHP error issue

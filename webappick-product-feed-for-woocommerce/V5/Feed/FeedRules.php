@@ -127,7 +127,7 @@ class FeedRules {
 		);
 
 		if ( isset( $rules['provider'], $rules['feed_config_custom2'] ) && in_array( $rules['provider'], FeedHelper::get_custom2_merchant(), true ) ) {
-			$rules['feed_config_custom2'] = trim( preg_replace( '/\\\\/', '', $rules['feed_config_custom2'] ) );
+			$rules['feed_config_custom2'] = self::sanitize_custom2_template( $rules['feed_config_custom2'] );
 		}
 
 		$str_replace = array(
@@ -168,5 +168,101 @@ class FeedRules {
 		$rules = apply_filters( 'woo_feed_parsed_rules', $rules, $context );
 
 		return $rules;
+	}
+
+	/**
+	 * Sanitize custom2 template content to prevent code injection.
+	 *
+	 * This method provides defense-in-depth by sanitizing the template content
+	 * before it is stored. The main security protection is in Custom2Template.php
+	 * which uses SafeExpressionEvaluator instead of eval().
+	 *
+	 * @param string $template The template content to sanitize.
+	 *
+	 * @return string The sanitized template content.
+	 * @since 6.6.42
+	 */
+	public static function sanitize_custom2_template( $template ) {
+		if ( ! is_string( $template ) ) {
+			return '';
+		}
+
+		// Remove backslashes (existing behavior)
+		$template = trim( preg_replace( '/\\\\/', '', $template ) );
+
+		// List of dangerous PHP functions that should never appear in templates
+		$dangerous_functions = array(
+			'eval',
+			'exec',
+			'shell_exec',
+			'system',
+			'passthru',
+			'popen',
+			'proc_open',
+			'pcntl_exec',
+			'assert',
+			'create_function',
+			'call_user_func',
+			'call_user_func_array',
+			'preg_replace_callback',
+			'file_put_contents',
+			'file_get_contents',
+			'fopen',
+			'fwrite',
+			'fputs',
+			'unlink',
+			'rmdir',
+			'mkdir',
+			'chmod',
+			'chown',
+			'chgrp',
+			'curl_exec',
+			'curl_multi_exec',
+			'base64_decode',
+			'gzinflate',
+			'gzuncompress',
+			'str_rot13',
+			'include',
+			'include_once',
+			'require',
+			'require_once',
+			'phpinfo',
+			'get_defined_vars',
+			'get_defined_functions',
+			'ini_set',
+			'ini_get',
+			'putenv',
+			'getenv',
+			'apache_setenv',
+			'mail',
+			'header',
+			'setcookie',
+		);
+
+		// Check for and remove dangerous function calls (case-insensitive)
+		foreach ( $dangerous_functions as $func ) {
+			// Match function calls like: func_name( or func_name (
+			$pattern = '/\b' . preg_quote( $func, '/' ) . '\s*\(/i';
+			if ( preg_match( $pattern, $template ) ) {
+				// Log the attempt for security monitoring
+				if ( function_exists( 'error_log' ) ) {
+					error_log( sprintf(
+						'CTX Feed Security: Potentially dangerous function "%s" detected in custom2 template and removed. User: %d',
+						$func,
+						get_current_user_id()
+					) );
+				}
+				// Remove the dangerous function call
+				$template = preg_replace( $pattern, '(', $template );
+			}
+		}
+
+		// Remove PHP opening tags
+		$template = preg_replace( '/<\?(?:php)?/i', '', $template );
+
+		// Remove backticks (shell execution)
+		$template = str_replace( '`', '', $template );
+
+		return $template;
 	}
 }

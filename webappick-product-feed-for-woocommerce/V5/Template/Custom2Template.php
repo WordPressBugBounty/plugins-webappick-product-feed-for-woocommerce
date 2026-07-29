@@ -16,6 +16,7 @@ use CTXFeed\V5\Utility\Config;
 use CTXFeed\V5\File\FileFactory;
 use CTXFeed\V5\Helper\FeedHelper;
 use CTXFeed\V5\Helper\ProductHelper;
+use CTXFeed\V5\Helper\SafeExpressionEvaluator;
 use CTXFeed\V5\Product\AttributeValueByType;
 use CTXFeed\V5\Product\ProductFactory;
 use CTXFeed\V5\Product\ProductInfo;
@@ -370,33 +371,45 @@ class Custom2Template implements TemplateInterface {
 	}
 
 
+	/**
+	 * Safely evaluate an expression without using eval().
+	 *
+	 * @param string $attribute The expression to evaluate.
+	 *
+	 * @return mixed The result of the evaluation.
+	 * @since 6.6.42 Security fix: Replaced eval() with SafeExpressionEvaluator.
+	 */
 	public function process_eval( $attribute ) {
-		$return = preg_replace( '/\\\\/', '', $attribute );
-
-		return eval( $return );
+		return SafeExpressionEvaluator::evaluate_string( $attribute, array() );
 	}
 
+	/**
+	 * Safely evaluate a return type expression.
+	 *
+	 * @param array       $attribute The attribute configuration.
+	 * @param \WC_Product $product   The product object.
+	 *
+	 * @return mixed The result of the evaluation.
+	 * @since 6.6.42 Security fix: Replaced extract() and eval() with SafeExpressionEvaluator.
+	 */
 	public function getReturnTypeValue( $attribute, $product ) {
 		$variables = array();
 		$to_return = isset( $attribute['to_return'] ) && is_string( $attribute['to_return'] ) ? $attribute['to_return'] : '';
+
 		if ( ! empty( $attribute ) && \is_string( $to_return ) && strpos( $to_return, '$' ) !== false ) {
-			$pattern = '/\$\S+/';
+			$pattern = '/\$([a-zA-Z_][a-zA-Z0-9_]*)/';
 			preg_match_all( $pattern, $to_return, $matches, PREG_SET_ORDER );
-			$matches = array_column( $matches, 0 );
-			foreach ( $matches as $variable ) {
-				if ( \is_string( $variable ) && strpos( $variable, '$' ) !== false ) {
-					$variable                             = str_replace( array( '$', ';' ), '', $variable );
-					$attribute['attr_code']               = $variable;
-					$variables[ $attribute['attr_code'] ] = $this->getAttributeTypeAndValue( $attribute['attr_code'], $product );
+
+			foreach ( $matches as $match ) {
+				if ( isset( $match[1] ) && is_string( $match[1] ) ) {
+					$variable_name               = $match[1];
+					$variables[ $variable_name ] = $this->getAttributeTypeAndValue( $variable_name, $product );
 				}
 			}
 		}
 
-		extract( $variables, EXTR_OVERWRITE ); // phpcs:ignore
-		$return = $attribute['to_return'];
-		$return = preg_replace( '/\\\\/', '', $return );
-
-		return eval( $return );
+		// Use safe expression evaluator instead of eval()
+		return SafeExpressionEvaluator::evaluate( $to_return, $variables );
 	}
 
 	public function getAttributeTypeAndValue( $attribute, $product ) {
