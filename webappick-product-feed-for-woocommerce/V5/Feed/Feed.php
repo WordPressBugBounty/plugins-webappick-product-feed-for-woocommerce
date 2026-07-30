@@ -97,18 +97,51 @@ class Feed {
 			$feed_name = Helper::extract_feed_option_name( $feed_id );
 		} else {
 			$feed_data   = $wpdb->get_row( $wpdb->prepare( "SELECT option_name FROM $wpdb->options WHERE option_id = %d", $feed_id ) ); // phpcs:ignore
+			if ( ! $feed_data ) {
+				return false;
+			}
 			$feed_name   = Helper::extract_feed_option_name( $feed_data->option_name );
 		}
+
 		$feedInfo = self::safe_unserialize( get_option( 'wf_feed_' . $feed_name ) );
 		if ( false !== $feedInfo && is_array( $feedInfo ) ) {
 			$feedInfo = $feedInfo['feedrules'];
 		} else {
 			$feedInfo = self::safe_unserialize( get_option( 'wf_config' . $feed_name ) );
 		}
+
+		// Validate feedInfo exists and has required fields
+		if ( ! is_array( $feedInfo ) || ! isset( $feedInfo['provider'] ) || ! isset( $feedInfo['feedType'] ) ) {
+			return false;
+		}
+
+		// Validate provider before constructing path
+		$provider = $feedInfo['provider'];
+		$validated_provider = Helper::validate_provider( $provider );
+		if ( false === $validated_provider ) {
+			return false; // Invalid provider, abort deletion
+		}
+
 		$deleted = false;
-		$file    = Helper::get_file( $feed_name, $feedInfo['provider'], $feedInfo['feedType'] );
-		// delete any leftover
+		$file    = Helper::get_file( $feed_name, $validated_provider, $feedInfo['feedType'] );
+
+		// If file path validation failed, abort
+		if ( false === $file ) {
+			return false;
+		}
+
+		// Additional safety: verify file path is within expected directory
+		$upload_dir = wp_get_upload_dir();
+		$base_path = $upload_dir['basedir'] . '/woo-feed/';
+
+		if ( ! Helper::is_path_within_base( $file, $base_path ) ) {
+			// File is outside allowed directory - abort
+			return false;
+		}
+
+		// delete any leftover temporary files
 		FeedHelper::unlink_temporary_files( $feedInfo, $feed_name );
+
 		if ( file_exists( $file ) ) {
 			// file exists in upload directory
 			if ( unlink( $file ) ) { // phpcs:ignore

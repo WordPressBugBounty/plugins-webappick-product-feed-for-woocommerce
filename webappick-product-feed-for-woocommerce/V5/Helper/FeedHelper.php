@@ -35,7 +35,7 @@ class FeedHelper {
 				if ( is_array( $v ) ) {
 					$v = self::sanitize_form_fields( $v );
 				} else {
-					// $v = sanitize_text_field( $v ); #TODO should not trim Prefix and Suffix field
+					$v = sanitize_text_field( $v );
 				}
 			}
 			$data[ $k ] = apply_filters( 'woo_feed_sanitize_form_field', $v, $k );
@@ -892,9 +892,27 @@ class FeedHelper {
 			return;
 		}
 
-		$type = $config['feedType'];
+		// Validate provider before proceeding
+		$provider = isset( $config['provider'] ) ? $config['provider'] : '';
+		$validated_provider = Helper::validate_provider( $provider );
+		if ( false === $validated_provider ) {
+			return;
+		}
+
+		$type = isset( $config['feedType'] ) ? $config['feedType'] : '';
 		$ext  = self::get_file_type( $type );
-		$path = Helper::get_file_dir( $config['provider'], $type );
+		$path = Helper::get_file_dir( $validated_provider, $type );
+
+		// If path validation failed, abort
+		if ( false === $path ) {
+			return;
+		}
+
+		// Sanitize filename
+		$file_name = \sanitize_file_name( $file_name );
+		if ( empty( $file_name ) ) {
+			return;
+		}
 
 		$temp_feed_body_prefix = self::get_feed_body_temp_prefix( $auto );
 
@@ -904,9 +922,18 @@ class FeedHelper {
 			'footerFile' => $path . '/' . AttributeValueByType::FEED_TEMP_FOOTER_PREFIX . $file_name . '.' . $ext,
 		];
 
+		// Get upload directory for path verification
+		$upload_dir = wp_get_upload_dir();
+		$base_path = $upload_dir['basedir'] . '/woo-feed/';
+
 		foreach ( $files as $file ) {
+			// Security: Verify file is within allowed directory before deleting
+			if ( ! Helper::is_path_within_base( $file, $base_path ) ) {
+				continue;
+			}
+
 			if ( \file_exists( $file ) ) {
-				\unlink( $file ); // Consider adding error handling here.
+				\unlink( $file );
 			}
 		}
 	}

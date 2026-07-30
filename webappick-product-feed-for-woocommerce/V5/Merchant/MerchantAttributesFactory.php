@@ -59,6 +59,7 @@ class MerchantAttributesFactory {
 						'images_9'         => 'Additional Image 9 [additional_image_link]',
 						'images_10'        => 'Additional Image 10 [additional_image_link]',
 						'lifestyle_image'  => 'Lifestyle Image Link[lifestyle_image_link]',
+						'video_link'       => 'Video link[video_link]',
 						'condition'        => 'Condition[condition]',
 					),
 				),

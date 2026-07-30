@@ -90,18 +90,119 @@ class Helper
 	}
 
 	/**
+	 * Validate and sanitize provider name.
+	 * Prevents path traversal by validating against known providers
+	 * and removing dangerous characters.
+	 *
+	 * @param string $provider The provider name to validate.
+	 * @return string|false Sanitized provider or false if invalid.
+	 */
+	public static function validate_provider( $provider ) {
+		if ( ! is_string( $provider ) || empty( $provider ) ) {
+			return false;
+		}
+
+		// Remove any path traversal sequences
+		$provider = str_replace( array( '..', '/', '\\' ), '', $provider );
+
+		// Apply basename to ensure no directory components
+		$provider = basename( $provider );
+
+		// Sanitize using WordPress function
+		$provider = sanitize_file_name( $provider );
+
+		// Additional validation: reject if empty after sanitization
+		if ( empty( $provider ) ) {
+			return false;
+		}
+
+		return $provider;
+	}
+
+	/**
+	 * Validate and sanitize feed type.
+	 * Ensures feed type is within allowed types.
+	 *
+	 * @param string $type The feed type to validate.
+	 * @return string|false Sanitized type or false if invalid.
+	 */
+	public static function validate_feed_type( $type ) {
+		if ( ! is_string( $type ) || empty( $type ) ) {
+			return false;
+		}
+
+		// Whitelist of allowed feed types
+		$allowed_types = array( 'csv', 'xml', 'tsv', 'xls', 'xlsx', 'json', 'txt' );
+
+		$type = strtolower( trim( $type ) );
+
+		if ( ! in_array( $type, $allowed_types, true ) ) {
+			return false;
+		}
+
+		return $type;
+	}
+
+	/**
+	 * Verify that a file path is within the allowed base directory.
+	 * Prevents path traversal attacks.
+	 *
+	 * @param string $file_path The file path to verify.
+	 * @param string $base_path The base directory that should contain the file.
+	 * @return bool True if path is safe, false otherwise.
+	 */
+	public static function is_path_within_base( $file_path, $base_path ) {
+		$real_file = realpath( $file_path );
+		$real_base = realpath( $base_path );
+
+		// If file doesn't exist yet, check the directory
+		if ( false === $real_file ) {
+			$dir_path = dirname( $file_path );
+			$real_file = realpath( $dir_path );
+			if ( false === $real_file ) {
+				// Directory doesn't exist, check for traversal sequences in path
+				if ( strpos( $file_path, '..' ) !== false ) {
+					return false;
+				}
+				return true; // Allow creation in non-existent but valid paths
+			}
+		}
+
+		if ( false === $real_base ) {
+			return false;
+		}
+
+		// Ensure the file path starts with the base path
+		return strpos( $real_file, $real_base ) === 0;
+	}
+
+	/**
 	 * Get Feed Directory
 	 *
 	 * @param string $provider
 	 * @param string $feedType
 	 *
-	 * @return string
+	 * @return string|false Directory path on success, false if validation fails.
 	 */
 	public static function get_file_dir($provider, $feedType)
 	{
 		$upload_dir = wp_get_upload_dir();
 
-		return apply_filters('woo_feed_file_dir', sprintf('%s/woo-feed/%s/%s/', $upload_dir['basedir'], $provider, $feedType), $provider, $feedType);
+		// Validate and sanitize provider
+		$validated_provider = self::validate_provider( $provider );
+		if ( false === $validated_provider ) {
+			return false;
+		}
+
+		// Validate feed type
+		$validated_type = self::validate_feed_type( $feedType );
+		if ( false === $validated_type ) {
+			return false;
+		}
+
+		$path = sprintf('%s/woo-feed/%s/%s/', $upload_dir['basedir'], $validated_provider, $validated_type);
+
+		return apply_filters('woo_feed_file_dir', $path, $validated_provider, $validated_type);
 	}
 
 	/**
@@ -155,41 +256,77 @@ class Helper
 	 * @param string $provider
 	 * @param string $type
 	 *
-	 * @return string
+	 * @return string|false URL on success, false if validation fails.
 	 */
 	public static function get_file_url($fileName, $provider, $type)
 	{
 		$fileName = self::extract_feed_option_name($fileName);
+
+		// Sanitize filename
+		$fileName = sanitize_file_name( $fileName );
+		if ( empty( $fileName ) ) {
+			return false;
+		}
+
+		// Validate provider
+		$validated_provider = self::validate_provider( $provider );
+		if ( false === $validated_provider ) {
+			return false;
+		}
+
+		// Validate feed type
+		$validated_type = self::validate_feed_type( $type );
+		if ( false === $validated_type ) {
+			return false;
+		}
+
 		$upload_dir = wp_get_upload_dir();
 
 		return esc_url(
 			sprintf(
 				'%s/woo-feed/%s/%s/%s.%s',
 				$upload_dir['baseurl'],
-				$provider,
-				$type,
+				$validated_provider,
+				$validated_type,
 				$fileName,
-				$type
+				$validated_type
 			)
 		);
 	}
 
 
 	/**
-	 * Get Feed File URL
+	 * Get Feed File path
 	 *
 	 * @param string $fileName
 	 * @param string $provider
 	 * @param string $type
 	 *
-	 * @return string
+	 * @return string|false File path on success, false if validation fails.
 	 */
 	public static function get_file($fileName, $provider, $type)
 	{
 		$fileName = self::extract_feed_option_name($fileName);
-		$path = self::get_file_path($provider, $type);
 
-		return sprintf('%s/%s.%s', untrailingslashit($path), $fileName, $type);
+		// Sanitize filename to prevent path traversal
+		$fileName = sanitize_file_name( $fileName );
+		if ( empty( $fileName ) ) {
+			return false;
+		}
+
+		$path = self::get_file_path($provider, $type);
+		if ( false === $path ) {
+			return false;
+		}
+
+		$file_path = sprintf('%s/%s.%s', untrailingslashit($path), $fileName, $type);
+
+		// Final safety check: ensure no path traversal sequences
+		if ( strpos( $file_path, '..' ) !== false ) {
+			return false;
+		}
+
+		return $file_path;
 	}
 
 	/**
@@ -198,13 +335,33 @@ class Helper
 	 * @param string $provider provider name.
 	 * @param string $type feed file type.
 	 *
-	 * @return string
+	 * @return string|false Path string on success, false if validation fails.
 	 */
 	public static function get_file_path($provider = '', $type = '')
 	{
 		$upload_dir = wp_get_upload_dir();
+		$base_path = $upload_dir['basedir'] . '/woo-feed/';
 
-		return sprintf('%s/woo-feed/%s/%s/', $upload_dir['basedir'], $provider, $type);
+		// Validate and sanitize provider
+		$provider = self::validate_provider( $provider );
+		if ( false === $provider ) {
+			return false;
+		}
+
+		// Validate feed type (whitelist)
+		$type = self::validate_feed_type( $type );
+		if ( false === $type ) {
+			return false;
+		}
+
+		$path = sprintf( '%s%s/%s/', $base_path, $provider, $type );
+
+		// Verify path doesn't contain traversal sequences
+		if ( strpos( $path, '..' ) !== false ) {
+			return false;
+		}
+
+		return $path;
 	}
 
 	/**
@@ -217,21 +374,51 @@ class Helper
 	 */
 	public static function unlink_tempFiles($config, $fileName)
 	{
-		$type = $config['feedType'];
+		// Validate provider before proceeding
+		$provider = isset( $config['provider'] ) ? $config['provider'] : '';
+		$validated_provider = self::validate_provider( $provider );
+		if ( false === $validated_provider ) {
+			return;
+		}
+
+		$type = isset( $config['feedType'] ) ? $config['feedType'] : '';
 		$ext = $type;
-		$path = self::get_file_dir($config['provider'], $type);
+		$path = self::get_file_dir($validated_provider, $type);
+
+		// If path validation failed, abort
+		if ( false === $path ) {
+			return;
+		}
+
+		// Sanitize filename
+		$fileName = sanitize_file_name( $fileName );
+		if ( empty( $fileName ) ) {
+			return;
+		}
 
 		if ('csv' === $type || 'tsv' === $type || 'xls' === $type || 'xlsx' === $type) {
 			$ext = 'json';
 		}
+
 		$files = array(
 			'headerFile' => $path . '/' . AttributeValueByType::FEED_TEMP_HEADER_PREFIX . $fileName . '.' . $ext,
 			'bodyFile' => $path . '/' . AttributeValueByType::FEED_TEMP_BODY_PREFIX . $fileName . '.' . $ext,
 			'footerFile' => $path . '/' . AttributeValueByType::FEED_TEMP_FOOTER_PREFIX . $fileName . '.' . $ext,
 		);
 
-		Logs::write_log($config['filename'], sprintf('Deleting Temporary Files (%s).', implode(', ', array_values($files))));
+		// Get upload directory for path verification
+		$upload_dir = wp_get_upload_dir();
+		$base_path = $upload_dir['basedir'] . '/woo-feed/';
+
+		$config_filename = isset( $config['filename'] ) ? $config['filename'] : 'unknown';
+		Logs::write_log($config_filename, sprintf('Deleting Temporary Files (%s).', implode(', ', array_values($files))));
+
 		foreach ($files as $key => $file) {
+			// Security: Verify file is within allowed directory before deleting
+			if ( ! self::is_path_within_base( $file, $base_path ) ) {
+				continue;
+			}
+
 			if (file_exists($file)) {
 				unlink($file); // phpcs:ignore
 			}
