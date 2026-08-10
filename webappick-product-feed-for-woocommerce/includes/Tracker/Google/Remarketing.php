@@ -207,6 +207,12 @@ class Remarketing extends Base{
         global $wp_query;
         $order = wc_get_order( $wp_query->query_vars['order-received'] );
 
+        // Validate order key to prevent unauthorized access to order data.
+        $order_key = isset( $_GET['key'] ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) ) : '';
+        if ( ! $order || $order->get_order_key() !== $order_key ) {
+            return;
+        }
+
         $product_ids = [];
         $items = $order->get_items();
         foreach ( $items as $item ) {

@@ -220,7 +220,14 @@ class FacebookTracker implements TrackerInterface {
 			global $wp_query;
 			if ( isset( $wp_query->query_vars['order-received'] ) ) {
 				$order = wc_get_order( $wp_query->query_vars['order-received'] );
-				$ids   = [];
+
+				// Validate order key to prevent unauthorized access to order data.
+				$order_key = isset( $_GET['key'] ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) ) : '';
+				if ( ! $order || $order->get_order_key() !== $order_key ) {
+					return;
+				}
+
+				$ids = [];
 				foreach ( $order->get_items() as $item ) {
 					$ids[] = $item->get_product_id();
 				}

@@ -238,16 +238,21 @@ class Pixel extends Base {
 	protected function order_received() {
 		global $wp_query;
 		$order = wc_get_order( $wp_query->query_vars['order-received'] );
-		if ( $order ) {
-			$data = array(
-				'value'    => $order->get_total(),
-				'currency' => $order->get_currency(),
-			);
-			?>
-            fbq( 'track', 'Purchase', <?php echo json_encode( $data ); ?> );
-            fbq( 'track', 'CompleteRegistration', <?php echo json_encode( $data ); ?> );
-            <?php
+
+		// Validate order key to prevent unauthorized access to order data.
+		$order_key = isset( $_GET['key'] ) ? sanitize_text_field( wp_unslash( $_GET['key'] ) ) : '';
+		if ( ! $order || $order->get_order_key() !== $order_key ) {
+			return;
 		}
+
+		$data = array(
+			'value'    => $order->get_total(),
+			'currency' => $order->get_currency(),
+		);
+		?>
+		fbq( 'track', 'Purchase', <?php echo json_encode( $data ); ?> );
+		fbq( 'track', 'CompleteRegistration', <?php echo json_encode( $data ); ?> );
+		<?php
 	}
 
 	/**
