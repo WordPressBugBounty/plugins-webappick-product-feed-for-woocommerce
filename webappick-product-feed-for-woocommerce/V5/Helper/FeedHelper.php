@@ -18,6 +18,35 @@ use CTXFeed\V5\Utility\Settings;
 use WP_Error;
 
 /**
+ * Skip sanitization for fields that contain XML/HTML content or special characters.
+ *
+ * The feed_config_custom2 field contains Custom Template 2 XML content with tags,
+ * newlines, and CDATA sections that would be destroyed by sanitize_text_field().
+ * This filter returns false to skip sanitization for these fields while maintaining
+ * security through FeedRules::sanitize_custom2_template() which removes dangerous
+ * PHP functions while preserving XML structure.
+ *
+ * @see FeedRules::sanitize_custom2_template() for security sanitization of custom2 templates
+ * @since 7.7.6
+ */
+add_filter(
+	'woo_feed_sanitize_form_fields',
+	function ( $status, $key ) {
+		$skip_fields = array(
+			'feed_config_custom2', // Custom Template 2 XML content - has separate security sanitization
+		);
+
+		if ( in_array( $key, $skip_fields, true ) ) {
+			return false;
+		}
+
+		return $status;
+	},
+	10,
+	2
+);
+
+/**
  * This class contains feed generated method
  */
 class FeedHelper {
