@@ -22,6 +22,30 @@ class DownloadFiles {
 	}
 
 	/**
+	 * Validate that a file path is within an allowed directory.
+	 *
+	 * @param string $file_path The file path to validate.
+	 * @param string $allowed_dir The allowed base directory.
+	 * @return bool|string Returns the real path if valid, false otherwise.
+	 */
+	public static function validate_file_path( $file_path, $allowed_dir ) {
+		$real_path = realpath( $file_path );
+		$real_allowed_dir = realpath( $allowed_dir );
+
+		// Check if realpath resolved successfully
+		if ( false === $real_path || false === $real_allowed_dir ) {
+			return false;
+		}
+
+		// Ensure file is within allowed directory
+		if ( 0 !== stripos( $real_path, $real_allowed_dir ) ) {
+			return false;
+		}
+
+		return $real_path;
+	}
+
+	/**
 	 * Download Feed Log.
 	 *
 	 * @return void
@@ -41,6 +65,13 @@ class DownloadFiles {
 			$feed_name     = sanitize_text_field( wp_unslash( $_REQUEST['feed'] ) );
 			$feed_name     = str_replace( 'wf_feed_', '', $feed_name );
 			$log_file_path = CTX_WC_Log_Handler::get_log_file_path( $feed_name );
+
+			// Validate path is within allowed log directory
+			$validated_path = self::validate_file_path( $log_file_path, WOO_FEED_LOG_DIR );
+			if ( false === $validated_path ) {
+				wp_die( esc_html__( 'Invalid file path.', 'woo-feed' ), 403 );
+			}
+			$log_file_path = $validated_path;
 
 			$file_name = sprintf(
 				'%s-%s-%s.log',
@@ -79,11 +110,21 @@ class DownloadFiles {
 			/* your file, somewhere opened with fopen() or tmpfile(), etc.. */
 			$config = Factory::get_feed_info( $feed_name );
 
-			if ( ! file_exists( $config->get_feed_path() ) ) {
+			$feed_path = $config->get_feed_path();
+			$upload_dir = wp_get_upload_dir();
+			$allowed_feed_dir = trailingslashit( $upload_dir['basedir'] ) . 'woo-feed';
+
+			// Validate path is within allowed feed directory
+			$validated_path = self::validate_file_path( $feed_path, $allowed_feed_dir );
+			if ( false === $validated_path ) {
+				wp_die( esc_html__( 'Invalid file path.', 'woo-feed' ), 403 );
+			}
+
+			if ( ! file_exists( $validated_path ) ) {
 				exit( esc_url(wp_redirect( add_query_arg( 'wpf_notice_code', 'feed_download_failed', admin_url( 'admin.php?page=webappick-manage-feeds' ) ) ) ));
 			}
 
-			$fileData     = fopen( $config->get_feed_path(), 'rb' );
+			$fileData     = fopen( $validated_path, 'rb' );
 			$fileDownload = new FileDownload( $fileData );
 			$fileDownload->sendDownload( $config->get_feed_file_name() );
 		} else {
@@ -101,11 +142,21 @@ class DownloadFiles {
 		/* your file, somewhere opened with fopen() or tmpfile(), etc.. */
 		$config = Factory::get_feed_info( $feed_name );
 
-		if ( ! file_exists( $config->get_feed_path() ) ) {
+		$feed_path = $config->get_feed_path();
+		$upload_dir = wp_get_upload_dir();
+		$allowed_feed_dir = trailingslashit( $upload_dir['basedir'] ) . 'woo-feed';
+
+		// Validate path is within allowed feed directory
+		$validated_path = self::validate_file_path( $feed_path, $allowed_feed_dir );
+		if ( false === $validated_path ) {
+			return new WP_Error( 'invalid_file_path', 'Invalid file path.' );
+		}
+
+		if ( ! file_exists( $validated_path ) ) {
 			return new WP_Error( 'feed_file_not_found', 'Feed file: ' . $feed_name . ' does\'nt exists.' );
 		}
 
-		return ['path' => $config->get_feed_path(), 'file_name' => $config->get_feed_file_name() ];
+		return ['path' => $validated_path, 'file_name' => $config->get_feed_file_name() ];
 
 	}
 
@@ -120,6 +171,13 @@ class DownloadFiles {
 		$feed_name     = str_replace( 'wf_feed_', '', $feed_name );
 		$log_file_path = CTX_WC_Log_Handler::get_log_file_path( $feed_name );
 
+		// Validate path is within allowed log directory
+		$validated_path = self::validate_file_path( $log_file_path, WOO_FEED_LOG_DIR );
+		if ( false === $validated_path ) {
+			return new WP_Error( 'invalid_file_path', 'Invalid file path.' );
+		}
+		$log_file_path = $validated_path;
+
 		$file_name = sprintf(
 			'%s-%s-%s.log',
 			sanitize_title( $feed_name ),
@@ -130,8 +188,6 @@ class DownloadFiles {
 		if ( ! file_exists( $log_file_path ) ) {
 			return new WP_Error( 'log_file_not_found', 'Feed file: ' . $feed_name . ' does\'nt have any log' );
 		}
-
-
 
 		return ['path' => $log_file_path, 'file_name' => $file_name ];
 	}
