@@ -89,6 +89,31 @@ class CSVTemplate implements TemplateInterface {
 	}
 
 	/**
+	 * Render an arbitrary list of column values into a delimited line using the
+	 * config-driven delimiter/enclosure and the same QUOTE_ALL formatting as
+	 * rows.
+	 *
+	 * The generator emits the MAPPED CSV/TSV header (mapped names, collapsed
+	 * groups, auto-added identifier-exists) through this — not `render_header()`,
+	 * which reads raw config attributes — so the header can never drift from the
+	 * data rows' enclosure or quoting.
+	 *
+	 * @since 8.0.0
+	 *
+	 * @param string[] $columns Column values (header names or otherwise).
+	 * @param Config   $config  Feed configuration.
+	 *
+	 * @return string Delimited line.
+	 */
+	public function render_columns( array $columns, Config $config ): string {
+		return $this->array_to_csv(
+			$columns,
+			$this->get_effective_delimiter( $config ),
+			$this->get_effective_enclosure( $config )
+		);
+	}
+
+	/**
 	 * Render a single product as a CSV row.
 	 *
 	 * Applies the `ctxfeed_csv_row` filter for extensibility.

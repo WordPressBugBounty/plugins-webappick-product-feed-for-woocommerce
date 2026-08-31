@@ -413,7 +413,7 @@ class FeedGenerator {
 				}
 
 				$headers = $this->attribute_mapper->get_mapped_headers( $mattributes, $provider, $format );
-				$this->stream_writer->write_header( $this->build_csv_header( $headers, $template ) );
+				$this->stream_writer->write_header( $this->build_csv_header( $headers, $template, $config ) );
 			} else {
 				$this->stream_writer->write_header( $template->render_header( $config ) );
 			}
@@ -796,21 +796,22 @@ class FeedGenerator {
 	}
 
 	/**
-	 * Build a CSV header row from mapped header names.
+	 * Build a CSV/TSV/TXT header row from mapped header names.
 	 *
-	 * Uses the CSVTemplate's array_to_csv method internally via fputcsv
-	 * for proper RFC 4180 escaping, matching the template's delimiter.
+	 * CSV/TSV delegate to CSVTemplate::render_columns() so the header uses the
+	 * CONFIGURED enclosure and the rows' QUOTE_ALL quoting (never a hardcoded
+	 * "); TXT is raw tab-joined; other templates fall back to minimal fputcsv.
 	 *
 	 * @since 8.0.0
 	 *
 	 * @param array             $headers  Mapped header names.
-	 * @param TemplateInterface $template CSV template instance (for delimiter access).
+	 * @param TemplateInterface $template CSV/TXT template instance.
+	 * @param Config            $config   Feed configuration (delimiter/enclosure).
 	 *
-	 * @return string CSV-formatted header row.
+	 * @return string Delimited header row.
 	 */
-	private function build_csv_header( array $headers, $template ): string {
+	private function build_csv_header( array $headers, $template, Config $config ): string {
 		$delimiter = ',';
-		$enclosure = '"';
 
 		// Use template's delimiter if available (CSVTemplate exposes get_delimiter).
 		if ( method_exists( $template, 'get_delimiter' ) ) {
@@ -826,12 +827,24 @@ class FeedGenerator {
 			return implode( $delimiter, $headers );
 		}
 
+		// CSV/TSV: render the header through the template's OWN formatter, so it
+		// uses the CONFIGURED enclosure and the rows' QUOTE_ALL quoting — never a
+		// hardcoded ". Otherwise a single-quote (or any custom) enclosure feed
+		// emitted a double-quoted header its data rows never carried, and CSV
+		// consumers (Google Merchant, Excel, Numbers) misparsed the mismatch.
+		if ( $template instanceof \CTXFeed\V8\Template\CSVTemplate ) {
+			return $template->render_columns( $headers, $config );
+		}
+
+		// Fallback (unknown template): minimal fputcsv with the default enclosure.
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Intentional use of php://temp for CSV formatting.
 		$stream = fopen( 'php://temp', 'r+' );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fputcsv, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fputcsv -- Formats a CSV header line into an in-memory php://temp stream (no filesystem write); needed for proper CSV escaping.
-		fputcsv( $stream, $headers, $delimiter, $enclosure );
+		fputcsv( $stream, $headers, $delimiter, '"' );
 		rewind( $stream );
-		$line = rtrim( stream_get_contents( $stream ) );
+		// CR/LF only — a bare rtrim() would eat the trailing tab of an empty
+		// last header column in a tab-delimited feed (see CSVTemplate).
+		$line = rtrim( stream_get_contents( $stream ), "\r\n" );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closing php://temp stream.
 		fclose( $stream );
 

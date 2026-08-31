@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.0
+Stable tag: 8.0.1
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 

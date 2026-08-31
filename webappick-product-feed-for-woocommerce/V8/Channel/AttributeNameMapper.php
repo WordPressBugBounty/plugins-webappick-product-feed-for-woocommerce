@@ -114,6 +114,24 @@ class AttributeNameMapper {
 	 * @return array Product data array with remapped keys.
 	 */
 	public function map_product_data( array $product_data, $provider, $feed_type ) {
+		// Delimited formats (CSV/TSV/TXT) are rendered POSITIONALLY — the template
+		// does array_values() and the header is built separately, one column per
+		// mapped attribute (get_mapped_headers). So emit one value per input
+		// attribute IN ORDER and NEVER collapse a same-merchant-name collision:
+		// images_1..images_5 all map to additional_image_link, and the name-keyed
+		// last-wins below would drop 4 of the 5, leaving the row short so
+		// identifier_exists (and every column after the images) shifts one place
+		// left — Google Merchant / Numbers then misread the columns. The value
+		// keys are irrelevant to the delimited renderer, so no name mapping is
+		// needed here; only order and count must match the header.
+		if ( in_array( strtolower( (string) $feed_type ), array( 'csv', 'tsv', 'txt' ), true ) ) {
+			$positional = array();
+			foreach ( $product_data as $value ) {
+				$positional[] = is_array( $value ) ? implode( ',', $value ) : $value;
+			}
+			return $positional;
+		}
+
 		$mapped_data = array();
 
 		foreach ( $product_data as $attribute => $value ) {
