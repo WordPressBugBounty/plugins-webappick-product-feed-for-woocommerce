@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkwebappick_product_feed_for_woocommerce=self.webpackChunkwebappick_product_feed_for_woocommerce||[]).push([[458],{2458:function(e,c,o){o.r(c);var r=o(4848);c.default=function(){return(0,r.jsx)("div",{children:"License"})}}}]);

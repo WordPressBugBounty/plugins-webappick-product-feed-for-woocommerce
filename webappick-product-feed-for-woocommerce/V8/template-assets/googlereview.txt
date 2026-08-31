@@ -1,0 +1,9 @@
+<feed xmlns:vc="http://www.w3.org/2007/XMLSchema-versioning" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://www.google.com/shopping/reviews/schema/product/2.4/product_reviews.xsd">
+<version>2.4</version>
+<publisher>
+	<name>CTX Feed – WooCommerce Product Feed Generator by Webappick</name>{ReviewPublisherFavicon}
+</publisher>
+<reviews>
+{separator}
+</reviews>
+</feed>

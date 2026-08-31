@@ -1,0 +1,10 @@
+<rss version="2.0">
+<channel>
+<title>
+<![CDATA[ {BlogName} ]]>
+</title>
+<link><![CDATA[ {BlogURL} ]]></link>
+<description><![CDATA[ {BlogDescription} ]]></description>
+{separator}
+	</channel>
+</rss>
