@@ -1043,6 +1043,113 @@ class FeedScheduler {
 	}
 
 	/**
+	 * Browser-driven fallback: run this feed's PENDING batch/finalize actions
+	 * synchronously, up to a wall-clock budget.
+	 *
+	 * On sites where WP-Cron is disabled — or its loopback to wp-cron.php is
+	 * blocked by a firewall/CDN — Action Scheduler never processes the queued
+	 * generation actions, so a feed sits 'generating' at 0% forever. This lets
+	 * the open admin drive generation itself: it claims + runs each pending
+	 * action through Action Scheduler's OWN runner (which fires handle_batch →
+	 * processes the batch → chains the next), looping inline until the budget
+	 * is spent. The React app calls POST /feeds/{id}/run repeatedly while a feed
+	 * generates. Because it runs batches back-to-back in one request, it also
+	 * removes the per-batch Action Scheduler dispatch latency.
+	 *
+	 * Using process_action() (not process_batch() directly) means the action is
+	 * claimed + marked complete exactly as AS would, so it can never be
+	 * double-run if cron later revives mid-generation.
+	 *
+	 * @since 8.0.2
+	 *
+	 * @param string $feed_name      Feed slug identifier.
+	 * @param float  $budget_seconds Max wall-clock time to spend this call.
+	 * @return int Number of actions processed this call.
+	 */
+	public function run_pending_batches( string $feed_name, float $budget_seconds = 20.0 ): int {
+		if ( ! class_exists( '\ActionScheduler' ) || ! function_exists( 'as_get_scheduled_actions' ) ) {
+			return 0;
+		}
+
+		/**
+		 * Filter the per-request wall-clock budget (seconds) for the
+		 * browser-driven batch runner. Kept well under max_execution_time so
+		 * the request always returns cleanly; the app calls again for the rest.
+		 *
+		 * @since 8.0.2
+		 *
+		 * @param float  $budget_seconds Budget in seconds.
+		 * @param string $feed_name      Feed slug identifier.
+		 */
+		$budget_seconds = (float) apply_filters( 'ctxfeed_browser_run_budget', $budget_seconds, $feed_name );
+		if ( $budget_seconds <= 0 ) {
+			$budget_seconds = 20.0;
+		}
+
+		$start = microtime( true );
+		$ran   = 0;
+		$cap   = 500; // Hard safety cap on actions processed per request.
+
+		while ( $ran < $cap && ( microtime( true ) - $start ) < $budget_seconds ) {
+			$action_id = $this->next_pending_action_id( $feed_name );
+			if ( 0 === $action_id ) {
+				break; // Nothing pending for this feed — done, finalized, or failed.
+			}
+			try {
+				\ActionScheduler::runner()->process_action( $action_id, 'ctxfeed-browser-runner' );
+			} catch ( \Throwable $e ) {
+				// A catastrophic action failure is already recorded by
+				// Action Scheduler (and, for a batch, by fail_generation which
+				// sets status=failed). Stop driving and return cleanly so the
+				// request never 500s; the status poll surfaces the failure.
+				break;
+			}
+			++$ran;
+		}
+
+		return $ran;
+	}
+
+	/**
+	 * Find the next PENDING generate/finalize action id for a feed.
+	 *
+	 * Generate actions are drained before the finalize action. Only actions
+	 * whose `feed_name` arg matches are returned — Action Scheduler's own args
+	 * filter can't match a single arg out of the four, so this fetches + checks.
+	 *
+	 * @since 8.0.2
+	 *
+	 * @param string $feed_name Feed slug identifier.
+	 * @return int Action id, or 0 when none pending for this feed.
+	 */
+	private function next_pending_action_id( string $feed_name ): int {
+		foreach ( array( self::GENERATE_ACTION, self::FINALIZE_ACTION ) as $hook ) {
+			$ids = as_get_scheduled_actions(
+				array(
+					'hook'     => $hook,
+					'group'    => self::GROUP,
+					'status'   => \ActionScheduler_Store::STATUS_PENDING,
+					'per_page' => 50,
+					'orderby'  => 'date',
+					'order'    => 'ASC',
+				),
+				'ids'
+			);
+			foreach ( (array) $ids as $id ) {
+				$action = \ActionScheduler::store()->fetch_action( (int) $id );
+				if ( ! $action ) {
+					continue;
+				}
+				$args = $action->get_args();
+				if ( isset( $args['feed_name'] ) && (string) $args['feed_name'] === $feed_name ) {
+					return (int) $id;
+				}
+			}
+		}
+		return 0;
+	}
+
+	/**
 	 * Handle feed finalization (called by Action Scheduler).
 	 *
 	 * @since 8.0.0

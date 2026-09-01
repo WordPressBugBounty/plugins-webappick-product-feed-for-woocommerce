@@ -838,6 +838,15 @@ class GroupedAttributeBuilder {
 				'additional_variant_label' => 'label',
 				'additional_variant_value' => 'value',
 			),
+			// Facebook video: each mapped `video` row renders as its own
+			// repeated <video><url>…</url></video> block. The single `video`
+			// member becomes the <url> child inside a <video> wrapper; the ##N
+			// duplicate-mapping mechanism turns several `video` rows into
+			// several <video> elements. Structured formats only — stripped from
+			// flat CSV/TSV/TXT rows + headers in FeedGenerator.
+			'video'                        => array(
+				'video' => 'url',
+			),
 		);
 
 		// Meta CSV spec: ONE additional_image_link column, up to 20 URLs

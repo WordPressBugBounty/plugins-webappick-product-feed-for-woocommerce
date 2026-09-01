@@ -359,6 +359,12 @@ class FeedGenerator {
 
 		$ids = $this->product_query->get_paginated_ids( $config, $offset, $batch_size );
 
+		// Products actually SCANNED this batch (the scheduled work). Drives
+		// adaptive batch sizing below — recording the post-filter WRITTEN count
+		// instead made the size ratchet to BATCH_FLOOR on feeds that filter out
+		// many products (a 12K feed collapsed 250 -> 25). @implements FEED-FRD-11.2.
+		$scanned = max( count( $ids ), 1 );
+
 		if ( $this->feed_logger ) {
 			$this->feed_logger->info( $feed_name, sprintf( 'Batch offset=%d, batch_size=%d, products_in_batch=%d', $offset, $batch_size, count( $ids ) ) );
 		}
@@ -403,6 +409,11 @@ class FeedGenerator {
 			// For CSV/TSV/TXT: write mapped merchant attribute headers.
 			if ( in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true ) && $this->attribute_mapper ) {
 				$mattributes = $config->get_merchant_attributes();
+
+				// Structured-only attributes (e.g. Facebook `video`, a nested
+				// <video><url> element) have no flat-column form — drop them from
+				// the header so it aligns with the rows, which omit them too.
+				$mattributes = $this->strip_structured_only_headers( $mattributes );
 
 				// Delimited formats put each nested group (tax, shipping,
 				// product_detail, installment, subscription_cost) in ONE
@@ -506,6 +517,14 @@ class FeedGenerator {
 						$transformed = $this->grouped_builder->build_delimited( $transformed, $provider );
 					}
 
+					// Structured-only attributes (e.g. Facebook `video`) have no
+					// flat-column form — strip them from delimited rows so the data
+					// stays aligned with the header, which omits them too. XML and
+					// JSON/API keep them.
+					if ( in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true ) ) {
+						$transformed = $this->strip_structured_only_row( $transformed );
+					}
+
 					// Map remaining flat attribute names to merchant-specific format (e.g., id → g:id for Google XML).
 					if ( $this->attribute_mapper ) {
 						$transformed = $this->attribute_mapper->map_product_data( $transformed, $provider, $format );
@@ -597,7 +616,10 @@ class FeedGenerator {
 		$next_batch_size = $batch_size;
 
 		if ( $this->batch_calculator ) {
-			$this->batch_calculator->record_batch( $count, $batch_time, $memory_delta );
+			// Record SCANNED products (the batch size actually attempted), not the
+			// post-filter written $count — otherwise the adaptive size anchors to
+			// the survivor count and spirals to BATCH_FLOOR on heavily-filtered feeds.
+			$this->batch_calculator->record_batch( $scanned, $batch_time, $memory_delta );
 			$next_batch_size = $this->batch_calculator->calculate_next();
 		}
 
@@ -793,6 +815,74 @@ class FeedGenerator {
 				) 
 			);
 		}
+	}
+
+	/**
+	 * Merchant attributes that only exist in structured formats (XML, JSON/API)
+	 * and have no flat CSV/TSV/TXT column form — e.g. Facebook `video`, which
+	 * renders as a nested <video><url> element. Filterable so channels and
+	 * extensions can register their own structured-only attributes.
+	 *
+	 * @since 8.0.4
+	 *
+	 * @return string[] Base merchant-attribute names (without any ##N suffix).
+	 */
+	private function structured_only_attributes(): array {
+		/**
+		 * Filter the attributes that render only in structured formats and are
+		 * dropped from flat CSV/TSV/TXT feeds.
+		 *
+		 * @since 8.0.4
+		 *
+		 * @param string[] $attrs Base merchant-attribute names.
+		 */
+		return (array) apply_filters( 'ctxfeed_structured_only_attributes', array( 'video' ) );
+	}
+
+	/**
+	 * Drop structured-only attribute NAMES from a flat header list.
+	 *
+	 * @since 8.0.4
+	 *
+	 * @param string[] $mattributes Merchant attribute names.
+	 * @return string[] Re-indexed list without the structured-only names.
+	 */
+	private function strip_structured_only_headers( array $mattributes ): array {
+		$only = $this->structured_only_attributes();
+		if ( empty( $only ) ) {
+			return $mattributes;
+		}
+		return array_values(
+			array_filter(
+				$mattributes,
+				static function ( $name ) use ( $only ) {
+					return ! in_array( ProductRepository::strip_dup_suffix( (string) $name ), $only, true );
+				}
+			)
+		);
+	}
+
+	/**
+	 * Drop structured-only attribute KEYS (including ##N repeats) from a flat
+	 * row's product data, so delimited rows align with the header (which omits
+	 * them too).
+	 *
+	 * @since 8.0.4
+	 *
+	 * @param array $data Product data keyed by attribute name.
+	 * @return array Product data without the structured-only keys.
+	 */
+	private function strip_structured_only_row( array $data ): array {
+		$only = $this->structured_only_attributes();
+		if ( empty( $only ) ) {
+			return $data;
+		}
+		foreach ( array_keys( $data ) as $key ) {
+			if ( in_array( ProductRepository::strip_dup_suffix( (string) $key ), $only, true ) ) {
+				unset( $data[ $key ] );
+			}
+		}
+		return $data;
 	}
 
 	/**

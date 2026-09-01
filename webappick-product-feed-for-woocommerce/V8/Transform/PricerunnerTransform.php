@@ -1,8 +1,16 @@
 <?php
 /**
- * PricerunnerTransform — Applies Pricerunner-specific formatting rules.
+ * PricerunnerTransform — Pricerunner-specific formatting rules.
  *
- * - Availability: "in stock" → "Yes", all others → "No"
+ * Availability is intentionally NOT rewritten. PriceRunner's stock field is
+ * permissive — it accepts "in stock"/"out of stock", "Yes"/"No",
+ * InStock/OutOfStock, "preorder", "backorder", a numeric stock count, etc. —
+ * so the resolved WooCommerce availability the user maps is already valid and
+ * passes through unchanged (V5 parity). Forcing "Yes"/"No" (v8.0.0–8.0.1)
+ * silently overrode whatever the user mapped, which this restores.
+ *
+ * Kept as a registered (currently pass-through) transform so any future
+ * PriceRunner-specific formatting has a home without touching the pipeline.
  *
  * @package    CTXFeed
  * @subpackage V8/Transform
@@ -33,41 +41,9 @@ class PricerunnerTransform implements TransformInterface {
 	 * @param array  $product_data Resolved product attributes.
 	 * @param Config $config       Feed configuration.
 	 *
-	 * @return array Transformed product data.
+	 * @return array Transformed product data (unchanged — see class docblock).
 	 */
-	public function transform( array $product_data, Config $config ): array {
-		$provider = $config->get( 'provider', '' );
-
-		if ( 'pricerunner' !== $provider ) {
-			return $product_data;
-		}
-
-		$product_data = $this->transform_availability( $product_data );
-
+	public function transform( array $product_data, Config $config ): array { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable -- $config is required by TransformInterface; this transform passes data through unchanged.
 		return $product_data;
-	}
-
-	/**
-	 * Convert availability to Pricerunner format.
-	 *
-	 * Pricerunner uses "Yes"/"No" availability strings.
-	 *
-	 * @since 8.0.0
-	 *
-	 * @param array $data Product data.
-	 *
-	 * @return array Modified product data.
-	 */
-	private function transform_availability( array $data ): array {
-		if ( ! isset( $data['availability'] ) ) {
-			return $data;
-		}
-
-		$availability = strtolower( trim( $data['availability'] ) );
-		$availability = str_replace( '_', ' ', $availability );
-
-		$data['availability'] = ( 'in stock' === $availability ) ? 'Yes' : 'No';
-
-		return $data;
 	}
 }

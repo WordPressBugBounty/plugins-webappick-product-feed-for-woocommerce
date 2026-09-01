@@ -100,11 +100,17 @@ class BatchCalculator {
 	/**
 	 * Maximum batch size to prevent memory spikes.
 	 *
+	 * Upper clamp for the capacity-based sizing. On a capable server
+	 * (roughly ≥1 GB memory_limit + ≥300s) the adaptive size can climb this
+	 * high; constrained hosts stay well below it because memory_safe/time_safe
+	 * dominate. Power users can force any size via the `ctxfeed_batch_size`
+	 * filter, which bypasses adaptive sizing entirely.
+	 *
 	 * @since 8.0.0
 	 * @implements FEED-FRD-11.5
 	 * @var int
 	 */
-	const BATCH_CEILING = 500;
+	const BATCH_CEILING = 2000;
 
 	/**
 	 * Maximum allowed batch size change per iteration (50%).

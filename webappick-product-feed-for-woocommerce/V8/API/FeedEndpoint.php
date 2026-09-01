@@ -198,7 +198,20 @@ class FeedEndpoint extends RestController {
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'get_feed_status' ),
 				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+			)
+		);
+
+		// Browser-driven batch runner — drives a generating feed's pending
+		// Action Scheduler batches when WP-Cron/AS isn't running (disabled cron
+		// or a firewall/CDN blocking the loopback). @since 8.0.2.
+		register_rest_route(
+			$this->namespace,
+			'/feeds/(?P<id>[a-zA-Z0-9_-]+)/run',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'run_feed_batches' ),
+				'permission_callback' => array( $this, 'permission_check' ),
+			)
 		);
 	}
 
@@ -1121,7 +1134,7 @@ class FeedEndpoint extends RestController {
 		$feed_json = wp_json_encode( $feedrules );
 		$meta_json = wp_json_encode(
 			array(
-				'version'   => defined( 'WOO_FEED_FREE_VERSION' ) ? WOO_FEED_FREE_VERSION : '8.0.0',
+				'version'   => defined( 'WOO_FEED_FREE_VERSION' ) ? WOO_FEED_FREE_VERSION : '8.0.4',
 				'file_name' => $file_name,
 				'hash'      => md5( $feed_json ),
 			) 
@@ -1340,6 +1353,54 @@ class FeedEndpoint extends RestController {
 		/** @var \CTXFeed\V8\Feed\FeedManager $manager */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Inline @var type annotation for IDE/static analysis, not a documentation block.
 		$manager  = $container->resolve( 'feed.manager' );
 		$progress = $manager->get_progress( $feed_name );
+
+		return $this->success( $progress );
+	}
+
+	/**
+	 * POST /feeds/{id}/run — browser-driven batch runner.
+	 *
+	 * Drives the feed's pending Action Scheduler batches synchronously (up to a
+	 * wall-clock budget) and returns the updated progress. Lets generation
+	 * complete on sites where WP-Cron / Action Scheduler isn't running (cron
+	 * disabled, or a firewall/CDN blocking the loopback). A no-op unless the
+	 * feed is actually generating, so it is safe to call repeatedly from the
+	 * status poll loop.
+	 *
+	 * @since 8.0.2
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return \WP_REST_Response
+	 */
+	public function run_feed_batches( \WP_REST_Request $request ): \WP_REST_Response {
+		$id        = $request->get_param( 'id' );
+		$feed_data = $this->find_feed_raw( $id );
+		if ( ! $feed_data ) {
+			return $this->error( __( 'Feed not found.', 'woo-feed' ), 404 );
+		}
+
+		$feed_name = str_replace( 'wf_feed_', '', $feed_data['option_name'] );
+		$container = \CTXFeed\V8\Core\Container::get_instance();
+
+		if ( ! $container->has( 'feed.manager' ) || ! $container->has( 'feed.scheduler' ) ) {
+			return $this->error( __( 'Feed services not available.', 'woo-feed' ), 500 );
+		}
+
+		/** @var \CTXFeed\V8\Feed\FeedManager $manager */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Inline @var type annotation for IDE/static analysis, not a documentation block.
+		$manager  = $container->resolve( 'feed.manager' );
+		$progress = $manager->get_progress( $feed_name );
+		$status   = isset( $progress['status'] ) ? (string) $progress['status'] : '';
+
+		// Only drive an in-flight generation; a no-op otherwise (idempotent).
+		if ( ! in_array( $status, array( 'pending', 'scheduled', 'generating', 'finalizing' ), true ) ) {
+			return $this->success( $progress );
+		}
+
+		/** @var \CTXFeed\V8\Feed\FeedScheduler $scheduler */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Inline @var type annotation for IDE/static analysis, not a documentation block.
+		$scheduler       = $container->resolve( 'feed.scheduler' );
+		$ran             = $scheduler->run_pending_batches( $feed_name );
+		$progress        = $manager->get_progress( $feed_name );
+		$progress['ran'] = $ran;
 
 		return $this->success( $progress );
 	}

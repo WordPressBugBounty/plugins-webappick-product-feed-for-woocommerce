@@ -1,9 +1,18 @@
 <?php
 /**
- * SkroutzTransform — Applies Skroutz-specific formatting rules.
+ * SkroutzTransform — Skroutz-specific formatting rules.
  *
- * - Availability: "in stock" → "Delivery 1 to 3 days",
- *   all others → "Delivery up to 30 days"
+ * Availability is intentionally NOT rewritten. Skroutz.gr's `<availability>`
+ * element expects a Greek delivery-time expression from the shop's own set
+ * (e.g. "Άμεσα διαθέσιμο", "Διαθέσιμο από 1 έως 3 ημέρες", …) that Skroutz
+ * cross-links to its predefined Greek values; a separate `<instock>` element
+ * carries the Y/N stock flag. The old v8 conversion emitted the *English*
+ * strings "Delivery 1 to 3 days" / "Delivery up to 30 days", which never
+ * cross-link on a Greek channel. The resolved value the user maps now passes
+ * through unchanged (V5 parity); users map the correct Greek phrase.
+ *
+ * Kept as a registered (currently pass-through) transform so any future
+ * Skroutz-specific formatting has a home without touching the pipeline.
  *
  * @package    CTXFeed
  * @subpackage V8/Transform
@@ -34,56 +43,9 @@ class SkroutzTransform implements TransformInterface {
 	 * @param array  $product_data Resolved product attributes.
 	 * @param Config $config       Feed configuration.
 	 *
-	 * @return array Transformed product data.
+	 * @return array Transformed product data (unchanged — see class docblock).
 	 */
-	public function transform( array $product_data, Config $config ): array {
-		$provider = $config->get( 'provider', '' );
-
-		if ( 'skroutz' !== $provider ) {
-			return $product_data;
-		}
-
-		$product_data = $this->transform_availability( $product_data );
-
+	public function transform( array $product_data, Config $config ): array { // phpcs:ignore VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable -- $config is required by TransformInterface; this transform passes data through unchanged.
 		return $product_data;
-	}
-
-	/**
-	 * Convert availability to Skroutz delivery time format.
-	 *
-	 * Skroutz uses human-readable delivery time strings.
-	 *
-	 * @since 8.0.0
-	 *
-	 * @param array $data Product data.
-	 *
-	 * @return array Modified product data.
-	 */
-	private function transform_availability( array $data ): array {
-		if ( ! isset( $data['availability'] ) ) {
-			return $data;
-		}
-
-		$data['availability'] = self::format_availability( (string) $data['availability'] );
-
-		return $data;
-	}
-
-	/**
-	 * Map a raw stock/availability value to Skroutz's delivery-time string.
-	 *
-	 * In-stock → "Delivery 1 to 3 days"; anything else → "Delivery up to
-	 * 30 days". Shared so per-variation availability (SkroutzVariationsBuilder)
-	 * uses the exact same wording as the product-level transform.
-	 *
-	 * @since 8.0.0
-	 *
-	 * @param string $availability Raw availability value.
-	 * @return string Skroutz delivery-time string.
-	 */
-	public static function format_availability( string $availability ): string {
-		$normalized = str_replace( '_', ' ', strtolower( trim( $availability ) ) );
-
-		return 'in stock' === $normalized ? 'Delivery 1 to 3 days' : 'Delivery up to 30 days';
 	}
 }

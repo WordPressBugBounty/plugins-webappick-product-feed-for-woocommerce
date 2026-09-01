@@ -1,42 +1,42 @@
-=== Product Feed Manager for WooCommerce – CTX Feed – Support 220+ Shopping & Social Channels ===
+=== Product Feed Manager for WooCommerce – CTX Feed – Support 220+ Shopping, AI & Social Channels ===
 Contributors: wahid0003, webappick
 Donate link: https://webappick.com
 Tags: woocommerce, product feed, google shopping, facebook Catalog, google listings
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.1
+Stable tag: 8.0.4
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
-Create WooCommerce product feeds for Google Shopping, Facebook, TikTok & 220+ channels. 2026 compliant. 6 formats. Trusted by 70,000+ stores.
+Create WooCommerce product feeds for Google Shopping, Facebook, TikTok & 220+ channels. 2026 compliant. 6 formats.
 
 == Description ==
 
-🏆 **The #1 WooCommerce Product Feed Manager Plugin trusted by 70,000+ online stores worldwide.**
+🏆 **The #1 WooCommerce Product Feed Manager Plugin trusted by 80,000+ online stores worldwide.**
 
-Stop losing sales to rejected product feeds. **CTX Feed** is the most powerful **product feed plugin for WooCommerce**, designed to generate optimized, error-free feeds for **Google Shopping**, **Facebook Catalog**, **Instagram Shopping**, **TikTok Shop**, Pinterest, Bing, and **220+ global marketing channels**.
+Stop losing sales to rejected product feeds. **CTXFeed** is the most powerful **product feed plugin for WooCommerce**, designed to generate optimized, error-free feeds for **Google Shopping**, **Facebook Catalog**, **Instagram Shopping**, **TikTok Shop**, Pinterest, Bing, and **220+ global marketing channels**.
 
-Whether you're managing 100 products or 100,000+ SKUs, CTX Feed handles your entire **WooCommerce product feed** with **zero limits**. Our intelligent batch processing ensures your XML, CSV, and JSON feeds are created flawlessly without crashing your server.
+Whether you're managing 100 products or 100,000+ SKUs, CTXFeed handles your entire **WooCommerce product feed** with **zero limits**. Our intelligent batch processing ensures your XML, CSV, and JSON feeds are created flawlessly without crashing your server.
 
 [youtube https://www.youtube.com/watch?v=QRTvrDJm4mI]
 
-🆕 **2026 Google Merchant Center Compliant** – Ready for the March 2026 multi-channel product ID requirements and subscription product support.
+**2026 Google Merchant Center Compliant** – Ready for the March 2026 multi-channel product ID requirements and subscription product support.
 
-== Why 70,000+ WooCommerce Stores Choose CTX Feed? ==
+== Why 80,000+ WooCommerce Stores Choose CTXFeed? ==
 
-* **220+ Pre-Built Templates** – Instant setup for Google Merchant Center, Meta (Facebook/Instagram), TikTok Shop, Amazon, eBay, Snapchat, Pinterest, and more
+* **95 Pre-Built Templates for 220+ channels** – Instant setup for Google Merchant Center, Meta (Facebook/Instagram), TikTok Shop, Amazon, eBay, Snapchat, Pinterest, and more
 * **6 Export Formats** – XML, CSV, TSV, XLS, TXT, JSON (more file format options than any competitor)
 * **Smart Category Mapping** – Auto-map WooCommerce categories to Google's official taxonomy to prevent feed errors
 * **Real-Time Auto-Sync** – Scheduled cron updates keep your ads accurate with correct pricing and availability
 * **Variable Product Support** – Perfectly handle complex product variations that other plugins miss
 * **Zero Server Crashes** – Intelligent batch processing for stores with 50,000+ products
 
-**[Upgrade to Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) | [Complete Documentation](https://webappick.com/docs/ctx-feed/) | [Video Tutorials](https://www.youtube.com/@WebAppick) | [Get Support](https://webappick.com/my-account/contact-support/)**
+**[Upgrade to Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) | [View Demo](https://app.instawp.io/launch?s=ctx-feed-pro-live-demo&d=v2) | [Complete Documentation](https://webappick.com/docs/ctx-feed/) | [Video Tutorials](https://www.youtube.com/@WebAppick) | [Get Support](https://webappick.com/my-account/contact-support/)**
 
-==🛒 Google Shopping Feed Manager==
+== Google Shopping Feed Manager==
 
-CTX Feed is the ultimate **Google Shopping feed manager** for WooCommerce. Create **Google Shopping feeds** that get approved fast with automatic attribute mapping for all required fields:
+CTXFeed is the ultimate **Google Shopping feed manager** for WooCommerce. Create **Google Shopping feeds** that get approved fast with automatic attribute mapping for all required fields:
 
 * Product Title, Description, Link, Image Link
 * Price, Sale Price, Availability, Condition
@@ -49,9 +49,9 @@ CTX Feed is the ultimate **Google Shopping feed manager** for WooCommerce. Creat
 
 **Fix "Missing Required Attribute" errors instantly** with our built-in attribute mapping tool. No more Google Merchant Center rejections!
 
-==📱 Facebook Product Feed & Instagram Shopping==
+== Facebook Product Feed & Instagram Shopping==
 
-Generate **Facebook product feeds** and **Instagram Shopping catalogs** compatible with Meta Commerce Manager. CTX Feed creates the perfect **WooCommerce Facebook product feed** for:
+Generate **Facebook product feeds** and **Instagram Shopping catalogs** compatible with Meta Commerce Manager. CTXFeed creates the perfect **WooCommerce Facebook product feed** for:
 
 * Dynamic Product Ads (DPA) support
 * Facebook Pixel integration ready
@@ -60,11 +60,10 @@ Generate **Facebook product feeds** and **Instagram Shopping catalogs** compatib
 * Facebook Marketplace listings
 * All Meta required attributes are included automatically
 
-[youtube https://www.youtube.com/watch?v=Ml-KoFEVBHQ]
 
-==🎵 TikTok Shop & Social Commerce Feed Manager==
+== TikTok Shop & Social Commerce Feed Manager==
 
-Reach younger shoppers with **TikTok Shop** integration. CTX Feed is your complete **shopping feed manager** for social commerce:
+Reach younger shoppers with **TikTok Shop** integration. CTXFeed is your complete **shopping feed manager** for social commerce:
 
 * TikTok Seller Center compatible feeds
 * Product certification fields included
@@ -73,46 +72,108 @@ Reach younger shoppers with **TikTok Shop** integration. CTX Feed is your comple
 * Snapchat Product Catalog support
 * Pinterest Shopping feed ready
 
-==🔍 Complete Channel & Marketplace Support==
+== Complete Channel & Marketplace Support==
 
-CTX Feed supports more channels than any other **WP product feed manager**:
+CTXFeed supports more channels than any other **WP product feed manager**:
 
 **Google Feeds:**
-Google Shopping, Google Local Inventory, Google Promotions, Google Dynamic Remarketing, Google Local Products, Google Manufacturer Center, Google Express
+
+* Google Shopping
+* Google Local Inventory
+* Google Promotions
+* Google Dynamic Remarketing
+* Google Local Products
+* Google Manufacturer Center
+* Google Express
+
+**AI Commerce:**
+
+* ChatGPT Merchant
+* Perplexity’s AI-powered shopping
 
 **Shopping & Comparison Sites:**
-Bing Shopping, Yahoo Shopping, PriceGrabber, Shopzilla, PriceRunner, PriceSpy, Kelkoo, Idealo, Billiger.de, Trovaprezzi, Skroutz, Heureka, Ceneo, Beslist, Vergelijk
+
+* Bing Shopping
+* Yahoo Shopping
+* PriceGrabber
+* Shopzilla
+* PriceRunner
+* PriceSpy
+* Kelkoo
+* Idealo
+* Billiger.de
+* Trovaprezzi
+* Skroutz
+* Heureka
+* Ceneo
+* Beslist
+* Vergelijk
 
 **Social Commerce:**
-Facebook Catalog, Instagram Shop, Pinterest, TikTok Shop, Snapchat Product Catalog
+
+* Facebook Catalog/ Meta Catalog
+* Instagram Shop
+* X.com Dynamic Product Ads
+* Pinterest Catalog Feed
+* TikTok Shop
+* Snapchat Data Feed Catalog
+* Reddit Dynamic Product Ads
 
 **Marketplaces:**
-Amazon, eBay, Walmart, Etsy, Rakuten, Wish, Fruugo, Bonanza, Newegg, Jet
+
+* Amazon
+* eBay
+* Walmart
+* Etsy
+* Rakuten
+* Wish
+* Fruugo
+* Bonanza
+* Newegg
+* Jet
 
 **Affiliate Networks:**
-Commission Junction, ShareASale, Awin, Rakuten Advertising, AvantLink, Pepperjam
+
+* Commission Junction
+* ShareASale
+* Awin
+* Rakuten Advertising
+* AvantLink
+* Pepperjam
 
 **Regional Marketplaces:**
-Bol.com (Netherlands), Allegro (Poland), Fnac (France), Otto (Germany), Coolblue, Marktplaats
+
+* Bol.com (Netherlands)
+* Allegro (Poland)
+* Fnac (France)
+* Otto (Germany)
+* Coolblue
+* Marktplaats
+
+**...Make product feed for 220+ shopping channels**
 
 **[Upgrade to Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) | [Complete Documentation](https://webappick.com/docs/ctx-feed/) | [Video Tutorials](https://www.youtube.com/@WebAppick) | [Get Support](https://webappick.com/my-account/contact-support/)**
 
-==💪 Built for Large Catalogs - The Best Product Feed Tool==
+[youtube https://www.youtube.com/watch?v=Ml-KoFEVBHQ]
 
-CTX Feed is **engineered for WooCommerce stores of any size**. As a professional **product feed tool**, it handles:
+== Built for Large Catalogs - The Best Product Feed Tool==
+
+CTXFeed is **engineered for WooCommerce stores of any size**. As a professional **product feed tool**, it handles:
 
 * Unlimited products per feed
 * Unlimited feeds
 * Batch processing prevents timeouts
-* Background feed generation
+* Effortless background feed generation
+* No server capabilty limitation
+* Works perfectly with shared hosting
 * Memory-efficient processing
 * Works on shared hosting
-* Optimized for 100,000+ products
+* Optimized for 200,000+ products
 * Server resource management
 
-==📊 WooCommerce Data Feed Features==
+== WooCommerce Data Feed Features==
 
-CTX Feed provides comprehensive **WooCommerce data feed** management:
+CTXFeed provides comprehensive **WooCommerce data feed** management:
 
 **Smart Filtering:**
 
@@ -122,6 +183,7 @@ CTX Feed provides comprehensive **WooCommerce data feed** management:
 * Filter by product type
 * Custom condition filters
 * Exclude specific products
+* Conditional filtering to reduce ads cost
 
 **Dynamic Attributes:**
 
@@ -141,7 +203,7 @@ CTX Feed provides comprehensive **WooCommerce data feed** management:
 * Category path customization
 * UTM parameter support
 
-==🔧 Complete WooCommerce Compatibility==
+== Complete WooCommerce Compatibility==
 
 Works with all WooCommerce product types and popular extensions:
 
@@ -151,12 +213,11 @@ Works with all WooCommerce product types and popular extensions:
 * Variable Products (with all variations)
 * Grouped Products
 * External/Affiliate Products
-* WooCommerce Subscriptions
-* WooCommerce Bundles
-* WooCommerce Composite Products
-* WooCommerce Bookings
+* WooCommerce Subscriptions (Pro Feature)
+* WooCommerce Bundles (Pro Feature)
+* WooCommerce Composite Products (Pro Feature)
 
-**Multi-Vendor Plugins:**
+**Multi-Vendor Plugins (Pro Feature):**
 
 * Dokan Multivendor
 * WCFM Marketplace
@@ -164,7 +225,7 @@ Works with all WooCommerce product types and popular extensions:
 * MultiVendorX
 * WC Marketplace
 
-**Multilingual & Multi-Currency:**
+**Multilingual & Multi-Currency (Pro Feature):**
 
 * WPML (WordPress Multilingual)
 * Polylang
@@ -183,7 +244,7 @@ Works with all WooCommerce product types and popular extensions:
 * Custom Product Tabs
 * WooCommerce Custom Fields
 
-**Other Integrations:**
+**Other Integrations (Pro Feature):**
 
 * WooCommerce Brands
 * Perfect Brands for WooCommerce
@@ -191,9 +252,9 @@ Works with all WooCommerce product types and popular extensions:
 * WooCommerce Product Add-Ons
 * WooCommerce Measurement Price Calculator
 
-==🆕 2026 Google Compliance Features==
+== 2026 Google Compliance Features==
 
-CTX Feed is fully prepared for Google's 2026 policy updates:
+CTXFeed is fully prepared for Google's 2026 policy updates:
 
 **March 2026 Multi-Channel Product ID Requirement:**
 
@@ -218,9 +279,9 @@ CTX Feed is fully prepared for Google's 2026 policy updates:
 
 **[Upgrade to Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) | [Complete Documentation](https://webappick.com/docs/ctx-feed/) | [Video Tutorials](https://www.youtube.com/@WebAppick) | [Get Support](https://webappick.com/my-account/contact-support/)**
 
-==⭐ CTX Feed Pro – Premium Features==
+== CTXFeed Pro – Premium Features==
 
-Upgrade to [CTX Feed Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) for advanced capabilities:
+Upgrade to [CTXFeed Pro](https://webappick.com/plugin/woocommerce-product-feed-pro/) for advanced capabilities:
 
 * **Dynamic Attribute Creation** – Create custom attributes on-the-fly
 * **Advanced Filtering** – Include/exclude products by any condition
@@ -228,22 +289,21 @@ Upgrade to [CTX Feed Pro](https://webappick.com/plugin/woocommerce-product-feed-
 * **Custom XML Templates** – Build any complex feed structure
 * **FTP/SFTP Auto-Upload** – Automatically push feeds to channels
 * **Google Content API** – Direct Merchant Center integration
-* **Facebook Pixel Integration** – Enhanced conversion tracking
-* **Priority Support** – 24/7 expert assistance
+* **Priority Support** – Expert assistance with email
 
 [youtube https://www.youtube.com/watch?v=XEW8rSyEcSU]
 
-== 🌟 What Store Owners Say ==
+== What Store Owners Say ==
 
-> "CTX Feed is the ONLY plugin that handled our 45,000 product catalog without crashing. We tried 3 other plugins before finding this gem." – **WooCommerce Store Owner**
+> "CTXFeed is the ONLY plugin that handled our 45,000 product catalog without crashing. We tried 3 other plugins before finding this gem." – **WooCommerce Store Owner**
 
-> "Finally got our Google Shopping feed approved after weeks of rejections with other plugins. CTX Feed's category mapping feature saved us!" – **E-commerce Manager**
+> "Finally got our Google Shopping feed approved after weeks of rejections with other plugins. CTXFeed's category mapping feature saved us!" – **E-commerce Manager**
 
 > "The support team is incredible. They helped us set up feeds for 12 different marketplaces in one day." – **Digital Marketing Agency**
 
 > "Best WooCommerce product feed plugin we've used. The batch processing feature is a game-changer for large stores." – **Online Retailer**
 
-==📚 Documentation & Support==
+== Documentation & Support==
 
 * [Getting Started Guide](https://webappick.com/docs/ctx-feed/)
 * [Video Tutorials](https://www.youtube.com/webappick)
@@ -408,6 +468,22 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.4 =
+* New: Facebook (Meta) feeds output product videos as repeated <video><url>…</url></video> blocks in XML and JSON/API. Map the single "Video" attribute — once per video, to a meta field or product attribute — and each mapping becomes its own <video> element.
+* Changed: The 20 fixed "Video URL 0…19" columns are replaced by one "Video" attribute; map it multiple times for multiple videos. Feeds that used the old Video URL columns need remapping to "Video".
+* Note: The video attribute is available for XML and JSON/API feeds only — it is skipped for CSV/TSV/TXT, which have no nested-column form.
+
+= Version 8.0.3 =
+* Fix: Comparison-shopping channels (BestPrice, Skroutz, Pricerunner, Trovaprezzi) no longer force their own availability values onto products — availability now passes through exactly as it did in v5, so catalogs are no longer rejected for a mismatched in-stock / out-of-stock value.
+* Improved: Large catalogs generate faster and more reliably — the adaptive batch size no longer collapses to its minimum on big feeds, so generation keeps climbing toward the server's capacity instead of crawling.
+* New: Feeds keep generating even when WordPress background tasks (WP-Cron) are disabled or blocked — while the Manage Feeds screen is open, the plugin drives the queued batches itself, so large catalogs finish instead of stalling.
+* New: A clearer, honest progress bar with a dedicated "finalizing" stage, driven by the real server-side status.
+* New: An all-pages notice warns when the background scheduler isn't processing queued feed jobs, with a link to the cron setup guide — shown only when there is a genuine stalled backlog, so it stays quiet on servers with a working cron.
+* Improved: A disabled WP-Cron is now reported as a neutral heads-up (with a cron-setup guide) rather than an alarming warning — a real server cron is the recommended setup on many hosts.
+* Improved: More resilient to a CDN/WAF (e.g. Cloudflare) that intermittently challenges requests — REST calls automatically retry through admin-ajax when a challenge is detected. (A persistent firewall challenge still needs an allow rule on your CDN.)
+* Fix: License activation/deactivation now explains a firewall/CDN block clearly instead of failing silently.
+* Fix: The per-feed log opens inside the admin instead of showing a 404 page.
 
 = Version 8.0.0 =
 * Major update: CTX Feed 8.0 is a ground-up rewrite. Please back up your site and database before updating. Your existing feeds and settings are carried over automatically — no reconfiguration needed. Found any issue after updating? Contact our support team at support@webappick.com.

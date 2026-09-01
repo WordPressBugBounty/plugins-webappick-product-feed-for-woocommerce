@@ -215,8 +215,14 @@ class ApiServiceProvider extends ServiceProvider {
 				 * @param array $endpoints Keyed array of endpoint instances.
 				 */
 				do_action( 'ctxfeed_rest_routes_registered', $endpoints );
-			} 
+			}
 		);
+
+		// admin-ajax fallback for the REST API — lets the admin keep working
+		// when a CDN/WAF (e.g. Cloudflare) intermittently 403-challenges
+		// /wp-json/. The React app only routes through it on a challenge, so
+		// there is no overhead on the normal path. @since 8.0.2.
+		( new RestProxy() )->register();
 
 		// Cache invalidation for the filter-counts transient —
 		// refreshed whenever a product is saved, deleted, or its

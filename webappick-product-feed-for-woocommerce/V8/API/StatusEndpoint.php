@@ -480,7 +480,12 @@ class StatusEndpoint extends RestController {
 		$items[] = $this->item( 'WP Multisite', 'success', is_multisite() ? 'Yes' : 'No' );
 		$items[] = $this->item( 'WP Memory Limit', 'success', defined( 'WP_MEMORY_LIMIT' ) ? WP_MEMORY_LIMIT : 'N/A' );
 		$items[] = $this->item( 'WP Debug Mode', defined( 'WP_DEBUG' ) && WP_DEBUG ? 'warning' : 'success', defined( 'WP_DEBUG' ) && WP_DEBUG ? 'Enabled' : 'Disabled' );
-		$items[] = $this->item( 'Background Scheduler', defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ? 'warning' : 'success', defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ? 'Disabled' : 'Enabled' );
+		// Reported as OK regardless — a DISABLED scheduler is surfaced by the
+		// React status page as a neutral INFO heads-up (with a cron-setup guide),
+		// NOT a warning: DISABLE_WP_CRON=true is the recommended VPS/dedicated
+		// setup (a real server cron hits wp-cron.php), so warning on it cried
+		// wolf on healthy sites. See statusChecks.js wpCronVerdict.
+		$items[] = $this->item( 'Background Scheduler', 'success', defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ? 'Disabled' : 'Enabled' );
 		$items[] = $this->item( 'Language', 'success', get_locale() );
 		$items[] = $this->item( 'Timezone', 'success', wp_timezone_string() );
 

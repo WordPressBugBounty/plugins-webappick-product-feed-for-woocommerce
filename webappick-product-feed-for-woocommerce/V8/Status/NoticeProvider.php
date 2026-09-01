@@ -79,6 +79,7 @@ class NoticeProvider {
 		$notices = array();
 
 		$notices = array_merge( $notices, $this->debug_logging_notice() );
+		$notices = array_merge( $notices, $this->scheduler_stalled_notice() );
 		$notices = array_merge( $notices, $this->pro_inactive_notice() );
 		$notices = array_merge( $notices, $this->pro_integration_notices() );
 
@@ -234,6 +235,97 @@ class NoticeProvider {
 				'dismissible' => true,
 			),
 		);
+	}
+
+	/**
+	 * Free source: warn when the background scheduler isn't processing feed jobs.
+	 *
+	 * WordPress runs feed generation through Action Scheduler, which is driven by
+	 * WP-Cron. When WP-Cron is disabled (DISABLE_WP_CRON) and no real server cron
+	 * hits wp-cron.php — or the loopback is blocked by a firewall/CDN — the queued
+	 * batches never run and feeds stall.
+	 *
+	 * Trigger is a GENUINE stall (CTX Feed actions overdue by 5+ minutes), not the
+	 * mere presence of DISABLE_WP_CRON — the recommended VPS/dedicated setup pairs
+	 * DISABLE_WP_CRON with a real system cron, which drains the queue and leaves no
+	 * backlog. Warning on that would cry wolf (see StatusEndpoint / statusChecks
+	 * wpCronVerdict, which keeps the status page's check at INFO for the same
+	 * reason). Feeds generated from the admin still complete — the browser-driven
+	 * runner (POST /feeds/{id}/run) drives them while the tab is open — so this is
+	 * a heads-up about scheduled/automatic updates, hence dismissible.
+	 *
+	 * @since 8.0.2
+	 *
+	 * @return array Zero or one notice.
+	 */
+	private function scheduler_stalled_notice(): array {
+		if ( ! $this->scheduler_stalled() ) {
+			return array();
+		}
+
+		$cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+
+		$message = $cron_disabled
+			? __( 'WordPress background tasks (WP-Cron) are disabled and queued feed jobs are not being processed. Feeds you generate from the Manage Feeds screen still finish while that tab is open, but scheduled and automatic feed updates need a real server cron.', 'woo-feed' )
+			: __( 'Queued feed jobs are not being processed — the background scheduler does not appear to be running. Feeds you generate from the Manage Feeds screen still finish while that tab is open, but scheduled and automatic feed updates need a working server cron.', 'woo-feed' );
+
+		return array(
+			array(
+				'id'          => 'ctxfeed_scheduler_stalled',
+				'severity'    => 'warning',
+				'priority'    => 25,
+				'title'       => __( 'Background scheduler is disabled', 'woo-feed' ),
+				'message'     => $message,
+				'action'      => array(
+					'label'  => __( 'Cron setup guide', 'woo-feed' ),
+					'url'    => 'https://webappick.com/docs/ctx-feed/basic/how-to-setup-cron-for-auto-feed-update/',
+					'target' => '_blank',
+				),
+				'dismissible' => true,
+			),
+		);
+	}
+
+	/**
+	 * Whether CTX Feed's Action Scheduler queue is genuinely stalled.
+	 *
+	 * True when at least one CTX Feed action is PENDING and overdue by 5+ minutes
+	 * — the definitive "the scheduler isn't draining our queue" signal, true
+	 * regardless of the cause (WP-Cron disabled with no system cron, or a blocked
+	 * loopback). Cheap: an indexed existence check (per_page 1). Never fatals — any
+	 * Action Scheduler/DB hiccup resolves to "not stalled".
+	 *
+	 * @since 8.0.2
+	 *
+	 * @return bool
+	 */
+	private function scheduler_stalled(): bool {
+		if (
+			! function_exists( 'as_get_scheduled_actions' )
+			|| ! function_exists( 'as_get_datetime_object' )
+			|| ! class_exists( '\ActionScheduler_Store' )
+		) {
+			return false;
+		}
+
+		try {
+			$cutoff = as_get_datetime_object( gmdate( 'Y-m-d H:i:s', time() - ( 5 * MINUTE_IN_SECONDS ) ) );
+
+			$overdue = as_get_scheduled_actions(
+				array(
+					'group'        => \CTXFeed\V8\Feed\FeedScheduler::GROUP,
+					'status'       => \ActionScheduler_Store::STATUS_PENDING,
+					'date'         => $cutoff,
+					'date_compare' => '<=',
+					'per_page'     => 1,
+				),
+				'ids'
+			);
+
+			return ! empty( $overdue );
+		} catch ( \Throwable $e ) {
+			return false;
+		}
 	}
 
 	/**

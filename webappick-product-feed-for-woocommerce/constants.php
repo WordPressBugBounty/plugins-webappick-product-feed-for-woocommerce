@@ -18,13 +18,25 @@ if( ! class_exists("Woo_Feed_Constants") ) {
 
 			if ( ! defined( 'WOO_FEED_FREE_VERSION' ) ) {
 				/**
-				 * Plugin Version
+				 * Plugin Version.
+				 *
+				 * Read from the plugin header (the `Version:` line in
+				 * woo-feed.php) so there is ONE source of truth and the runtime
+				 * version can never drift from the release. This runs before the
+				 * V8 Bootstrap, so defining it here (from the header) is what the
+				 * whole plugin then reports. Falls back to a literal only if the
+				 * header cannot be read.
 				 *
 				 * @var string
 				 * @since 3.1.6
 				 */
+				$woo_feed_free_version = '';
+				if ( function_exists( 'get_file_data' ) && defined( 'WOO_FEED_FREE_FILE' ) && file_exists( WOO_FEED_FREE_FILE ) ) {
+					$woo_feed_header       = get_file_data( WOO_FEED_FREE_FILE, array( 'Version' => 'Version' ) );
+					$woo_feed_free_version = isset( $woo_feed_header['Version'] ) ? $woo_feed_header['Version'] : '';
+				}
 
-				define( 'WOO_FEED_FREE_VERSION', '8.0.0' );
+				define( 'WOO_FEED_FREE_VERSION', '' !== $woo_feed_free_version ? $woo_feed_free_version : '8.0.4' );
 
 			}
 

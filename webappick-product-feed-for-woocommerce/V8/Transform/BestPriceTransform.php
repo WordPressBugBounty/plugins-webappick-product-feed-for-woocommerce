@@ -2,8 +2,15 @@
 /**
  * BestPriceTransform — Applies BestPrice-specific formatting rules.
  *
- * - Availability: "in stock" → "Y", all others → "N"
- * - Category path: ">" separator → ", " separator
+ * - Category path: " > " separator → ", " separator
+ *
+ * Availability is intentionally NOT rewritten. BestPrice.gr's
+ * `<availability>` element carries a delivery-time string (one of the exact
+ * Greek phrases the channel accepts, e.g. "Σε απόθεμα",
+ * "Παράδοση σε 1-3 ημέρες", …), NOT a Y/N flag — the channel has a separate
+ * `<instock>` element for that. Forcing "Y"/"N" here (v8.0.0–8.0.1) made
+ * BestPrice reject entire catalogues ("no availability information"). The
+ * value the user maps now passes through unchanged, matching V5 behaviour.
  *
  * @package    CTXFeed
  * @subpackage V8/Transform
@@ -43,34 +50,9 @@ class BestPriceTransform implements TransformInterface {
 			return $product_data;
 		}
 
-		$product_data = $this->transform_availability( $product_data );
 		$product_data = $this->transform_category_path( $product_data );
 
 		return $product_data;
-	}
-
-	/**
-	 * Convert availability to BestPrice format.
-	 *
-	 * BestPrice uses simple "Y"/"N" availability flags.
-	 *
-	 * @since 8.0.0
-	 *
-	 * @param array $data Product data.
-	 *
-	 * @return array Modified product data.
-	 */
-	private function transform_availability( array $data ): array {
-		if ( ! isset( $data['availability'] ) ) {
-			return $data;
-		}
-
-		$availability = strtolower( trim( $data['availability'] ) );
-		$availability = str_replace( '_', ' ', $availability );
-
-		$data['availability'] = ( 'in stock' === $availability ) ? 'Y' : 'N';
-
-		return $data;
 	}
 
 	/**

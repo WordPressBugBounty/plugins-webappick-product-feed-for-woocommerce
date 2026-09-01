@@ -3,10 +3,17 @@
  * TrovaprezziTransform — Applies Trovaprezzi-specific formatting rules.
  *
  * Trovaprezzi (Italian price comparison) requires:
- * - Availability as numeric codes: 2 (in stock), 3 (out of stock)
  * - Price: comma decimal separator, no thousands, 2 decimals
  * - Category separator: comma instead of " > "
  * - XML wrappers: itemsWrapper = "Products", itemWrapper = "Offer"
+ *
+ * Availability ("disponibilità") is intentionally NOT rewritten. Per the
+ * official Trovaprezzi feed spec the field is optional and treats ANY number
+ * ≥ 2 as in-stock, so the old v8 mapping (in stock → "2", everything else →
+ * "3") flagged out-of-stock products as in-stock (green icon). It also
+ * clobbered whatever the user mapped. The resolved value now passes through
+ * unchanged (V5 parity); users who want the icon map "disponibile"/
+ * "non disponibile" or the numeric codes themselves.
  *
  * The end-of-record marker (`<endrecord>`) is handled by CSVTemplate
  * via the `ctxfeed_csv_row_suffix` filter, not in this transform.
@@ -52,42 +59,10 @@ class TrovaprezziTransform implements TransformInterface {
 			return $product_data;
 		}
 
-		$product_data = $this->transform_availability( $product_data );
 		$product_data = $this->transform_price( $product_data );
 		$product_data = $this->transform_category( $product_data );
 
 		return $product_data;
-	}
-
-	/**
-	 * Convert availability to Trovaprezzi numeric codes.
-	 *
-	 * V5 parity: 2 = in stock, 3 = out of stock.
-	 *
-	 * @since 8.0.0
-	 *
-	 * @param array $data Product data.
-	 *
-	 * @return array Modified data.
-	 */
-	private function transform_availability( array $data ): array {
-		if ( ! isset( $data['availability'] ) ) {
-			return $data;
-		}
-
-		$availability = strtolower( str_replace( array( '_', '-' ), '', trim( $data['availability'] ) ) );
-
-		switch ( $availability ) {
-			case 'instock':
-			case 'in stock':
-				$data['availability'] = '2';
-				break;
-			default:
-				$data['availability'] = '3';
-				break;
-		}
-
-		return $data;
 	}
 
 	/**

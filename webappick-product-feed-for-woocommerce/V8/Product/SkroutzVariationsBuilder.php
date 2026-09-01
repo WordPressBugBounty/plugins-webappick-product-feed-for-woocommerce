@@ -33,7 +33,6 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
-use CTXFeed\V8\Transform\SkroutzTransform;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -266,12 +265,10 @@ class SkroutzVariationsBuilder {
 
 			$value = (string) $resolved[ $mkey ];
 
-			// Per-variation availability uses the same Skroutz delivery-time
-			// wording as the product-level SkroutzTransform.
-			if ( 'availability' === $tag && '' !== $value ) {
-				$value = SkroutzTransform::format_availability( $value );
-			}
-
+			// Per-variation availability passes through unchanged — Skroutz's
+			// <availability> expects the shop's own Greek delivery-time phrase,
+			// not a forced English string (V5 parity; matches the product-level
+			// SkroutzTransform, which no longer rewrites availability).
 			if ( '' === $value ) {
 				continue;
 			}
