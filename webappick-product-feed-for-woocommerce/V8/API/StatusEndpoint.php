@@ -485,7 +485,18 @@ class StatusEndpoint extends RestController {
 		// NOT a warning: DISABLE_WP_CRON=true is the recommended VPS/dedicated
 		// setup (a real server cron hits wp-cron.php), so warning on it cried
 		// wolf on healthy sites. See statusChecks.js wpCronVerdict.
-		$items[] = $this->item( 'Background Scheduler', 'success', defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ? 'Disabled' : 'Enabled' );
+		// Background Scheduler: OK when running, or disabled-but-fine (a real
+		// server cron drains the queue). Only when it's disabled AND the queue is
+		// GENUINELY stalled (CTX Feed jobs overdue) does the value say so — the
+		// React status page then escalates it to a WARNING ("auto-updates won't
+		// run"). A bare DISABLE_WP_CRON stays a neutral INFO so VPS+cron sites
+		// aren't cried wolf at. @see statusChecks.js wpCronVerdict, SchedulerHealth.
+		$cron_disabled   = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
+		$scheduler_value = $cron_disabled ? 'Disabled' : 'Enabled';
+		if ( $cron_disabled && \CTXFeed\V8\Status\SchedulerHealth::is_stalled() ) {
+			$scheduler_value = 'Disabled — scheduled jobs are stalled';
+		}
+		$items[] = $this->item( 'Background Scheduler', 'success', $scheduler_value );
 		$items[] = $this->item( 'Language', 'success', get_locale() );
 		$items[] = $this->item( 'Timezone', 'success', wp_timezone_string() );
 

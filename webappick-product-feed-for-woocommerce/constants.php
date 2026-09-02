@@ -36,7 +36,7 @@ if( ! class_exists("Woo_Feed_Constants") ) {
 					$woo_feed_free_version = isset( $woo_feed_header['Version'] ) ? $woo_feed_header['Version'] : '';
 				}
 
-				define( 'WOO_FEED_FREE_VERSION', '' !== $woo_feed_free_version ? $woo_feed_free_version : '8.0.4' );
+				define( 'WOO_FEED_FREE_VERSION', '' !== $woo_feed_free_version ? $woo_feed_free_version : '8.0.9' );
 
 			}
 

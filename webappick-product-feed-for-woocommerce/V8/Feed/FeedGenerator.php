@@ -367,6 +367,12 @@ class FeedGenerator {
 
 		if ( $this->feed_logger ) {
 			$this->feed_logger->info( $feed_name, sprintf( 'Batch offset=%d, batch_size=%d, products_in_batch=%d', $offset, $batch_size, count( $ids ) ) );
+			// Flush immediately: FeedLogger buffers until batch end, so a
+			// batch hard-killed mid-run (web-server timeout, OOM) would
+			// otherwise vanish from the log without even a start line —
+			// which is exactly what made the shipping-batch deaths
+			// undiagnosable from the feed log.
+			$this->feed_logger->flush( $feed_name );
 		}
 
 		$this->cache_warmer->warm( $ids );

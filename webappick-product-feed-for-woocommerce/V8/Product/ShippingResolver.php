@@ -17,6 +17,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Core\Logger;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -57,13 +58,48 @@ class ShippingResolver {
 	/**
 	 * Per-request memo of computed shipping prices.
 	 *
-	 * Keyed by product|zone|method — feed generation resolves shipping
-	 * for thousands of products against the same handful of zones.
+	 * Package path: keyed by price|shipping_class|zone|method — shipping
+	 * cost depends on what the product costs and how it ships, not on its
+	 * identity, so an 11K-product catalog collapses to a few hundred
+	 * unique computations. Cart path: keyed by product|zone|method.
 	 *
 	 * @since 8.0.0
 	 * @var array<string,string>
 	 */
 	private static $price_memo = array();
+
+	/**
+	 * Per-request memo of shipping method instances.
+	 *
+	 * WC_Shipping_Zones::get_shipping_method() hits the DB per call;
+	 * feed generation asks for the same handful of instances thousands
+	 * of times.
+	 *
+	 * @since 8.0.9
+	 * @var array<int,\WC_Shipping_Method|false>
+	 */
+	private static $method_memo = array();
+
+	/**
+	 * Seconds spent computing shipping prices this request.
+	 *
+	 * Drives the per-batch time budget: once spent, remaining products
+	 * emit un-priced entries instead of letting shipping resolution run
+	 * the batch into the web-server kill window (BUG: a 14-method store
+	 * died silently at batch 2 — Action Scheduler "in-progress ≥300s").
+	 *
+	 * @since 8.0.9
+	 * @var float
+	 */
+	private static $budget_spent = 0.0;
+
+	/**
+	 * Whether the budget-exhausted warning has been logged this request.
+	 *
+	 * @since 8.0.9
+	 * @var bool
+	 */
+	private static $budget_warned = false;
 
 	/**
 	 * Reset the per-request memos.
@@ -76,8 +112,11 @@ class ShippingResolver {
 	 * @return void
 	 */
 	public static function flush_runtime_memo(): void {
-		self::$zones_memo = null;
-		self::$price_memo = array();
+		self::$zones_memo    = null;
+		self::$price_memo    = array();
+		self::$method_memo   = array();
+		self::$budget_spent  = 0.0;
+		self::$budget_warned = false;
 	}
 
 	/**
@@ -205,9 +244,9 @@ class ShippingResolver {
 					}
 
 					// NOTE: No price computed here. Prices are computed per
-					// product in compute_shipping_price() using WC's cart
-					// API so shortcodes ([qty], [fee]), table-rates, and
-					// percentage-based rules resolve correctly — matching V5.
+					// price-point in compute_shipping_price() by running the
+					// method instance against a synthetic package (cart API
+					// only via the ctxfeed_shipping_use_cart_api filter).
 					$zones[] = array(
 						'zone_id'            => $zone_id,
 						'zone_name'          => $zone_name,
@@ -254,13 +293,336 @@ class ShippingResolver {
 	 * Compute the actual shipping price for a product under a given zone
 	 * + method combination.
 	 *
-	 * Uses WooCommerce's cart API — identical to V5 Shipping::get_shipping_price()
-	 * so shortcode-based rates (`[qty] * 5`, `[fee percent=...]`), table-rate
-	 * plugins, weight/quantity rules, and free shipping minimums all resolve
-	 * correctly. Results are memoised per request on a cheap key so feeds
-	 * with many products don't re-enter the cart workflow redundantly.
+	 * Default path prices the configured method instance directly against
+	 * a synthetic shipping package (see compute_price_via_package()) — no
+	 * cart, no session, no third-party cart hooks. The V5-style cart-API
+	 * path is kept behind the `ctxfeed_shipping_use_cart_api` filter for
+	 * table-rate plugins that genuinely need a real cart.
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.9 Package-based pricing is the default; cart API opt-in.
+	 *
+	 * @param array       $zone    Zone struct with country/state/method_id/method_instance_id.
+	 * @param \WC_Product $product Product to price.
+	 * @param Config|null $config  Feed configuration, forwarded to the pre-pricing compat hook. Default null.
+	 *
+	 * @return string Numeric string (e.g. "5.00") or empty string on failure.
+	 */
+	private function compute_shipping_price( array $zone, \WC_Product $product, ?Config $config = null ): string {
+		/**
+		 * Opt back into the V5-style cart-API shipping computation.
+		 *
+		 * The cart path runs a full add-to-cart + calculate_totals cycle
+		 * per product × method — every cart-aware plugin (checkout,
+		 * marketing, loyalty) fires on each cycle, which on real stores
+		 * costs 100-300ms per cycle and can push a batch past the
+		 * web-server kill window. Enable only when a shipping plugin
+		 * cannot price a bare package.
+		 *
+		 * @since 8.0.9
+		 *
+		 * @param bool        $use_cart Default false.
+		 * @param \WC_Product $product  Product being priced.
+		 * @param array       $zone     Zone struct.
+		 */
+		if ( apply_filters( 'ctxfeed_shipping_use_cart_api', false, $product, $zone ) ) {
+			return $this->compute_price_via_cart( $zone, $product, $config );
+		}
+
+		return $this->compute_price_via_package( $zone, $product, $config );
+	}
+
+	/**
+	 * Price a zone method against a synthetic shipping package.
+	 *
+	 * Builds the same package structure WC_Shipping hands to
+	 * WC_Shipping_Method::get_rates_for_package() and calls the
+	 * configured method instance directly. Flat-rate cost expressions
+	 * (`[qty]`, `[fee ...]`), per-shipping-class costs, and free-shipping
+	 * minimums all resolve from the package/instance settings — without
+	 * the cart cycle whose per-call cost made large feeds die mid-batch.
+	 *
+	 * Memoised on the actual cost drivers (price + shipping class + zone
+	 * + method), so products sharing a price point reuse the computation.
+	 *
+	 * @since 8.0.9
+	 *
+	 * @param array       $zone    Zone struct with country/state/method_id/method_instance_id.
+	 * @param \WC_Product $product Product to price.
+	 * @param Config|null $config  Feed configuration, forwarded to the pre-pricing compat hook. Default null.
+	 *
+	 * @return string Numeric string (e.g. "5.00") or empty string on failure.
+	 */
+	private function compute_price_via_package( array $zone, \WC_Product $product, ?Config $config = null ): string {
+		// V5 parity: variations price as themselves (their own price and
+		// shipping class — the old cart path added the variable PARENT,
+		// which always fails add_to_cart and silently emitted 0.00).
+		// Grouped products price as their first child (V5 Shipping.php).
+		if ( $product->is_type( 'grouped' ) ) {
+			$children = $product->get_children();
+			$child    = ! empty( $children ) ? wc_get_product( reset( $children ) ) : false;
+			if ( ! $child instanceof \WC_Product ) {
+				return '';
+			}
+			$product = $child;
+		}
+
+		// Virtual/downloadable products never ship — the cart path ended
+		// at 0.00 for them (no shippable package); keep that contract.
+		if ( ! $product->needs_shipping() ) {
+			return '';
+		}
+
+		$price    = (float) wc_get_price_excluding_tax( $product );
+		$class_id = (int) $product->get_shipping_class_id();
+
+		$memo = &self::$price_memo;
+
+		$memo_key = 'pkg|' . $price . '|' . $class_id . '|' . $zone['zone_id'] . '|' . $zone['method_id'] . '|' . $zone['method_instance_id'] . '|' . $zone['country'] . '|' . $zone['region'];
+
+		if ( isset( $memo[ $memo_key ] ) ) {
+			return $memo[ $memo_key ];
+		}
+
+		/**
+		 * Filter the shipping-price time budget in seconds per request.
+		 *
+		 * Once computations have consumed the budget, remaining products
+		 * emit un-priced entries instead of risking the batch being
+		 * killed by the web server. 0 disables computation entirely.
+		 *
+		 * @since 8.0.9
+		 *
+		 * @param float $budget Seconds. Default 20.
+		 */
+		$budget = (float) apply_filters( 'ctxfeed_shipping_time_budget', 20.0 );
+
+		if ( self::$budget_spent >= $budget ) {
+			if ( ! self::$budget_warned ) {
+				self::$budget_warned = true;
+				Logger::warning(
+					'Shipping price time budget exhausted — remaining products in this batch emit unpriced shipping entries.',
+					array(
+						'budget_sec' => $budget,
+						'spent_sec'  => round( self::$budget_spent, 2 ),
+					)
+				);
+			}
+
+			// Deliberately NOT memoised: the next batch gets a fresh
+			// budget and should compute real prices for these keys.
+			return '';
+		}
+
+		$started = microtime( true );
+
+		/**
+		 * Fires before a product is priced for shipping.
+		 *
+		 * V5 6.6.x hook — multi-currency compat plugins switch the
+		 * shipping currency context here. Kept on the package path so
+		 * the shims keep working. @see compute_price_via_cart().
+		 *
+		 * @since 8.0.0
+		 *
+		 * @param Config|null $config Feed configuration.
+		 * @param int         $pid    Product ID being priced.
+		 */
+		do_action( 'woo_feed_before_add_to_cart_for_shipping', $config, (int) $product->get_id() );
+
+		try {
+			$result = $this->price_package_for_method( $zone, $product, $price );
+		} catch ( \Throwable $e ) {
+			$result = '';
+		}
+
+		self::$budget_spent += microtime( true ) - $started;
+
+		$memo[ $memo_key ] = $result;
+
+		return $result;
+	}
+
+	/**
+	 * Run one method instance against one product package.
+	 *
+	 * @since 8.0.9
+	 *
+	 * @param array       $zone    Zone struct.
+	 * @param \WC_Product $product Product to price (already child/variation-resolved).
+	 * @param float       $price   Product price excluding tax.
+	 *
+	 * @return string Numeric string or empty string on failure.
+	 */
+	private function price_package_for_method( array $zone, \WC_Product $product, float $price ): string {
+		$instance_id = (int) $zone['method_instance_id'];
+
+		if ( ! isset( self::$method_memo[ $instance_id ] ) ) {
+			self::$method_memo[ $instance_id ] = $instance_id > 0 && class_exists( '\WC_Shipping_Zones' )
+				? \WC_Shipping_Zones::get_shipping_method( $instance_id )
+				: false;
+		}
+
+		$method = self::$method_memo[ $instance_id ];
+
+		if ( ! $method instanceof \WC_Shipping_Method ) {
+			return '';
+		}
+
+		$package = $this->build_rate_package( $zone, $product, $price );
+
+		// free_shipping's is_available() reads WC()->cart, which doesn't
+		// exist in cron/Action-Scheduler context — evaluate its
+		// requirements against the package ourselves.
+		if ( 'free_shipping' === $zone['method_id'] ) {
+			return $this->free_shipping_applies( $method, $product ) ? '0.00' : '';
+		}
+
+		// Shipping tax rates resolve from the customer location when one
+		// exists; pin it to the zone so tax matches the destination, and
+		// restore afterwards. No cart/session involved — cheap.
+		$customer     = function_exists( 'WC' ) && WC() ? WC()->customer : null;
+		$prev_country = null;
+		$prev_state   = null;
+
+		if ( $customer && ! empty( $zone['country'] ) ) {
+			$prev_country = $customer->get_shipping_country();
+			$prev_state   = $customer->get_shipping_state();
+			$customer->set_shipping_country( $zone['country'] );
+			$customer->set_shipping_state( ! empty( $zone['region'] ) ? $zone['region'] : '' );
+		}
+
+		try {
+			$rates = $method->get_rates_for_package( $package );
+		} finally {
+			if ( $customer && null !== $prev_country ) {
+				$customer->set_shipping_country( $prev_country );
+				$customer->set_shipping_state( $prev_state );
+			}
+		}
+
+		if ( empty( $rates ) || ! is_array( $rates ) ) {
+			return '';
+		}
+
+		$rate = reset( $rates );
+
+		if ( ! $rate instanceof \WC_Shipping_Rate ) {
+			return '';
+		}
+
+		$cost = (float) $rate->get_cost();
+
+		$taxes = $rate->get_taxes();
+		if ( is_array( $taxes ) ) {
+			$cost += (float) array_sum( $taxes );
+		}
+
+		return number_format( $cost, 2, '.', '' );
+	}
+
+	/**
+	 * Build a WC-shaped shipping package for a single product.
+	 *
+	 * Mirrors the structure WC_Cart::get_shipping_packages() produces so
+	 * method instances (core and third-party) can price it: contents with
+	 * a real product object, contents_cost/cart_subtotal for `[cost]` and
+	 * percentage expressions, and the zone's destination.
+	 *
+	 * @since 8.0.9
+	 *
+	 * @param array       $zone    Zone struct.
+	 * @param \WC_Product $product Product to price.
+	 * @param float       $price   Product price excluding tax.
+	 *
+	 * @return array Shipping package.
+	 */
+	private function build_rate_package( array $zone, \WC_Product $product, float $price ): array {
+		$country = ! empty( $zone['country'] ) ? $zone['country'] : ( function_exists( 'wc_get_base_location' ) ? (string) ( wc_get_base_location()['country'] ?? '' ) : '' );
+
+		return array(
+			'contents'        => array(
+				(string) $product->get_id() => array(
+					'key'               => (string) $product->get_id(),
+					'product_id'        => $product->is_type( 'variation' ) ? $product->get_parent_id() : $product->get_id(),
+					'variation_id'      => $product->is_type( 'variation' ) ? $product->get_id() : 0,
+					'variation'         => array(),
+					'quantity'          => 1,
+					'data'              => $product,
+					'data_hash'         => '',
+					'line_total'        => $price,
+					'line_tax'          => 0,
+					'line_subtotal'     => $price,
+					'line_subtotal_tax' => 0,
+				),
+			),
+			'contents_cost'   => $price,
+			'applied_coupons' => array(),
+			'user'            => array( 'ID' => get_current_user_id() ),
+			'destination'     => array(
+				'country'   => $country,
+				'state'     => ! empty( $zone['region'] ) ? $zone['region'] : '',
+				'postcode'  => '',
+				'city'      => '',
+				'address'   => '',
+				'address_1' => '',
+				'address_2' => '',
+			),
+			'cart_subtotal'   => $price,
+		);
+	}
+
+	/**
+	 * Evaluate a free_shipping instance's requirements against a product.
+	 *
+	 * Core WC_Shipping_Method_Free_Shipping::is_available() consults
+	 * WC()->cart (absent in cron context), so the min-amount check is
+	 * replicated here against the product's display price — the same
+	 * figure the cart's displayed subtotal would carry for qty 1.
+	 * Coupon-based requirements can never be met in feed context.
+	 *
+	 * @since 8.0.9
+	 *
+	 * @param \WC_Shipping_Method $method  Free shipping instance.
+	 * @param \WC_Product         $product Product to check.
+	 *
+	 * @return bool Whether free shipping would apply.
+	 */
+	private function free_shipping_applies( \WC_Shipping_Method $method, \WC_Product $product ): bool {
+		$requires = (string) $method->get_option( 'requires', '' );
+
+		if ( '' === $requires ) {
+			return true;
+		}
+
+		// 'coupon' and 'both' (min_amount AND coupon) need a coupon in
+		// the cart — impossible in feed context.
+		if ( 'coupon' === $requires || 'both' === $requires ) {
+			return false;
+		}
+
+		// 'min_amount' and 'either' (min_amount OR coupon) reduce to the
+		// min-amount check here.
+		$min_amount = (float) $method->get_option( 'min_amount', 0 );
+
+		$display_price = 'incl' === get_option( 'woocommerce_tax_display_cart' )
+			? (float) wc_get_price_including_tax( $product )
+			: (float) wc_get_price_excluding_tax( $product );
+
+		return $display_price >= $min_amount;
+	}
+
+	/**
+	 * Compute the shipping price via WooCommerce's cart API.
+	 *
+	 * V5 Shipping::get_shipping_price() parity — kept for shipping
+	 * plugins that cannot price a bare package (opt-in via the
+	 * `ctxfeed_shipping_use_cart_api` filter). Runs a full add-to-cart +
+	 * calculate_totals cycle per product × method; expensive on stores
+	 * with cart-aware plugins.
+	 *
+	 * @since 8.0.0
+	 * @since 8.0.9 Renamed from compute_shipping_price(); opt-in only.
 	 *
 	 * @param array       $zone    Zone struct with country/state/method_id/method_instance_id.
 	 * @param \WC_Product $product Product to price.
@@ -268,7 +630,7 @@ class ShippingResolver {
 	 *
 	 * @return string Numeric string (e.g. "5.00") or empty string on failure.
 	 */
-	private function compute_shipping_price( array $zone, \WC_Product $product, ?Config $config = null ): string {
+	private function compute_price_via_cart( array $zone, \WC_Product $product, ?Config $config = null ): string {
 		$memo = &self::$price_memo;
 
 		// Memo key: product + zone + method. Needed because feed generation

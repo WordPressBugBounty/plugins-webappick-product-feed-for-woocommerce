@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.4
+Stable tag: 8.0.9
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,26 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.9 =
+* Fix: Mapping the "Shipping (Google Format)" attribute could kill feed generation on stores with many shipping methods — the batch silently died mid-run and the feed never finished. Shipping prices are now computed by pricing each configured shipping method directly against the product (no cart round-trip), which is 50-100x faster and immune to slowdowns from cart-aware checkout/marketing plugins. An 11,000-product store with 14 shipping methods that could not finish at all now completes in about a minute.
+* Fix: Product variations no longer show a wrong 0.00 shipping price — they are now priced with their own price and shipping class.
+* New: Shipping resolution has a safety time budget (filter: ctxfeed_shipping_time_budget, default 20s per batch) — if a shipping plugin is pathologically slow, remaining products emit their shipping entries without computed prices instead of the whole feed dying. For shipping plugins that genuinely require a real cart to price, the previous cart-based computation is available via the ctxfeed_shipping_use_cart_api filter.
+* Improvement: The per-batch start line in the feed log is written immediately, so a batch killed by the server stays visible in the log instead of vanishing.
+
+= Version 8.0.8 =
+* Fix: The feed generation progress bar now self-heals against a mis-configured CDN. It is driven from the always-fresh background-run response (which a CDN cannot cache) and only ever moves forward, so it can no longer sit frozen at a stale percentage (e.g. "stuck at 60%") while the feed has actually progressed or already finished.
+
+= Version 8.0.7 =
+* New: A failing feed batch now automatically retries with a smaller batch size instead of aborting the whole feed. If a batch is too big for the server (a PHP timeout or memory-limit fatal), the plugin halves the batch and retries that same point — stepping down toward a safe size — so large catalogues on tighter hosts keep generating instead of stopping. It recovers from both catchable errors and uncatchable fatals (max-execution-time / out-of-memory), and only gives up once the size is already at the minimum.
+
+= Version 8.0.6 =
+* New: System status now shows a WARNING (instead of a neutral note) when WP-Cron is disabled AND scheduled feed jobs are genuinely piling up unprocessed — telling you that automatic feed updates won't run until a working server cron is set up. It stays a quiet heads-up on servers that pair a disabled WP-Cron with a real cron (where auto-update works fine), so it never cries wolf.
+* New: System status shows a warning with fix-it instructions when it detects that Cloudflare is challenging the plugin's own requests — the usual cause of a feed progress bar that looks "stuck" — pointing you to the WAF "Skip" and Cache "Bypass" rules to add for /wp-json/.
+
+= Version 8.0.5 =
+* Fix: The feed-generation progress bar could appear "stuck" behind a CDN that caches API responses (e.g. a Cloudflare "cache everything" rule) — the CDN served a frozen copy of the status even after generation had finished, and the same stale-cache could affect license status and settings. Live admin reads now carry a per-request cache-buster so the CDN can't serve a stale response.
+* Note: This is a plugin-side safeguard; the fully reliable fix remains a CDN cache-bypass rule for /wp-json/ on sites that force-cache everything.
 
 = Version 8.0.4 =
 * New: Facebook (Meta) feeds output product videos as repeated <video><url>…</url></video> blocks in XML and JSON/API. Map the single "Video" attribute — once per video, to a meta field or product attribute — and each mapping becomes its own <video> element.

@@ -73,12 +73,45 @@ class FeedScheduler {
 	const GROUP = 'ctxfeed';
 
 	/**
+	 * How many times a single batch may be retried with a smaller size before
+	 * the generation gives up. Halving from the 2000 ceiling reaches the 25
+	 * floor in ~7 steps, so the default lets it walk most of the way down.
+	 * Filterable via `ctxfeed_batch_max_retries`.
+	 *
+	 * @since 8.0.7
+	 * @var int
+	 */
+	const MAX_BATCH_RETRIES = 5;
+
+	/**
 	 * Feed generator instance (injected via set_generator).
 	 *
 	 * @since 8.0.0
 	 * @var FeedGenerator|null
 	 */
 	private $generator;
+
+	/**
+	 * The batch currently being processed, for the fatal-recovery shutdown
+	 * guard. Set at the start of handle_batch(), cleared once the batch
+	 * completes or its exception is caught. If it is still set at shutdown, the
+	 * request died mid-batch on an UNCATCHABLE fatal (a max-execution-time or
+	 * memory-limit "batch too big") — the guard then reschedules the SAME offset
+	 * with a halved batch size. Null when no batch is in flight.
+	 *
+	 * @since 8.0.7
+	 * @var array{feed_name:string,offset:int,batch_size:int,total:int,attempt:int}|null
+	 */
+	private $in_flight_batch = null;
+
+	/**
+	 * Whether the fatal-recovery shutdown function has been registered this
+	 * request (register once, not per batch).
+	 *
+	 * @since 8.0.7
+	 * @var bool
+	 */
+	private $shutdown_guard_registered = false;
 
 	/**
 	 * Batch calculator instance (injected via set_batch_calculator).
@@ -790,7 +823,9 @@ class FeedScheduler {
 	 * Boot: Register Action Scheduler callbacks.
 	 *
 	 * Registers handlers for three action types:
-	 * - GENERATE_ACTION (4 params): Individual batch processing.
+	 * - GENERATE_ACTION (5 params): Individual batch processing (the 5th,
+	 *   `attempt`, is the smaller-batch retry counter; defaults to 0 for
+	 *   actions scheduled before 8.0.7).
 	 * - FINALIZE_ACTION (2 params): Feed finalization after all batches.
 	 * - RECURRING_ACTION (1 param): Auto-update trigger that kicks off
 	 *   a fresh schedule_generation() cycle.
@@ -801,7 +836,7 @@ class FeedScheduler {
 	 * @return void
 	 */
 	public function boot(): void {
-		add_action( self::GENERATE_ACTION, array( $this, 'handle_batch' ), 10, 4 );
+		add_action( self::GENERATE_ACTION, array( $this, 'handle_batch' ), 10, 5 );
 		add_action( self::FINALIZE_ACTION, array( $this, 'handle_finalization' ), 10, 2 );
 		add_action( self::RECURRING_ACTION, array( $this, 'handle_recurring' ), 10, 1 );
 
@@ -959,10 +994,11 @@ class FeedScheduler {
 	 * @param int    $offset     Product offset.
 	 * @param int    $batch_size Batch size.
 	 * @param int    $total      Total product count.
+	 * @param int    $attempt    Smaller-batch retry counter (0 = first try). @since 8.0.7.
 	 *
 	 * @return void
 	 */
-	public function handle_batch( string $feed_name, int $offset, int $batch_size, int $total ): void {
+	public function handle_batch( string $feed_name, int $offset, int $batch_size, int $total, int $attempt = 0 ): void {
 		if ( ! $this->generator ) {
 			Logger::error( 'FeedGenerator not set in FeedScheduler' );
 			return;
@@ -973,6 +1009,19 @@ class FeedScheduler {
 		if ( $this->batch_calculator ) {
 			$this->batch_calculator->acquire_lock( $feed_name );
 		}
+
+		// Arm the fatal-recovery guard: if this batch dies on an UNCATCHABLE
+		// fatal (max-execution-time / memory-limit — a "batch too big"), the
+		// shutdown guard reschedules the SAME offset with a halved batch size
+		// instead of leaving the feed stalled. @implements 8.0.7.
+		$this->in_flight_batch = array(
+			'feed_name'  => $feed_name,
+			'offset'     => $offset,
+			'batch_size' => $batch_size,
+			'total'      => $total,
+			'attempt'    => $attempt,
+		);
+		$this->register_fatal_guard();
 
 		try {
 			// process_batch returns adaptive next_batch_size. @implements FEED-FRD-11.3.
@@ -985,20 +1034,167 @@ class FeedScheduler {
 				)
 			);
 
+			// Batch completed cleanly — disarm the guard so shutdown is a no-op.
+			$this->in_flight_batch = null;
+
 			$next_batch_size = isset( $result['next_batch_size'] ) ? (int) $result['next_batch_size'] : $batch_size;
 
 			// Chain next batch or finalize with adaptive batch size. @implements FEED-FRD-3.2.
 			$this->schedule_next_or_finalize( $feed_name, $offset, $batch_size, $total, $next_batch_size );
 		} catch ( \Throwable $e ) {
-			// A FATAL batch-level error (config load, cache warm, file open, or
-			// an unexpected engine bug — NOT a single malformed product, which
-			// process_batch isolates and skips). Without this catch the throw
-			// would skip schedule_next_or_finalize: the chain dies, the next
-			// batch is never queued, status stays 'generating', and the
-			// generation lock is never released — the feed silently stalls
-			// until the lock TTL expires. Surface it instead.
+			// Catchable failure handled here — disarm the shutdown guard.
+			$this->in_flight_batch = null;
+
+			// A CATCHABLE batch-level error (config load, cache warm, file open,
+			// a \TypeError/\Error engine bug — NOT a single malformed product,
+			// which process_batch isolates and skips). Try a smaller retry of the
+			// SAME offset first; only give up (fail the whole run) once retries
+			// are exhausted or the size is already at the floor. @implements 8.0.7.
+			if ( $this->maybe_schedule_batch_retry( $feed_name, $offset, $batch_size, $total, $attempt, $e->getMessage() ) ) {
+				return;
+			}
+
+			// Retries exhausted. Without this the throw would skip
+			// schedule_next_or_finalize: the chain dies, status stays
+			// 'generating', and the lock never releases — the feed silently
+			// stalls until the lock TTL expires. Surface it instead.
 			$this->fail_generation( $feed_name, $offset, $e );
 		}
+	}
+
+	/**
+	 * Register the shutdown guard that recovers from an UNCATCHABLE fatal
+	 * (max-execution-time / memory-limit) mid-batch. Registered once per request.
+	 *
+	 * @since 8.0.7
+	 * @return void
+	 */
+	private function register_fatal_guard(): void {
+		if ( $this->shutdown_guard_registered ) {
+			return;
+		}
+		$this->shutdown_guard_registered = true;
+		register_shutdown_function( array( $this, 'on_batch_shutdown' ) );
+	}
+
+	/**
+	 * Shutdown handler: if a batch was in flight and the request died on a fatal
+	 * error, retry that offset with a halved batch size (or fail the run if
+	 * retries are exhausted). A clean batch clears in_flight_batch, so this is a
+	 * no-op on every normal request. Public only because it is a shutdown
+	 * callback.
+	 *
+	 * @since 8.0.7
+	 *
+	 * @param array|null $last_error Injected error for tests; defaults to the
+	 *                               request's real error_get_last().
+	 * @return void
+	 */
+	public function on_batch_shutdown( ?array $last_error = null ): void {
+		$batch = $this->in_flight_batch;
+		if ( null === $batch ) {
+			return; // Batch completed (or was caught) — nothing died.
+		}
+		$this->in_flight_batch = null;
+
+		// Only act on a genuine fatal — not a clean exit that happened to leave
+		// the flag set (defensive; in practice an unfinished batch means a fatal).
+		$last        = ( null === $last_error ) ? error_get_last() : $last_error;
+		$fatal_types = array( E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR );
+		if ( ! is_array( $last ) || ! isset( $last['type'] ) || ! in_array( $last['type'], $fatal_types, true ) ) {
+			return;
+		}
+
+		$reason = 'fatal: ' . ( isset( $last['message'] ) ? $last['message'] : 'unknown' );
+
+		try {
+			if ( $this->maybe_schedule_batch_retry( $batch['feed_name'], $batch['offset'], $batch['batch_size'], $batch['total'], $batch['attempt'], $reason ) ) {
+				return;
+			}
+			// Retries exhausted — mark the run failed so it doesn't hang.
+			$manager = $this->manager ? $this->manager : new FeedManager();
+			$manager->update_progress( $batch['feed_name'], array( 'status' => 'failed' ) );
+			if ( $this->batch_calculator ) {
+				$this->batch_calculator->release_lock( $batch['feed_name'] );
+			}
+		} catch ( \Throwable $e ) {
+			// Never let the shutdown handler itself throw (e.g. an OOM leaving no
+			// headroom to schedule) — the feed simply stays where it was.
+			return;
+		}
+	}
+
+	/**
+	 * Reschedule a failed batch at the SAME offset with a halved batch size,
+	 * giving it a fresh execution window. Returns false (caller should fail the
+	 * run) when retries are exhausted or the size is already at the floor — at
+	 * the floor a failure is no longer a "too big" problem, so shrinking can't
+	 * help.
+	 *
+	 * @since 8.0.7
+	 *
+	 * @param string $feed_name  Feed slug identifier.
+	 * @param int    $offset     Offset of the batch that failed.
+	 * @param int    $batch_size Size that failed.
+	 * @param int    $total      Total product count.
+	 * @param int    $attempt    Retry attempt number (0 = first try).
+	 * @param string $reason     Human-readable failure reason (for the log).
+	 *
+	 * @return bool True if a smaller retry was scheduled; false to give up.
+	 */
+	private function maybe_schedule_batch_retry( string $feed_name, int $offset, int $batch_size, int $total, int $attempt, string $reason ): bool {
+		/**
+		 * Filter the retry ceiling for a failing batch (0 disables retries).
+		 *
+		 * @since 8.0.7
+		 *
+		 * @param int    $max       Maximum retry attempts.
+		 * @param string $feed_name Feed slug identifier.
+		 */
+		$max   = (int) apply_filters( 'ctxfeed_batch_max_retries', self::MAX_BATCH_RETRIES, $feed_name );
+		$floor = BatchCalculator::BATCH_FLOOR;
+
+		if ( $attempt >= $max || $batch_size <= $floor ) {
+			return false;
+		}
+
+		$smaller = max( $floor, (int) floor( $batch_size / 2 ) );
+
+		if ( $this->feed_logger ) {
+			$this->feed_logger->error(
+				$feed_name,
+				sprintf(
+					'Batch at offset %d failed (%s) — retrying with a smaller batch size %d (attempt %d/%d).',
+					$offset,
+					$reason,
+					$smaller,
+					$attempt + 1,
+					$max
+				)
+			);
+			$this->feed_logger->flush( $feed_name );
+		}
+
+		// Refresh the lock so it survives until the retry runs, then schedule the
+		// SAME offset with the smaller size in a fresh request.
+		if ( $this->batch_calculator ) {
+			$this->batch_calculator->acquire_lock( $feed_name );
+		}
+
+		as_schedule_single_action(
+			time() + 5,
+			self::GENERATE_ACTION,
+			array(
+				'feed_name'  => $feed_name,
+				'offset'     => $offset,
+				'batch_size' => $smaller,
+				'total'      => $total,
+				'attempt'    => $attempt + 1,
+			),
+			self::GROUP
+		);
+
+		return true;
 	}
 
 	/**

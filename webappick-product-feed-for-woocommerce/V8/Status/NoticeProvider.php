@@ -300,32 +300,7 @@ class NoticeProvider {
 	 * @return bool
 	 */
 	private function scheduler_stalled(): bool {
-		if (
-			! function_exists( 'as_get_scheduled_actions' )
-			|| ! function_exists( 'as_get_datetime_object' )
-			|| ! class_exists( '\ActionScheduler_Store' )
-		) {
-			return false;
-		}
-
-		try {
-			$cutoff = as_get_datetime_object( gmdate( 'Y-m-d H:i:s', time() - ( 5 * MINUTE_IN_SECONDS ) ) );
-
-			$overdue = as_get_scheduled_actions(
-				array(
-					'group'        => \CTXFeed\V8\Feed\FeedScheduler::GROUP,
-					'status'       => \ActionScheduler_Store::STATUS_PENDING,
-					'date'         => $cutoff,
-					'date_compare' => '<=',
-					'per_page'     => 1,
-				),
-				'ids'
-			);
-
-			return ! empty( $overdue );
-		} catch ( \Throwable $e ) {
-			return false;
-		}
+		return SchedulerHealth::is_stalled();
 	}
 
 	/**
