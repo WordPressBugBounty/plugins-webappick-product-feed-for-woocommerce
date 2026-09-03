@@ -98,19 +98,29 @@ class BatchCalculator {
 	const BATCH_FLOOR = 25;
 
 	/**
-	 * Maximum batch size to prevent memory spikes.
-	 *
-	 * Upper clamp for the capacity-based sizing. On a capable server
-	 * (roughly ≥1 GB memory_limit + ≥300s) the adaptive size can climb this
-	 * high; constrained hosts stay well below it because memory_safe/time_safe
-	 * dominate. Power users can force any size via the `ctxfeed_batch_size`
-	 * filter, which bypasses adaptive sizing entirely.
+	 * Fixed upper clamp for the batch size — 0 = none (owner decision,
+	 * 2026-09-03): a server with the memory and the time can process any
+	 * number of products per batch; the memory and time budgets alone bound
+	 * the size. Hosts can still impose a hard cap through the
+	 * `ctxfeed_batch_ceiling` filter (0 keeps it unlimited), and power users
+	 * can force any size via `ctxfeed_batch_size`.
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.10 No fixed ceiling (was 2000).
 	 * @implements FEED-FRD-11.5
 	 * @var int
 	 */
-	const BATCH_CEILING = 2000;
+	const BATCH_CEILING = 0;
+
+	/**
+	 * Action Scheduler's default timeout/failure period (5 minutes). An
+	 * action still running past it is reset or marked failed by the queue
+	 * cleaner, so no batch may be sized to run longer than this.
+	 *
+	 * @since 8.0.10
+	 * @var int
+	 */
+	const AS_DEFAULT_PERIOD = 300;
 
 	/**
 	 * Maximum allowed batch size change per iteration (50%).
@@ -191,12 +201,7 @@ class BatchCalculator {
 	 */
 	public function calculate_initial(): int {
 		$memory_limit = $this->parse_memory_limit( ini_get( 'memory_limit' ) );
-		$max_time     = (int) ini_get( 'max_execution_time' );
-
-		// A value of 0 means no limit — cap at 300s to avoid absurd batch sizes.
-		if ( 0 === $max_time ) {
-			$max_time = 300;
-		}
+		$max_time     = $this->time_budget_seconds();
 
 		// Available memory after WP overhead and safety margin.
 		$available_memory = $memory_limit * self::MEMORY_SAFETY_MARGIN * ( 1 - self::WP_OVERHEAD_PERCENT );
@@ -211,7 +216,7 @@ class BatchCalculator {
 		$initial = min( $memory_safe, $time_safe );
 
 		// Clamp between floor and ceiling.
-		$initial = $this->clamp( $initial, self::BATCH_FLOOR, self::BATCH_CEILING );
+		$initial = $this->clamp( $initial, self::BATCH_FLOOR, $this->ceiling() );
 
 		// First batch is conservative: 50% of calculated capacity.
 		return max( self::BATCH_FLOOR, (int) floor( $initial * 0.5 ) );
@@ -296,10 +301,7 @@ class BatchCalculator {
 
 		// Recompute safe limits from actual measurements.
 		$memory_limit = $this->parse_memory_limit( ini_get( 'memory_limit' ) );
-		$max_time     = (int) ini_get( 'max_execution_time' );
-		if ( 0 === $max_time ) {
-			$max_time = 300;
-		}
+		$max_time     = $this->time_budget_seconds();
 
 		$available_memory = $memory_limit * self::MEMORY_SAFETY_MARGIN * ( 1 - self::WP_OVERHEAD_PERCENT );
 		$memory_safe      = (int) floor( $available_memory / $avg_memory_per );
@@ -323,7 +325,7 @@ class BatchCalculator {
 		}
 
 		// Clamp between floor and ceiling.
-		return $this->clamp( (int) round( $dampened ), self::BATCH_FLOOR, self::BATCH_CEILING );
+		return $this->clamp( (int) round( $dampened ), self::BATCH_FLOOR, $this->ceiling() );
 	}
 
 	/**
@@ -546,6 +548,69 @@ class BatchCalculator {
 		}
 
 		return $num;
+	}
+
+	/**
+	 * Seconds one batch may take, BEFORE the 70% safety margin.
+	 *
+	 * The shorter of PHP's max_execution_time (0 = unlimited → ignored) and
+	 * Action Scheduler's timeout/failure period. Action Scheduler resets or
+	 * fails any action still running after that period (default 5 min,
+	 * filters `action_scheduler_timeout_period` / `action_scheduler_failure_period`),
+	 * so a batch sized only by a generous PHP limit (480 s on a real customer
+	 * host, 2,000 products, ~6 min) is stamped "failed" run after run and can
+	 * even be re-claimed while still running. Sizing against the shorter
+	 * clock keeps every batch inside both.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @return int Seconds (≥ 1).
+	 */
+	public function time_budget_seconds(): int {
+		$candidates = array();
+
+		$max_time = (int) ini_get( 'max_execution_time' );
+		if ( $max_time > 0 ) {
+			$candidates[] = $max_time;
+		}
+
+		$as_period = self::AS_DEFAULT_PERIOD;
+		if ( function_exists( 'apply_filters' ) ) {
+			// phpcs:disable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Action Scheduler's own filters, applied here only to READ the periods the queue cleaner will enforce.
+			$timeout = (int) apply_filters( 'action_scheduler_timeout_period', self::AS_DEFAULT_PERIOD );
+			$failure = (int) apply_filters( 'action_scheduler_failure_period', self::AS_DEFAULT_PERIOD );
+			// phpcs:enable WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+			$periods = array_filter( array( $timeout, $failure ), static fn( $v ) => $v > 0 );
+			if ( $periods ) {
+				$as_period = min( $periods );
+			}
+		}
+		$candidates[] = $as_period;
+
+		return max( 1, min( $candidates ) );
+	}
+
+	/**
+	 * Effective upper clamp: `ctxfeed_batch_ceiling` (≤ 0 = unlimited).
+	 *
+	 * @since 8.0.10
+	 *
+	 * @return int
+	 */
+	private function ceiling(): int {
+		$ceiling = self::BATCH_CEILING;
+		if ( function_exists( 'apply_filters' ) ) {
+			/**
+			 * Filter a hard upper limit for the adaptive batch size.
+			 *
+			 * @since 8.0.10
+			 *
+			 * @param int $ceiling Products per batch; 0 or less = no fixed limit.
+			 */
+			$ceiling = (int) apply_filters( 'ctxfeed_batch_ceiling', $ceiling );
+		}
+
+		return $ceiling > 0 ? max( self::BATCH_FLOOR, $ceiling ) : PHP_INT_MAX;
 	}
 
 	/**

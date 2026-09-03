@@ -23,6 +23,7 @@ use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Core\Logger;
 use CTXFeed\V8\Product\ProductQuery;
 use CTXFeed\V8\Utility\FeedLogger;
+use CTXFeed\V8\Utility\Filesystem;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -140,6 +141,13 @@ class FeedScheduler {
 	private $feed_logger;
 
 	/**
+	 * Filesystem helper (legacy temp-file sweep before a run).
+	 *
+	 * @var Filesystem|null
+	 */
+	private $filesystem;
+
+	/**
 	 * Set the per-feed logger instance.
 	 *
 	 * @since 8.0.0
@@ -179,6 +187,18 @@ class FeedScheduler {
 	}
 
 	/**
+	 * Inject the Filesystem helper.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param Filesystem $filesystem Filesystem helper.
+	 * @return void
+	 */
+	public function set_filesystem( Filesystem $filesystem ): void {
+		$this->filesystem = $filesystem;
+	}
+
+	/**
 	 * Set the feed manager instance.
 	 *
 	 * Required for handle_recurring() to load feed config when
@@ -215,6 +235,23 @@ class FeedScheduler {
 	 * @throws \Throwable Re-thrown from the synchronous fast-path so REST callers receive the real generation error.
 	 */
 	public function schedule_generation( string $feed_name, Config $config ) {
+		// Self-overlap guard: a second "generate" for a feed whose run is still
+		// moving must be refused, not started. The site-wide lock below lets the
+		// SAME feed re-acquire it (batches refresh the TTL that way), so without
+		// this check a second click — another tab, another admin, a manual click
+		// during the cron run — starts a parallel batch chain writing into the
+		// same working file (interleaved log, counters jumping backwards).
+		$manager = $this->manager ? $this->manager : new FeedManager();
+		if ( self::is_run_in_progress( $manager->get_progress( $feed_name ) ) ) {
+			Logger::info( "Generation refused — already in progress: {$feed_name}" );
+
+			return new \WP_Error(
+				'ctxfeed_generation_in_progress',
+				__( 'This feed is already generating. Wait for the current run to finish before starting another.', 'woo-feed' ),
+				array( 'status' => 409 ) // HTTP Conflict.
+			);
+		}
+
 		// Acquire generation lock before doing any work. @implements FEED-FRD-3.6.
 		if ( $this->batch_calculator ) {
 			if ( ! $this->batch_calculator->acquire_lock( $feed_name ) ) {
@@ -259,6 +296,71 @@ class FeedScheduler {
 	}
 
 	/**
+	 * Whether a progress record describes a run that is still moving.
+	 *
+	 * "Moving" = status generating / finalizing / scheduled AND the record
+	 * was touched within the generation-lock TTL. A run that died without
+	 * reaching the failure path (PHP killed mid-batch on a host without the
+	 * shutdown guard) stops touching its record, so after LOCK_TTL seconds
+	 * it is treated as dead and a new run may start.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param array    $progress Progress record from FeedManager::get_progress().
+	 * @param int|null $now      Current WP-local timestamp (tests); defaults to the WP-local clock, the same one update_progress() stamps with.
+	 * @return bool
+	 */
+	public static function is_run_in_progress( array $progress, ?int $now = null ): bool {
+		$status = isset( $progress['status'] ) ? (string) $progress['status'] : '';
+		if ( ! in_array( $status, array( 'generating', 'finalizing', 'scheduled' ), true ) ) {
+			return false;
+		}
+
+		$updated_at = isset( $progress['updated_at'] ) ? (string) $progress['updated_at'] : '';
+		if ( '' === $updated_at ) {
+			return false;
+		}
+
+		$touched = strtotime( $updated_at );
+		if ( false === $touched ) {
+			return false;
+		}
+
+		$now = null === $now ? (int) strtotime( current_time( 'mysql' ) ) : $now;
+
+		return ( $now - $touched ) <= BatchCalculator::LOCK_TTL;
+	}
+
+	/**
+	 * Delete V5-era temporary feed files for one feed.
+	 *
+	 * Delegates to Filesystem::purge_legacy_temp_files(); a no-op when no
+	 * Filesystem has been injected (unit contexts). Never lets a sweep
+	 * failure stop the generation.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return int Files deleted.
+	 */
+	public function purge_legacy_temp_files( string $feed_name ): int {
+		if ( ! $this->filesystem ) {
+			return 0;
+		}
+		try {
+			$deleted = $this->filesystem->purge_legacy_temp_files( $feed_name );
+		} catch ( \Throwable $e ) {
+			Logger::warning( 'Legacy temp-file sweep failed (non-fatal): ' . $e->getMessage() );
+			return 0;
+		}
+		if ( $deleted > 0 && $this->feed_logger ) {
+			$this->feed_logger->info( $feed_name, sprintf( 'Removed %d leftover temporary file(s) from the previous feed engine.', $deleted ) );
+		}
+
+		return $deleted;
+	}
+
+	/**
 	 * Resolve the product set, then either run the synchronous fast-path or
 	 * schedule the async batches.
 	 *
@@ -284,6 +386,10 @@ class FeedScheduler {
 		$query->set_feed_name( $feed_name );
 		// Drop any stale snapshot from a previous run before resolving.
 		$query->clear_snapshot( $feed_name );
+
+		// Sweep the previous engine's temp files for this feed before writing
+		// anything — a leftover V5 body file can be gigabytes (#68942).
+		$this->purge_legacy_temp_files( $feed_name );
 		$total = $query->get_total_count( $config );
 
 		// Auto-calculate initial batch size based on server limits. @implements FEED-FRD-11.1.
@@ -320,7 +426,9 @@ class FeedScheduler {
 			) 
 		);
 
-		// Initialize per-feed log file.
+		// Initialize per-feed log file. The lines that follow are the SAME
+		// story the Manage Feeds console tells (same wording, same order), so
+		// the downloadable log and the live console never disagree.
 		if ( $this->feed_logger ) {
 			$this->feed_logger->init(
 				$feed_name,
@@ -329,8 +437,16 @@ class FeedScheduler {
 					'batch_size'     => $batch_size,
 					'batches'        => $batches_total,
 					'env_profile'    => $env_profile,
-				) 
+				)
 			);
+			$this->feed_logger->info( $feed_name, 'Querying products…' );
+			$this->feed_logger->info( $feed_name, sprintf( 'Found %s', FeedLogger::products( $total ) ) );
+			$this->feed_logger->info( $feed_name, 'Calculating batches…' );
+			$this->feed_logger->info(
+				$feed_name,
+				sprintf( '%s of up to %s scheduled', FeedLogger::batches( $batches_total ), FeedLogger::products( $batch_size ) )
+			);
+			$this->feed_logger->flush( $feed_name );
 		}
 
 		// Set initial enriched progress. @implements FEED-FRD-10.1.
@@ -338,13 +454,20 @@ class FeedScheduler {
 		$manager->update_progress(
 			$feed_name,
 			array(
-				'current'       => 0,
-				'total'         => $total,
-				'status'        => 'generating',
-				'batch_size'    => $batch_size,
-				'batches_done'  => 0,
-				'batches_total' => $batches_total,
-			) 
+				'current'             => 0,
+				'total'               => $total,
+				'status'              => 'generating',
+				'batch_size'          => $batch_size,
+				'batches_done'        => 0,
+				'batches_total'       => $batches_total,
+				// Zeroed here because update_progress() MERGES with the
+				// previous run's record — without the reset the live log
+				// console would carry last run's skip count forward.
+				'skipped_total'       => 0,
+				'last_batch_written'  => 0,
+				'last_batch_skipped'  => 0,
+				'last_batch_excluded' => 0,
+			)
 		);
 
 		// Synchronous fast-path: if all products fit in one batch, process
@@ -701,8 +824,105 @@ class FeedScheduler {
 			return 'cancelled';
 		}
 
+		// Idempotent: a recurring action already queued with THIS interval is
+		// kept as it is. Re-creating it would re-anchor the next run at "now"
+		// (every save or completion pushing the schedule back) and, when the
+		// sync happens INSIDE the running recurring action (small feeds that
+		// generate synchronously), Action Scheduler adds its own next instance
+		// on completion too — the duplicate recurring actions seen in the wild.
+		if ( $this->existing_recurring_interval( $feed_name ) === $interval ) {
+			return 'kept';
+		}
+
 		$this->schedule_recurring( $feed_name, $interval );
 		return 'scheduled';
+	}
+
+	/**
+	 * Keep a feed's recurring schedule after a generation run.
+	 *
+	 * Called on completion (FeedManager::promote_feed()). Unlike a save, a
+	 * completed run must NEVER move the schedule: the interval is anchored at
+	 * the run's START (Action Scheduler queues the next instance itself when
+	 * the recurring action finishes), so a 1-hour feed runs every hour
+	 * regardless of how long a run takes. All this does is (a) cancel when
+	 * auto-update is off and (b) create the schedule when none exists yet —
+	 * the first generation of a new feed, or a schedule lost on a site
+	 * without the upgrade reconcile.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @param array  $feed_data Stored wf_feed_* row.
+	 * @return string 'cancelled' | 'kept' | 'scheduled'.
+	 */
+	public function ensure_recurring_schedule( string $feed_name, array $feed_data ): string {
+		$status = isset( $feed_data['status'] ) ? (int) $feed_data['status'] : 0;
+		if ( 1 !== $status ) {
+			$this->cancel_recurring( $feed_name );
+			return 'cancelled';
+		}
+
+		$interval = $this->resolve_interval( $feed_data );
+		if ( $interval <= 0 ) {
+			$this->cancel_recurring( $feed_name );
+			return 'cancelled';
+		}
+
+		// Pending OR running right now (as_next_scheduled_action() returns
+		// true for an in-progress action) — both mean "a schedule exists".
+		if ( function_exists( 'as_next_scheduled_action' )
+			&& false !== as_next_scheduled_action( self::RECURRING_ACTION, array( 'feed_name' => $feed_name ), self::GROUP )
+		) {
+			return 'kept';
+		}
+
+		$this->schedule_recurring( $feed_name, $interval );
+		return 'scheduled';
+	}
+
+	/**
+	 * Interval (seconds) of the feed's pending recurring action, or null.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return int|null
+	 */
+	private function existing_recurring_interval( string $feed_name ): ?int {
+		if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
+			return null;
+		}
+
+		try {
+			$actions = as_get_scheduled_actions(
+				array(
+					'hook'     => self::RECURRING_ACTION,
+					'args'     => array( 'feed_name' => $feed_name ),
+					'group'    => self::GROUP,
+					'status'   => 'pending',
+					'per_page' => 1,
+				)
+			);
+		} catch ( \Throwable $e ) {
+			return null;
+		}
+
+		$action = is_array( $actions ) ? reset( $actions ) : false;
+		if ( ! is_object( $action ) || ! method_exists( $action, 'get_schedule' ) ) {
+			return null;
+		}
+
+		$schedule = $action->get_schedule();
+		if ( is_object( $schedule ) && method_exists( $schedule, 'get_recurrence' ) ) {
+			$recurrence = $schedule->get_recurrence();
+			return is_numeric( $recurrence ) ? (int) $recurrence : null;
+		}
+		if ( is_object( $schedule ) && method_exists( $schedule, 'interval_in_seconds' ) ) {
+			return (int) $schedule->interval_in_seconds();
+		}
+
+		return null;
 	}
 
 	/**
@@ -753,22 +973,34 @@ class FeedScheduler {
 			return (int) $rules['cron'] * HOUR_IN_SECONDS;
 		}
 
-		// 2. Global V5-compat option.
-		$global = (int) get_option( 'wf_schedule', 0 );
-		if ( $global > 0 ) {
-			return $global;
-		}
-
+		// 2. Nothing set on the feed → every 24 hours (owner decision
+		// 2026-09-02; the V5 global `wf_schedule` option is no longer read).
 		/**
-		 * Filter the default auto-update interval (seconds) when nothing
-		 * else is configured. Defaults to HOUR_IN_SECONDS — same fallback
-		 * V5's CronHelper::get_feed_cron_interval() used.
+		 * Filter the default auto-update interval for feeds without one.
 		 *
 		 * @since 8.0.0
 		 *
-		 * @param int $default_interval Default interval in seconds.
+		 * @param int $seconds Default interval in seconds (24h).
 		 */
-		return (int) apply_filters( 'ctxfeed_default_update_interval', HOUR_IN_SECONDS );
+		return (int) apply_filters( 'ctxfeed_default_update_interval', defined( 'DAY_IN_SECONDS' ) ? DAY_IN_SECONDS : 86400 );
+	}
+
+	/**
+	 * The interval a feed WILL run at, in whole hours — for display.
+	 *
+	 * Same precedence as resolve_interval(), so the Manage Feeds table and
+	 * the scheduler can never disagree. The caller decides whether to show it
+	 * at all (auto-update off → "Manual").
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param array $feed_data Unserialised `wf_feed_{slug}` option.
+	 * @return int Hours (minimum 1).
+	 */
+	public static function effective_interval_hours( array $feed_data ): int {
+		$seconds = ( new self() )->resolve_interval( $feed_data );
+
+		return max( 1, (int) round( $seconds / ( defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600 ) ) );
 	}
 
 	/**
@@ -935,7 +1167,7 @@ class FeedScheduler {
 
 		// Guard 1: Skip if THIS feed is already generating (self-overlap).
 		$progress = $manager->get_progress( $feed_name );
-		if ( in_array( $progress['status'], array( 'generating', 'finalizing' ), true ) ) {
+		if ( self::is_run_in_progress( $progress ) ) {
 			Logger::info( "Skipping recurring generation — already in progress: {$feed_name}" );
 			return;
 		}

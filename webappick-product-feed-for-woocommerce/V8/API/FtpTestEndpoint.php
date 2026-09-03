@@ -154,6 +154,23 @@ class FtpTestEndpoint extends RestController {
 			return $this->error( __( 'The PHP ssh2 extension is not enabled on this server. Ask your host to enable it or use FTP.', 'woo-feed' ), 400 );
 		}
 
+		// Reachability first, with a short timeout: an unreachable host or a
+		// blocked outgoing port used to sit inside ssh2_connect()/ftp_connect()
+		// for up to 90 s and then surface as a generic "check the credentials".
+		$unreachable = $this->reach_host( $host, $port );
+		if ( null !== $unreachable ) {
+			return $this->error(
+				sprintf(
+					/* translators: 1: host, 2: port, 3: socket error detail. */
+					__( 'Could not reach %1$s on port %2$d — %3$s. Check the host and port, and that this server may open outgoing connections on that port.', 'woo-feed' ),
+					$host,
+					$port,
+					$unreachable
+				),
+				502
+			);
+		}
+
 		$local_file = $this->create_probe_file();
 		if ( '' === $local_file ) {
 			return $this->error( __( 'Could not create a temporary test file on this server.', 'woo-feed' ), 500 );
@@ -161,6 +178,18 @@ class FtpTestEndpoint extends RestController {
 
 		$probe_name = 'ctxfeed-connection-test-' . uniqid() . '.txt';
 
+		// Collect the PHP warnings the ftp_*/ssh2_* functions emit on failure
+		// ("Authentication failed…", "Connection refused", …): they are the
+		// actual reason and belong in the message shown to the admin.
+		$this->warnings = array();
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Scoped to the probe below and restored in finally; the only way to read the reason ftp_*()/ssh2_*() report.
+		set_error_handler(
+			function ( $errno, $errstr ) {
+				$this->warnings[] = (string) $errstr;
+				return true;
+			},
+			E_WARNING | E_NOTICE | E_USER_WARNING | E_USER_NOTICE
+		);
 		try {
 			if ( 'ftp' === $protocol ) {
 				$result = $this->run_ftp_probe( $host, $port, $username, $password, $passive, $local_file, $path, $probe_name );
@@ -178,6 +207,7 @@ class FtpTestEndpoint extends RestController {
 				),
 			);
 		} finally {
+			restore_error_handler();
 			wp_delete_file( $local_file );
 		}
 
@@ -186,6 +216,14 @@ class FtpTestEndpoint extends RestController {
 				? (string) $result['message']
 				: __( 'The connection test failed.', 'woo-feed' );
 
+			$detail = $this->last_warning();
+			if ( '' !== $detail && false === strpos( $message, $detail ) ) {
+				$message .= ' ' . sprintf(
+					/* translators: %s: the PHP warning text reported by the ftp/ssh2 function that failed. */
+					__( 'Server said: %s', 'woo-feed' ),
+					$detail
+				);
+			}
 			return $this->error( $this->scrub( $message, $password ), 502 );
 		}
 
@@ -201,6 +239,59 @@ class FtpTestEndpoint extends RestController {
 		}
 
 		return $this->success( array( 'message' => $message ) );
+	}
+
+	/**
+	 * PHP warnings captured while a probe ran (see test_connection()).
+	 *
+	 * @var string[]
+	 */
+	private $warnings = array();
+
+	/**
+	 * The most recent captured warning, without the "function(): " prefix.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @return string
+	 */
+	private function last_warning(): string {
+		if ( empty( $this->warnings ) ) {
+			return '';
+		}
+		$last = (string) end( $this->warnings );
+
+		return trim( (string) preg_replace( '/^[a-z0-9_]+\(\):\s*/i', '', $last ) );
+	}
+
+	/**
+	 * TCP reachability check with a 10 s timeout.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $host Host name or IP.
+	 * @param int    $port Port.
+	 * @return string|null Socket error text when unreachable, null when reachable.
+	 */
+	protected function reach_host( string $host, int $port ): ?string {
+		$errno  = 0;
+		$errstr = '';
+		// A failed connect also raises a PHP warning; swallow it here (the
+		// $errstr carries the same text) instead of silencing with "@".
+		// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_set_error_handler -- Scoped to the one socket call below and restored right after.
+		set_error_handler( static fn() => true, E_WARNING | E_NOTICE );
+		try {
+			$socket = stream_socket_client( 'tcp://' . $host . ':' . $port, $errno, $errstr, 10 );
+		} finally {
+			restore_error_handler();
+		}
+		if ( false === $socket ) {
+			$errstr = trim( (string) $errstr );
+			return '' !== $errstr ? $errstr : __( 'connection timed out', 'woo-feed' );
+		}
+		fclose( $socket ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closing the probe socket.
+
+		return null;
 	}
 
 	/**
@@ -317,8 +408,22 @@ class FtpTestEndpoint extends RestController {
 	 * @return array { ok: bool, message?: string, warning?: string }
 	 */
 	protected function run_sftp_probe( string $host, int $port, string $username, string $password, string $local_file, string $path, string $probe_name ): array {
-		$sftp = new SFTPConnection( $host, $port );
-
+		try {
+			$sftp = new SFTPConnection( $host, $port );
+		} catch ( \Throwable $e ) {
+			// Reached the port but no SSH handshake: wrong service on that
+			// port (an HTTPS port, a plain FTP server) or a rejected client.
+			return array(
+				'ok'      => false,
+				'message' => sprintf(
+					/* translators: 1: host, 2: port, 3: detail from the connection attempt. */
+					__( 'Reached %1$s:%2$d but could not start an SSH session — is that really the SFTP port? %3$s', 'woo-feed' ),
+					$host,
+					$port,
+					$e->getMessage()
+				),
+			);
+		}
 		try {
 			// NB: SFTPConnection::login()'s failure exception includes the
 			// credentials — replace it with a safe message here (and
@@ -329,14 +434,13 @@ class FtpTestEndpoint extends RestController {
 				'ok'      => false,
 				'message' => sprintf(
 					/* translators: 1: host, 2: port, 3: username. */
-					__( 'Could not sign in to %1$s:%2$d as %3$s — check the host, port and credentials.', 'woo-feed' ),
+					__( 'Connected to %1$s:%2$d but the sign-in as %3$s was rejected — check the username and password (or key passphrase).', 'woo-feed' ),
 					$host,
 					$port,
 					$username
 				),
 			);
 		}
-
 		try {
 			$sftp->upload_file( $local_file, $probe_name, $path );
 		} catch ( \Throwable $e ) {

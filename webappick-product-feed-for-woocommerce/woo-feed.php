@@ -9,8 +9,8 @@
  * @wordpress-plugin
  * Plugin Name:       CTX Feed
  * Plugin URI:        https://webappick.com/
- * Description:       Easily generate woocommerce product feed for any marketing channel like Google Shopping(Merchant), Facebook Remarketing, Bing, eBay & more. Support 100+ Merchants.
- * Version:           8.0.9
+ * Description:       Easily generate woocommerce product feed for any marketing channel like Google, Meta, Tiktok, X, SnapChat, ChatGPT, Perplexity & more. Support 220+ Channels.
+ * Version:           8.0.10
  * Author:            WebAppick
  * Author URI:        https://webappick.com/
  * License:           GPL v2
@@ -114,24 +114,6 @@ if ( ! defined( 'CTXFEED_V8_ACTIVE' ) ) {
 	// V8 is the sole engine — the V5/V8 engine switch has been removed, so this
 	// always resolves to true and the V8 engine always boots.
 	define( 'CTXFEED_V8_ACTIVE', true );
-}
-
-/**
- * Development Mode — enables all Pro/Extension features via FeatureGate.
- *
- * Ships as false: FeatureGate::has() defaults to false for every feature, so
- * Pro-gated UI and endpoints stay locked unless the Pro plugin unlocks them.
- *
- * During development, override it WITHOUT editing this file by defining it
- * ahead of the plugin in wp-config.php:
- *   define( 'CTXFEED_DEV_MODE', true );
- * That makes every feature default to true so Pro-gated UI and endpoints work
- * without the Pro plugin installed. Must never be true in production.
- *
- * @since 8.0.0
- */
-if ( ! defined( 'CTXFEED_DEV_MODE' ) ) {
-	define( 'CTXFEED_DEV_MODE', false );
 }
 
 /**
@@ -303,30 +285,6 @@ if ( CTXFEED_V8_ACTIVE && file_exists( __DIR__ . '/V8/Bootstrap.php' ) ) {
 			25
 		);
 	}
-
-	// Two-step upgrade window guard: an OLD Pro (< 8.0.0) running beside this
-	// V8 Free bundles its own V5 engine, so both engines would hook feed
-	// generation and register the admin UI at once. We can't stop the old Pro
-	// from loading, but we warn the admin to finish the update. The check runs
-	// inside the notice callback so WOO_FEED_PRO_VERSION (defined by Pro at
-	// include time) is resolved by the time admin_notices fires.
-	add_action(
-		'admin_notices',
-		static function () {
-			if ( ! defined( 'WOO_FEED_PRO_VERSION' ) || version_compare( WOO_FEED_PRO_VERSION, '8.0.0', '>=' ) ) {
-				return;
-			}
-			echo '<div class="notice notice-warning"><p>';
-			echo esc_html(
-				sprintf(
-					/* translators: %s: the outdated CTX Feed Pro version. */
-					__( 'CTX Feed was updated to 8.0, but CTX Feed Pro (%s) is still on an older version. Please update CTX Feed Pro to 8.0 or higher — running the two together can duplicate menus and feed jobs until Pro is updated.', 'woo-feed' ),
-					WOO_FEED_PRO_VERSION
-				)
-			);
-			echo '</p></div>';
-		}
-	);
 }
 
 // End of file woo-feed.php.

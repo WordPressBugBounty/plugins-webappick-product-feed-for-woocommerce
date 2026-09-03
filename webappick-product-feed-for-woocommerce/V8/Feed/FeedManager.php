@@ -28,6 +28,19 @@ if ( ! defined( 'ABSPATH' ) ) {
 class FeedManager {
 
 	/**
+	 * Per-batch counters persisted alongside the core progress fields, read
+	 * by the Manage Feeds live generation console.
+	 *
+	 * @since 8.0.10
+	 */
+	const BATCH_COUNTERS = array(
+		'last_batch_written',
+		'last_batch_skipped',
+		'last_batch_excluded',
+		'skipped_total',
+	);
+
+	/**
 	 * Get feed configuration by name.
 	 *
 	 * @since 8.0.0
@@ -165,10 +178,12 @@ class FeedManager {
 
 			$saved = update_option( 'wf_feed_' . $feed_id, $existing, false );
 
-			// Keep the recurring (auto-update) schedule in sync with the
+			// Keep the recurring (auto-update) schedule consistent with the
 			// resolved status: registered on first-gen activation, cancelled
-			// when regenerating a feed whose auto-update is off.
-			$this->sync_recurring_schedule( $feed_id, $existing );
+			// when regenerating a feed whose auto-update is off — but NEVER
+			// re-anchored: the interval counts from the run's start, and an
+			// existing schedule is left exactly where it is.
+			$this->sync_recurring_schedule( $feed_id, $existing, true );
 
 			return $saved;
 		}
@@ -192,7 +207,7 @@ class FeedManager {
 
 		$saved = update_option( 'wf_feed_' . $feed_id, $feed_data, false );
 
-		$this->sync_recurring_schedule( $feed_id, $feed_data );
+		$this->sync_recurring_schedule( $feed_id, $feed_data, true );
 
 		return $saved;
 	}
@@ -213,8 +228,9 @@ class FeedManager {
 	 * @param array  $feed_data Stored feed data array.
 	 *
 	 * @return void
+	 * @param bool   $after_run True after a completed run: keep an existing schedule (never re-anchor), create only when missing, cancel when auto-update is off.
 	 */
-	private function sync_recurring_schedule( string $feed_id, array $feed_data ): void {
+	private function sync_recurring_schedule( string $feed_id, array $feed_data, bool $after_run = false ): void {
 		if ( ! defined( 'CTXFEED_V8_ACTIVE' ) || ! CTXFEED_V8_ACTIVE ) {
 			return;
 		}
@@ -226,7 +242,11 @@ class FeedManager {
 			}
 			/** @var FeedScheduler $scheduler */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Inline @var type annotation for IDE/static analysis, not a documentation block.
 			$scheduler = $container->resolve( 'feed.scheduler' );
-			$scheduler->sync_recurring_schedule( $feed_id, $feed_data );
+			if ( $after_run && method_exists( $scheduler, 'ensure_recurring_schedule' ) ) {
+				$scheduler->ensure_recurring_schedule( $feed_id, $feed_data );
+			} else {
+				$scheduler->sync_recurring_schedule( $feed_id, $feed_data );
+			}
 		} catch ( \Throwable $e ) {
 			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Last-resort diagnostics in a catch-all guard; the container/Logger may be the very thing that failed, and failing silently would hide schedule-sync breakage.
 			error_log( '[CTXFeed V8] FeedManager::sync_recurring_schedule failed: ' . $e->getMessage() );
@@ -279,6 +299,13 @@ class FeedManager {
 			'avg_batch_time' => isset( $data['avg_batch_time'] ) ? (float) $data['avg_batch_time'] : $existing['avg_batch_time'],
 		);
 
+		// Per-batch counters for the live generation console. These were
+		// silently dropped by the fixed key list above, so the console always
+		// read "0 products" — they now persist like every other field.
+		foreach ( self::BATCH_COUNTERS as $key ) {
+			$progress[ $key ] = isset( $data[ $key ] ) ? (int) $data[ $key ] : (int) ( $existing[ $key ] ?? 0 );
+		}
+
 		// Compute percent.
 		if ( $progress['total'] > 0 ) {
 			$progress['percent'] = (int) round( ( $progress['current'] / $progress['total'] ) * 100 );
@@ -313,7 +340,7 @@ class FeedManager {
 				'updated_at'     => '',
 				'eta_seconds'    => 0,
 				'avg_batch_time' => 0.0,
-			);
+			) + array_fill_keys( self::BATCH_COUNTERS, 0 );
 		}
 
 		// Backfill any missing keys for backwards compatibility.
@@ -330,8 +357,8 @@ class FeedManager {
 				'updated_at'     => '',
 				'eta_seconds'    => 0,
 				'avg_batch_time' => 0.0,
-			),
-			$progress 
+			) + array_fill_keys( self::BATCH_COUNTERS, 0 ),
+			$progress
 		);
 	}
 }

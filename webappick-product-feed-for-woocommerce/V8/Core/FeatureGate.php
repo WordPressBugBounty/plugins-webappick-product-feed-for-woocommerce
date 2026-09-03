@@ -32,8 +32,7 @@ class FeatureGate {
 	 * Pro features (7): attribute_mapping, dynamic_attribute, product_filter,
 	 * conditional_transform, custom_template_2, compat_adapters, ftp_export.
 	 *
-	 * AI Extension features (5): ai_store_analysis, ai_auto_config,
-	 * ai_category_suggest, ai_content_optimize, ai_routing.
+	 * AI: extension_ai (the AI assistant / MCP connect page).
 	 *
 	 * Meta flags (2): pro, extension_ai.
 	 *
@@ -45,6 +44,10 @@ class FeatureGate {
 		'attribute_mapping',
 		'dynamic_attribute',
 		'product_filter',
+		// Advanced-filters tab rule engines (Filter\CustomFilter /
+		// Filter\ProductTypeFilter) — checked in Free, unlocked by Pro.
+		'custom_filters',
+		'product_type_filter',
 		'conditional_transform',
 		// Output-formatting command execution (Config-tab command box +
 		// Custom Template 2 formatters) — Pro-only. XFRM-FRD-9.4.
@@ -61,12 +64,15 @@ class FeatureGate {
 		// The `acf_fields_` prefix + value resolution stay in Free (existing
 		// feeds keep resolving); only listing ACF fields to map is Pro. PROD-FRD-10.1.
 		'acf_attributes',
+		// Dashboard Pro surfaces (analytics range + Pro-only widgets) —
+		// checked by the Dashboard endpoints, unlocked by Pro.
+		'dashboard_analytics',
+		'dashboard_pro_widgets',
+		// AI assistant page (the MCP connect screen). The native AI module's
+		// five flow gates (ai_store_analysis/auto_config/category_suggest/
+		// content_optimize/routing) were removed with the module — AI ships
+		// via MCP + Abilities (owner decision 2026-09-02).
 		'extension_ai',
-		'ai_store_analysis',
-		'ai_auto_config',
-		'ai_category_suggest',
-		'ai_content_optimize',
-		'ai_routing',
 		// WordPress Abilities API / MCP exposure (Pro). `mcp_abilities` gates
 		// the read abilities (unlocked for licensed Pro); `mcp_abilities_write`
 		// gates writes and is a kill-switch left OFF even on Pro until the owner
@@ -78,10 +84,13 @@ class FeatureGate {
 	/**
 	 * Check if a feature is enabled.
 	 *
-	 * Default is `false` for all features unless CTXFEED_DEV_MODE is defined
-	 * and true, in which case all features default to `true` (useful during
-	 * development without the Pro plugin). Pro plugin enables features by
-	 * hooking `__return_true` to `ctxfeed_feature_{$feature}`.
+	 * Default is `false` for every feature — the ONLY way to enable one is
+	 * the `ctxfeed_feature_{$feature}` filter (the Pro plugin hooks
+	 * `__return_true` for its licensed feature set). There is deliberately
+	 * no constant-based override: a wp-config constant would be a
+	 * production unlock anyone could copy from a blog post. Development
+	 * setups unlock the same way Pro does — via the filters (see
+	 * 04-testing/bootstrap-wp.php).
 	 *
 	 * @since 8.0.0
 	 * @implements CORE-FRD-3.1
@@ -92,9 +101,7 @@ class FeatureGate {
 	 * @return bool True if the feature is enabled, false otherwise.
 	 */
 	public static function has( string $feature ): bool {
-		$default = defined( 'CTXFEED_DEV_MODE' ) && CTXFEED_DEV_MODE;
-
-		return (bool) apply_filters( "ctxfeed_feature_{$feature}", $default );
+		return (bool) apply_filters( "ctxfeed_feature_{$feature}", false );
 	}
 
 	/**

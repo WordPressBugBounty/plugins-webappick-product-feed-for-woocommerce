@@ -100,7 +100,9 @@ class FTPConnection {
 	public function connect( $server, $ftp_user, $ftp_password, $is_passive = false, $ftp_port = 21 ) {
 
 		// *** Set up basic connection
-		$this->connection_id = ftp_connect( $server, $ftp_port );
+		// 20 s connect timeout (PHP's default is 90 s): an unreachable host
+		// must fail fast, for the connection test and for the upload alike.
+		$this->connection_id = ftp_connect( $server, $ftp_port, 20 );
 		if ( ! $this->connection_id ) {
 			$this->log_message( esc_html__( 'FTP connection has failed!', 'woo-feed' ) );
 			/* translators: 1: ftp username, 2: server host, 3: server port */

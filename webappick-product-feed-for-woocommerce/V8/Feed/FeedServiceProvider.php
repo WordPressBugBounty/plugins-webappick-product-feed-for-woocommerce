@@ -19,6 +19,7 @@
 namespace CTXFeed\V8\Feed;
 
 use CTXFeed\V8\Core\Container;
+use CTXFeed\V8\Core\Logger;
 use CTXFeed\V8\Core\ServiceProvider;
 use CTXFeed\V8\Utility\FeedLogger;
 
@@ -216,9 +217,65 @@ class FeedServiceProvider extends ServiceProvider {
 		$scheduler->set_batch_calculator( $batch_calculator );
 		$scheduler->set_manager( $manager );
 		$scheduler->set_feed_logger( $feed_logger );
+		$scheduler->set_filesystem( $filesystem );
 		$scheduler->boot();
 
 		$this->register_recurring_backfill( $scheduler, $manager );
+		$this->register_legacy_temp_purge( $filesystem );
+	}
+
+	/**
+	 * One-time sweep of the previous engine's temporary feed files.
+	 *
+	 * V5 left `wf_store_*_info_*` header/body/footer files beside the live
+	 * feeds, and its body file could grow by a full feed per run (#68942).
+	 * V8 never reads them. Run a single background sweep after the upgrade,
+	 * scheduled the same deferred way as the recurring-schedule backfill so
+	 * Action Scheduler's store is initialised and the boot request stays fast.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param \CTXFeed\V8\Utility\Filesystem $filesystem Filesystem helper.
+	 * @return void
+	 */
+	private function register_legacy_temp_purge( $filesystem ): void {
+		$flag_option = 'ctxfeed_legacy_temp_purged_v1';
+		$action      = 'ctxfeed_v8_purge_legacy_temp_files';
+
+		add_action(
+			$action,
+			static function () use ( $filesystem, $flag_option ) {
+				$deleted = $filesystem->purge_legacy_temp_files();
+				if ( $deleted > 0 ) {
+					Logger::info( "Removed {$deleted} leftover V5 temporary feed file(s)." );
+				}
+				update_option( $flag_option, time(), false );
+			},
+			10,
+			0
+		);
+
+		if ( get_option( $flag_option ) ) {
+			return; // Already swept.
+		}
+
+		$ctx_schedule_purge = static function () use ( $action ) {
+			if ( ! function_exists( 'as_has_scheduled_action' )
+				|| ! function_exists( 'as_schedule_single_action' )
+			) {
+				return;
+			}
+			if ( as_has_scheduled_action( $action, array(), 'ctxfeed' ) ) {
+				return;
+			}
+			as_schedule_single_action( time() + 60, $action, array(), 'ctxfeed' );
+		};
+
+		if ( did_action( 'init' ) ) {
+			$ctx_schedule_purge();
+		} else {
+			add_action( 'init', $ctx_schedule_purge, 20 );
+		}
 	}
 
 	/**
@@ -267,19 +324,35 @@ class FeedServiceProvider extends ServiceProvider {
 			return; // Already synced.
 		}
 
-		if ( ! function_exists( 'as_has_scheduled_action' )
-			|| ! function_exists( 'as_schedule_single_action' )
-		) {
-			return; // Action Scheduler not available — skip silently.
-		}
+		// Defer the as_*() calls to `init`: this method runs while the
+		// plugin boots on `plugins_loaded`, where Action Scheduler's data
+		// store is not initialised yet — calling as_has_scheduled_action()
+		// there logs "was called before the Action Scheduler data store was
+		// initialized" AND triggers a just-in-time textdomain load for the
+		// `woocommerce` domain (the "_load_textdomain_just_in_time called
+		// incorrectly" notice reported on wp.org). AS initialises on `init`
+		// priority 1; priority 20 is comfortably after it.
+		$ctx_schedule_sweep = static function () use ( $action ) {
+			if ( ! function_exists( 'as_has_scheduled_action' )
+				|| ! function_exists( 'as_schedule_single_action' )
+			) {
+				return; // Action Scheduler not available — skip silently.
+			}
 
-		// Guard against double-scheduling on rapid back-to-back requests.
-		if ( as_has_scheduled_action( $action, array(), 'ctxfeed' ) ) {
-			return;
-		}
+			// Guard against double-scheduling on rapid back-to-back requests.
+			if ( as_has_scheduled_action( $action, array(), 'ctxfeed' ) ) {
+				return;
+			}
 
-		// 30-second delay so the boot request returns quickly. AS worker
-		// will pick it up on the next cron tick.
-		as_schedule_single_action( time() + 30, $action, array(), 'ctxfeed' );
+			// 30-second delay so the boot request returns quickly. AS worker
+			// will pick it up on the next cron tick.
+			as_schedule_single_action( time() + 30, $action, array(), 'ctxfeed' );
+		};
+
+		if ( did_action( 'init' ) ) {
+			$ctx_schedule_sweep();
+		} else {
+			add_action( 'init', $ctx_schedule_sweep, 20 );
+		}
 	}
 }

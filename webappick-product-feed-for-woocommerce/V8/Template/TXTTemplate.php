@@ -1,6 +1,14 @@
 <?php
 /**
- * TXTTemplate — Renders products as tab-delimited text.
+ * TXTTemplate — Renders products as delimited text (tab by default).
+ *
+ * V5 parity (BUG-0078): a TXT feed honours the delimiter and enclosure the
+ * merchant configured — `delimiter` 'tab' | ',' | ';' | '|' | … and
+ * `enclosure` 'double' | 'single'. When an enclosure is set every field is
+ * wrapped and an enclosure character inside a value is doubled (RFC 4180),
+ * so a title like 22 mm (7/8") never breaks a strict TSV parser. Without an
+ * enclosure the output stays raw (no wrapping, no doubling). Missing keys
+ * keep the historical V8 output: tab-delimited, unenclosed.
  *
  * Used for channels that require plain text format with tab separators.
  * Array values are joined with comma before tab-delimiting.
@@ -45,7 +53,18 @@ class TXTTemplate implements TemplateInterface {
 	public function render_header( Config $config ): string {
 		$attributes = $config->get( 'attributes', array() );
 
-		return implode( "\t", array_keys( $attributes ) );
+		$delimiter = $this->effective_delimiter( $config );
+		$enclosure = $this->effective_enclosure( $config );
+
+		return implode(
+			$delimiter,
+			array_map(
+				function ( $name ) use ( $enclosure ) {
+					return $this->enclose( (string) $name, $enclosure );
+				},
+				array_keys( $attributes )
+			)
+		);
 	}
 
 	/**
@@ -110,7 +129,18 @@ class TXTTemplate implements TemplateInterface {
 			array_values( $product_data )
 		);
 
-		$txt = implode( "\t", $values );
+		$delimiter = $this->effective_delimiter( $config );
+		$enclosure = $this->effective_enclosure( $config );
+		if ( '' !== $enclosure ) {
+			$values = array_map(
+				function ( $value ) use ( $enclosure ) {
+					return $this->enclose( $value, $enclosure );
+				},
+				$values
+			);
+		}
+
+		$txt = implode( $delimiter, $values );
 
 		/**
 		 * Filter a single TXT product row.
@@ -130,6 +160,79 @@ class TXTTemplate implements TemplateInterface {
 		}
 
 		return $txt;
+	}
+
+	/**
+	 * Delimiter for this TXT feed.
+	 *
+	 * Reads the RAW rule (not Config::get_delimiter(), whose ',' default is
+	 * the CSV default): a TXT feed with no stored delimiter stays tab-delimited.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param Config $config Feed configuration.
+	 * @return string One-character delimiter.
+	 */
+	private function effective_delimiter( Config $config ): string {
+		$raw = strtolower( trim( (string) $config->get( 'delimiter', '' ) ) );
+		switch ( $raw ) {
+			case '':
+			case 'tab':
+			case "\t":
+				return "\t";
+			case 'comma':
+				return ',';
+			case 'semicolon':
+				return ';';
+			case 'pipe':
+				return '|';
+			case 'space':
+				return ' ';
+			default:
+				return 1 === strlen( $raw ) ? $raw : "\t";
+		}
+	}
+
+	/**
+	 * Enclosure for this TXT feed ('' = none, the historical V8 output).
+	 *
+	 * Reads the RAW rule (not Config::get_enclosure(), whose 'double' default
+	 * is the CSV default): only an explicitly configured enclosure wraps.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param Config $config Feed configuration.
+	 * @return string Enclosure character or ''.
+	 */
+	private function effective_enclosure( Config $config ): string {
+		$raw = strtolower( trim( (string) $config->get( 'enclosure', '' ) ) );
+		switch ( $raw ) {
+			case 'double':
+			case '"':
+				return '"';
+			case 'single':
+			case "'":
+				return "'";
+			default:
+				return '';
+		}
+	}
+
+	/**
+	 * Wrap a value in the enclosure, doubling any enclosure char inside it.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $value     Field value.
+	 * @param string $enclosure Enclosure character or '' for none.
+	 * @return string
+	 */
+	private function enclose( string $value, string $enclosure ): string {
+		if ( '' === $enclosure ) {
+			return $value;
+		}
+
+		return $enclosure . str_replace( $enclosure, $enclosure . $enclosure, $value ) . $enclosure;
 	}
 
 	/**

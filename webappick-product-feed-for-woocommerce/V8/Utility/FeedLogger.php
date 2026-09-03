@@ -61,22 +61,6 @@ class FeedLogger {
 	private $buffer = array();
 
 	/**
-	 * Log file size limit (5 MB).
-	 *
-	 * @since 8.0.0
-	 * @var int
-	 */
-	const SIZE_LIMIT = 5 * 1024 * 1024;
-
-	/**
-	 * Maximum rotation files (current + 9 archived).
-	 *
-	 * @since 8.0.0
-	 * @var int
-	 */
-	const MAX_ROTATIONS = 9;
-
-	/**
 	 * Constructor.
 	 *
 	 * Checks the `enable_error_debugging` setting from `woo_feed_settings`.
@@ -114,10 +98,9 @@ class FeedLogger {
 
 		$file = $this->get_log_path( $feed_slug );
 
-		// Rotate if existing file exceeds size limit.
-		if ( file_exists( $file ) && filesize( $file ) > self::SIZE_LIMIT ) {
-			$this->rotate( $feed_slug );
-		}
+		// One log file per feed: each run starts the file over below, and
+		// rotated/dated copies left by older builds are removed.
+		$this->delete_legacy_copies( $feed_slug );
 
 		// Truncate and write header.
 		$header  = '===== Feed Generation Log =====' . PHP_EOL;
@@ -287,12 +270,16 @@ class FeedLogger {
 			return;
 		}
 
-		$this->info( $feed_slug, 'Feed generation completed.' );
+		// Closing line — identical to the live console's last line.
+		if ( isset( $summary['total_products'] ) ) {
+			$this->info( $feed_slug, sprintf( 'Completed — %s exported', self::products( (int) $summary['total_products'] ) ) );
+			unset( $summary['total_products'] );
+		} else {
+			$this->info( $feed_slug, 'Completed' );
+		}
 
-		if ( ! empty( $summary ) ) {
-			foreach ( $summary as $key => $value ) {
-				$this->info( $feed_slug, ucfirst( str_replace( '_', ' ', $key ) ) . ': ' . $value );
-			}
+		foreach ( $summary as $key => $value ) {
+			$this->info( $feed_slug, ucfirst( str_replace( '_', ' ', $key ) ) . ': ' . $value );
 		}
 
 		$this->buffer[ $feed_slug ][] = str_repeat( '-', 50 );
@@ -300,6 +287,31 @@ class FeedLogger {
 		$this->buffer[ $feed_slug ][] = str_repeat( '=', 50 );
 
 		$this->flush( $feed_slug );
+	}
+
+	/**
+	 * "1 product" / "1,234 products" — the feed log is plain English, so this
+	 * stays out of the translation catalogue on purpose.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param int $count Product count.
+	 * @return string
+	 */
+	public static function products( int $count ): string {
+		return number_format_i18n( $count ) . ( 1 === $count ? ' product' : ' products' );
+	}
+
+	/**
+	 * "1 batch" / "12 batches".
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param int $count Batch count.
+	 * @return string
+	 */
+	public static function batches( int $count ): string {
+		return number_format_i18n( $count ) . ( 1 === $count ? ' batch' : ' batches' );
 	}
 
 	/**
@@ -316,41 +328,46 @@ class FeedLogger {
 	}
 
 	/**
-	 * Rotate log files when size limit is exceeded.
+	 * Delete a feed's log file (and any legacy copies) — used when the feed
+	 * itself is deleted.
 	 *
-	 * Scheme: feed.9.log → deleted, feed.8.log → feed.9.log, ... feed.log → feed.0.log.
-	 *
-	 * @since 8.0.0
+	 * @since 8.0.10
 	 *
 	 * @param string $feed_slug Feed slug.
-	 *
-	 * @return void
+	 * @return int Files deleted.
 	 */
-	private function rotate( string $feed_slug ): void {
-		$base = $this->log_dir . sanitize_file_name( $feed_slug );
-
-		// Delete oldest.
-		$oldest = $base . '.' . self::MAX_ROTATIONS . '.log';
-		if ( file_exists( $oldest ) ) {
-			wp_delete_file( $oldest );
+	public function delete( string $feed_slug ): int {
+		$deleted = 0;
+		$file    = $this->get_log_path( $feed_slug );
+		if ( file_exists( $file ) ) {
+			wp_delete_file( $file );
+			++$deleted;
 		}
+		unset( $this->buffer[ $feed_slug ] );
 
-		// Shift .8 → .9, .7 → .8, etc.
-		for ( $i = self::MAX_ROTATIONS - 1; $i >= 0; $i-- ) {
-			$from = $base . '.' . $i . '.log';
-			$to   = $base . '.' . ( $i + 1 ) . '.log';
-			if ( file_exists( $from ) ) {
-				// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_rename -- Log rotation inside the plugin's own log directory; WP_Filesystem offers no move primitive.
-				rename( $from, $to );
+		return $deleted + $this->delete_legacy_copies( $feed_slug );
+	}
+
+	/**
+	 * Remove rotated (`{slug}.N.log`) and dated (`{slug}-*.log`) copies left
+	 * by earlier builds. One file per feed is the contract now.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_slug Feed slug.
+	 * @return int Files deleted.
+	 */
+	private function delete_legacy_copies( string $feed_slug ): int {
+		$base    = $this->log_dir . sanitize_file_name( $feed_slug );
+		$deleted = 0;
+		foreach ( array_merge( (array) glob( $base . '.[0-9]*.log' ), (array) glob( $base . '-*.log' ) ) as $copy ) {
+			if ( is_file( $copy ) ) {
+				wp_delete_file( $copy );
+				++$deleted;
 			}
 		}
 
-		// Current → .0.
-		$current = $base . '.log';
-		if ( file_exists( $current ) ) {
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_rename -- Log rotation inside the plugin's own log directory; WP_Filesystem offers no move primitive.
-			rename( $current, $base . '.0.log' );
-		}
+		return $deleted;
 	}
 
 	/**

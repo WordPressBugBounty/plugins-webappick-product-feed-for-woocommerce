@@ -224,23 +224,14 @@ class ApiServiceProvider extends ServiceProvider {
 		// there is no overhead on the normal path. @since 8.0.2.
 		( new RestProxy() )->register();
 
-		// Cache invalidation for the filter-counts transient —
-		// refreshed whenever a product is saved, deleted, or its
-		// stock status changes. These hooks must register on every
-		// request (not just rest_api_init) so wp-admin edits
-		// properly invalidate the cache. Skipped during a bulk import
-		// (WP_IMPORTING): a large import fires this on every one of
-		// thousands of products, and each call is a wp_options DELETE for
-		// a transient nobody is reading mid-import — the recompute on the
-		// next Filters-tab open (or the TTL) picks up the final state.
-		$invalidate_filter_counts = static function () {
-			if ( defined( 'WP_IMPORTING' ) && WP_IMPORTING ) {
-				return;
-			}
-			delete_transient( 'ctxfeed_v8_filter_counts' );
-		};
-		add_action( 'save_post_product', $invalidate_filter_counts );
-		add_action( 'deleted_post', $invalidate_filter_counts );
+		// Product change → drop the Filters-tab counts and the mapping-attribute
+		// dropdown caches. Deferred to ONE async Action Scheduler job instead of
+		// deleting transients inside the product-save / checkout request
+		// (support #68946 — a merchant's Quick Edit and checkout stalled while
+		// third-party option-delete listeners amplified our inline deletes).
+		// These hooks must register on every request (not just rest_api_init)
+		// so wp-admin edits and shop stock changes are caught.
+		ProductCacheInvalidator::register();
 
 		// Cache invalidation for the category-mapping categories list.
 		// A user adding or editing a product_cat term in wp-admin does
@@ -248,9 +239,6 @@ class ApiServiceProvider extends ServiceProvider {
 		// every request) is required — otherwise the transient stays
 		// stale for up to 12h and the mapping UI shows a wrong list.
 		CategoryMappingEndpoint::register_cache_invalidation_hooks();
-		add_action( 'trashed_post', $invalidate_filter_counts );
-		add_action( 'woocommerce_product_set_stock_status', $invalidate_filter_counts );
-		add_action( 'woocommerce_variation_set_stock_status', $invalidate_filter_counts );
 
 		// Cache invalidation for the mapping-attribute dropdown list. A newly
 		// added custom attribute / custom field / global attribute should show
@@ -269,9 +257,7 @@ class ApiServiceProvider extends ServiceProvider {
 			}
 			ProductEndpoint::flush_mapping_attributes_cache();
 		};
-		add_action( 'save_post_product', $invalidate_attribute_dropdown );
-		add_action( 'woocommerce_update_product', $invalidate_attribute_dropdown );
-		add_action( 'woocommerce_new_product', $invalidate_attribute_dropdown );
+		// Product-level hooks live in ProductCacheInvalidator (deferred).
 		add_action( 'woocommerce_attribute_added', $invalidate_attribute_dropdown );
 		add_action( 'woocommerce_attribute_updated', $invalidate_attribute_dropdown );
 		add_action( 'woocommerce_attribute_deleted', $invalidate_attribute_dropdown );
@@ -335,15 +321,6 @@ class ApiServiceProvider extends ServiceProvider {
 			add_filter( $acf_hook, $invalidate_attribute_dropdown_acf );
 		}
 
-		// Product removed → an attribute only that product carried may be gone.
-		// Gated to the product post type so unrelated post deletions (blog
-		// posts, pages) don't needlessly churn the cache.
-		$invalidate_attribute_dropdown_on_product_delete = static function ( $post_id ) use ( $invalidate_attribute_dropdown ) {
-			if ( 'product' === get_post_type( $post_id ) ) {
-				$invalidate_attribute_dropdown();
-			}
-		};
-		add_action( 'deleted_post', $invalidate_attribute_dropdown_on_product_delete );
-		add_action( 'trashed_post', $invalidate_attribute_dropdown_on_product_delete );
+		// Product deletions are handled by ProductCacheInvalidator (deferred).
 	}
 }

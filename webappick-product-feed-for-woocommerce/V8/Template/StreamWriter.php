@@ -113,6 +113,53 @@ class StreamWriter {
 	}
 
 	/**
+	 * Current byte length of the file behind the open handle.
+	 *
+	 * Flushes pending writes first so the size reflects everything written
+	 * so far. Returns 0 when no file is open.
+	 *
+	 * @since 8.0.10
+	 * @return int
+	 */
+	public function current_size(): int {
+		if ( ! $this->is_open() ) {
+			return 0;
+		}
+		fflush( $this->handle );
+		clearstatcache( true, $this->file_path );
+		$size = filesize( $this->file_path );
+
+		return false === $size ? 0 : (int) $size;
+	}
+
+	/**
+	 * Cut the open file back to exactly $bytes and continue writing there.
+	 *
+	 * Used to roll a working file back to the length it had before a batch
+	 * started, so a retried batch does not duplicate the rows the failed
+	 * attempt already wrote. Works for both write and append handles (an
+	 * append handle always writes at the new end of file).
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param int $bytes Target length in bytes.
+	 * @return bool True when the file was truncated.
+	 */
+	public function truncate_to( int $bytes ): bool {
+		if ( ! $this->is_open() || $bytes < 0 ) {
+			return false;
+		}
+		fflush( $this->handle );
+		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_ftruncate -- Rolls the plugin's own working feed file back to the pre-batch length before a retry.
+		if ( ! ftruncate( $this->handle, $bytes ) ) {
+			return false;
+		}
+		fseek( $this->handle, $bytes );
+
+		return true;
+	}
+
+	/**
 	 * Whether a file handle is currently open.
 	 *
 	 * @since 8.0.0

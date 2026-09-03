@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.9
+Stable tag: 8.0.10
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,35 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.10 =
+* New: "Parent Brand (WooCommerce)" and "Child Brand (WooCommerce)" attributes for the hierarchical WooCommerce Brands taxonomy (the top-level brand and the assigned sub-brand), and the WooCommerce Brands taxonomy is available to free users in the attribute dropdown.
+* Fix: "Test connection" on the FTP / SFTP tab did nothing when clicked; it now runs, fails fast on an unreachable host or port, and reports the actual reason (unreachable, wrong port for SFTP, sign-in rejected, cannot write to the directory). The "File will land at" preview shows the real feed file name.
+* Fix: batch sizing now also respects Action Scheduler's 5-minute action limit, not only the PHP time limit — on hosts with a long PHP limit, batches grew until Action Scheduler stamped them "failed" and an hourly feed took most of the hour. The fixed 2,000-product batch cap is gone: a server with the memory and time can process larger batches.
+* Fix: the auto-update interval now counts from the start of a run, not from its end — a 1-hour feed whose generation takes 50 minutes no longer drifts to every ~2 hours — and a completed run no longer leaves a duplicate recurring schedule behind.
+* Fix: with the "Plain" permalink setting every CTX Feed admin request returned 404 since 8.0.5 (feed list, template list, settings) — the cache-buster was appended after a second "?" — now fixed.
+* Fix: TXT feeds honour the configured delimiter and enclosure again (V5 parity): with a double/single-quote enclosure every field is wrapped and inner quotes are doubled, so a title like 22 mm (7/8") no longer breaks a strict TSV parser.
+* Change: in the attribute dropdown only the product taxonomies CTX Feed creates itself (Settings → Product attributes: Brand, GTIN, MPN, …) are free; the store's other taxonomies stay Pro but no longer hide the free ones.
+* Fix: clicking Regenerate while a feed was already generating (another tab, another admin, or during the scheduled run) started a second, parallel run of the same feed that wrote into the same file — it is now refused with "This feed is already generating", and the feeds list shows the live log for a run started anywhere (cron, another tab).
+* Fix: Variations now inherit their parent product's Tags (and the new Brand attribute) in the feed. Dynamic-attribute rules such as "Tags contains …" failed on every variation because variations carry no tags of their own.
+* Fix: Variation titles include ALL variation attributes again (e.g. "Locker - Large , Blue , Two doors"). WooCommerce itself drops the attribute summary from a variation's name once it has three or more attributes, so products with size + colour + style shipped the bare parent title.
+* Fix: Rank Math's primary product category exports the category name instead of its term ID (e.g. "Blenders" instead of "332"), and the value is read from the parent for variations.
+* New: "Brand (WooCommerce)" attribute — the WooCommerce core Brands taxonomy is now a first-class value in every plan.
+* Fix: an old CTX Feed Pro (below 8.0) beside CTX Feed 8 now raises a red notice on every CTX Feed page and a critical System status row, with a one-click "Update CTX Feed Pro now" button when the license is active or a link to your WebAppick account downloads otherwise.
+* Fix: CRITICAL for stores whose price format uses a thousand separator — prices of 1,000 and above could be silently corrupted in the feed (e.g. 1.499 exported as 1) because the price was number-formatted more than once along the pipeline. Every formatting stage now parses the already-formatted value back with the feed's own separators first, so formatting is idempotent. Thanks to Käpprätt AB for the report.
+* Fix: A retried feed batch no longer duplicates products. When a batch fails and is retried at a smaller size, the rows the failed attempt had already written are rolled back first, so every product appears exactly once.
+* Fix: Product save, Quick Edit and checkout no longer touch the database on CTX Feed's behalf. The cache clean-up that ran inline on those requests is now a single deferred background job, so CTX Feed adds no time to saving a product or completing an order.
+* New: Leftover temporary files from the previous feed engine (wf_store_* files that could grow to gigabytes and exhaust PHP memory) are removed automatically — once after updating, and before each feed generates.
+* New: The feed log now names the filter behind every product it leaves out ("3 excluded by filters (visibility: 3)") and warns when a whole batch was filtered away, so an unexpectedly empty feed points straight at the setting responsible.
+* Changed: WooCommerce → Status → Logs now contains a single CTX Feed source, "ctxfeed", and it carries PHP errors only — caught errors plus PHP fatal errors raised inside the plugin, with file and line. Progress and performance chatter is gone from WooCommerce logs; with "Enable error debugging" on, it is written to the plugin's own uploads/woo-feed/logs/ctxfeed-system.log instead.
+* Changed: One log file per feed. Each feed's log starts over on every run (no rotated copies), is downloadable from the feed's row menu, and is deleted together with the feed.
+* Changed: Auto-update interval. A feed with auto-update on and no interval of its own now runs every 24 hours (the old global "Update interval" setting is no longer consulted). The Schedule column shows the interval the scheduler will actually use — feeds that previously read "Manual" while running daily now show "24h" — and "Manual" appears only when auto-update is off.
+* Fix: No more "Function _load_textdomain_just_in_time was called incorrectly" notices on every page load (WordPress 6.7+). Three early-translation paths in the plugin boot were deferred to init — this also removes the "Action Scheduler data store was not initialized" notices.
+* New: A live generation log console appears directly under a feed while it regenerates — batch progress dots, the current batch line (products written / skipped), a step counter and a progress bar. The "generation started" toast is gone (the console is the feedback now), and duplicate "generated successfully" toasts on one run are fixed.
+* New: One-click AI connect (with CTX Feed Pro 8.0.2): the AI assistant screen now leads with an OAuth server address — your AI app connects with a login + approval on your own site, no application password or header to copy. The header-based flow remains available under Advanced for AI apps without one-click sign-in.
+* Fix: "Generate your access header" now works for WordPress usernames in any language (non-Latin usernames previously failed silently), and a failed clipboard copy is now visible ("Copy failed — select the text") instead of silently pasting nothing.
+* Improvement: Manage Feeds — long feed names truncate with an ellipsis (full name on hover) instead of breaking the layout, Schedule and Last Generated use compact time labels (24h, 2h ago), the Schedule column sits beside the Feed URL, and "Manual only" is now "Manual".
+* Security: The CTXFEED_DEV_MODE wp-config constant no longer exists — feature gates are unlockable only by the Pro plugin's license-checked filters.
 
 = Version 8.0.9 =
 * Fix: Mapping the "Shipping (Google Format)" attribute could kill feed generation on stores with many shipping methods — the batch silently died mid-run and the feed never finished. Shipping prices are now computed by pricing each configured shipping method directly against the product (no cart round-trip), which is 50-100x faster and immune to slowdowns from cart-aware checkout/marketing plugins. An 11,000-product store with 14 shipping methods that could not finish at all now completes in about a minute.

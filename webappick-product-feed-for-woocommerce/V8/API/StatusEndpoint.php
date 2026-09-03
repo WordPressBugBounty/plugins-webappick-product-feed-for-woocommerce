@@ -12,6 +12,7 @@
 
 namespace CTXFeed\V8\API;
 
+use CTXFeed\V8\Status\LegacyPro;
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -307,9 +308,13 @@ class StatusEndpoint extends RestController {
 		$plugin_version = defined( 'WOO_FEED_FREE_VERSION' ) ? WOO_FEED_FREE_VERSION : 'Unknown';
 		$items[]        = $this->item( 'CTX Feed Version', 'success', $plugin_version );
 
-		// Pro version if available.
+		// Pro version if available. An OLD Pro (< 8.0.0) beside this V8 Free
+		// runs its own V5 engine next to ours — red row + banner with the
+		// one-click update (license active) or the account downloads link.
 		if ( defined( 'WOO_FEED_PRO_VERSION' ) ) {
-			$items[] = $this->item( 'CTX Feed Pro', 'success', WOO_FEED_PRO_VERSION );
+			$items[] = LegacyPro::is_active()
+				? $this->item( 'CTX Feed Pro', 'error', LegacyPro::version(), LegacyPro::action() )
+				: $this->item( 'CTX Feed Pro', 'success', WOO_FEED_PRO_VERSION );
 		}
 
 		// Engine version.
@@ -739,13 +744,24 @@ class StatusEndpoint extends RestController {
 	 * @param string $label   Display label.
 	 * @param string $status  'success', 'warning', or 'error'.
 	 * @param string $message Value/message.
+	 * @param array  $action  Optional { label, url, target } — rendered as the row's banner button.
 	 * @return array
 	 */
-	private function item( string $label, string $status, string $message ): array {
-		return array(
+	private function item( string $label, string $status, string $message, array $action = array() ): array {
+		$item = array(
 			'label'   => $label,
 			'status'  => $status,
 			'message' => $message,
 		);
+
+		if ( ! empty( $action['label'] ) && ! empty( $action['url'] ) ) {
+			$item['action'] = array(
+				'label'  => (string) $action['label'],
+				'href'   => (string) $action['url'],
+				'target' => isset( $action['target'] ) ? (string) $action['target'] : '',
+			);
+		}
+
+		return $item;
 	}
 }

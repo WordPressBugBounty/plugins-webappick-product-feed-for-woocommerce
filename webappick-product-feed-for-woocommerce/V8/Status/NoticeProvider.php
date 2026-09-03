@@ -78,6 +78,7 @@ class NoticeProvider {
 	public function collect(): array {
 		$notices = array();
 
+		$notices = array_merge( $notices, $this->old_pro_notice() );
 		$notices = array_merge( $notices, $this->debug_logging_notice() );
 		$notices = array_merge( $notices, $this->scheduler_stalled_notice() );
 		$notices = array_merge( $notices, $this->pro_inactive_notice() );
@@ -201,6 +202,35 @@ class NoticeProvider {
 					return ! in_array( $notice['id'], $dismissed, true );
 				}
 			)
+		);
+	}
+
+	/**
+	 * Pinned DANGER notice when a previous-generation Pro (< 8.0.0) is active
+	 * beside this V8 Free: the old Pro boots its own V5 engine, so two
+	 * engines run at once and the site may break until Pro is updated
+	 * (support #68928).
+	 *
+	 * @since 8.0.10
+	 * @return array Zero or one notice.
+	 */
+	private function old_pro_notice(): array {
+		if ( ! LegacyPro::is_active() ) {
+			return array();
+		}
+
+		$action = LegacyPro::action();
+
+		return array(
+			array(
+				'id'          => 'ctxfeed_old_pro_installed',
+				'severity'    => 'error',
+				'priority'    => 1,
+				'title'       => __( 'CTX Feed Pro must be updated now', 'woo-feed' ),
+				'message'     => LegacyPro::message( LegacyPro::DOWNLOAD_URL !== $action['url'] ),
+				'action'      => $action,
+				'dismissible' => false,
+			),
 		);
 	}
 

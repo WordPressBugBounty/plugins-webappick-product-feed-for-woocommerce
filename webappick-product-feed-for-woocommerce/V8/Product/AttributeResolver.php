@@ -349,12 +349,17 @@ class AttributeResolver {
 						}
 					}
 
+					$base_title = $parent instanceof \WC_Product ? $parent->get_title() : $product->get_name();
+					$separator  = apply_filters( 'woo_feed_attribute_separator', ' , ', $config, $product );
+					$merger     = apply_filters( 'woo_feed_product_title_and_attributes_merger', ' - ', $product, $config );
+					$attr_text  = implode( $separator, $variation_parts );
+
 					$filtered = apply_filters(
 						'woo_feed_filter_variation_title_with_attributes',
 						null,
-						$parent instanceof \WC_Product ? $parent->get_title() : $product->get_name(),
-						implode( '-', $variation_parts ),
-						apply_filters( 'woo_feed_product_title_and_attributes_merger', ' - ', $product, $config ),
+						$base_title,
+						$attr_text,
+						$merger,
 						$product,
 						$config
 					);
@@ -362,6 +367,17 @@ class AttributeResolver {
 					if ( null !== $filtered ) {
 						return $filtered;
 					}
+
+					// Build the title ourselves (V5 parity) instead of trusting
+					// WC_Product_Variation::get_name(): WooCommerce appends the
+					// attribute summary only when a variation has FEWER THAN 3
+					// attributes (and none with a hyphenated name), so products
+					// with size + colour + style shipped the bare parent title
+					// while simpler ones got "Parent - Blue, L" (support #68899).
+					if ( '' !== $attr_text ) {
+						return $base_title . $merger . $attr_text;
+					}
+					return $base_title;
 				}
 				return $product->get_name();
 
@@ -740,11 +756,23 @@ class AttributeResolver {
 				return (string) $product->get_total_sales();
 
 			case 'tags':
-				$terms = get_the_terms( $product->get_id(), 'product_tag' );
-				if ( is_wp_error( $terms ) || empty( $terms ) ) {
-					return '';
-				}
-				return implode( ', ', wp_list_pluck( $terms, 'name' ) );
+				// Variations carry no tags of their own — read the parent's
+				// (V5 parity: ProductInfo::tags() used the parent id). Without
+				// this every "Tags contains …" dynamic-attribute rule failed on
+				// variable products (support #68948).
+				return $this->resolve_term_names( $product, 'product_tag' );
+
+			// WooCommerce's core Brands taxonomy (product_brand, WC 9.6+).
+			// Free stores could not select it (taxonomy groups are Pro-gated)
+			// and mapped CTX Feed's own empty Brand field instead (#68893).
+			case 'wc_brand':
+			case 'product_brand':
+				return $this->resolve_term_names( $product, 'product_brand' );
+
+			// Parent / child level of the (hierarchical) WooCommerce brand.
+			case 'wc_brand_parent':
+			case 'wc_brand_child':
+				return $this->taxonomy->resolve( $product, $attr, $config );
 
 			case 'shipping_class':
 				return $product->get_shipping_class();
@@ -1065,7 +1093,17 @@ class AttributeResolver {
 						}
 					}
 
-					return apply_filters( 'woo_feed_filter_product_meta', $value, $meta_key, $product, $config );
+					// Rank Math stores its primary category as a term ID; V5's
+					// ProductHelper converted it to the category NAME through
+					// the ctx-compatibility RankMath shim. V8 shipped the raw
+					// ID ("332") — support #68950.
+					if ( 'rank_math_primary_product_cat' === $meta_key && is_numeric( $value ) ) {
+						$value = (string) apply_filters( 'woo_feed_filter_rank_math_primary_category', $value, $product, $config );
+					}
+
+					// Fired with V5's argument order — value, product, config —
+					// so third-party shims written for V5 keep working.
+					return apply_filters( 'woo_feed_filter_product_meta', $value, $product, $config );
 				}
 
 				// WooCommerce taxonomy attributes (wf_taxo_* prefix).
@@ -1128,6 +1166,29 @@ class AttributeResolver {
 				// Unknown attributes fall through to meta resolution.
 				return $this->meta->resolve( $product, $attr, $config );
 		}
+	}
+
+	/**
+	 * Comma-separated term names of a product taxonomy, read from the PARENT
+	 * for variations (variations never carry tags / brands of their own).
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param \WC_Product $product  Product or variation.
+	 * @param string      $taxonomy Taxonomy name (product_tag, product_brand…).
+	 * @return string
+	 */
+	private function resolve_term_names( \WC_Product $product, string $taxonomy ): string {
+		$source_id = $product->is_type( 'variation' ) && $product->get_parent_id()
+			? (int) $product->get_parent_id()
+			: (int) $product->get_id();
+
+		$terms = get_the_terms( $source_id, $taxonomy );
+		if ( is_wp_error( $terms ) || empty( $terms ) ) {
+			return '';
+		}
+
+		return implode( ', ', wp_list_pluck( $terms, 'name' ) );
 	}
 
 	/**

@@ -365,8 +365,27 @@ class FeedGenerator {
 		// many products (a 12K feed collapsed 250 -> 25). @implements FEED-FRD-11.2.
 		$scanned = max( count( $ids ), 1 );
 
+		// Batch position for the log lines and the progress record. The
+		// number is SEQUENTIAL (batches already done + 1), never derived from
+		// offset ÷ batch size: the adaptive size grows mid-run, and dividing
+		// by the new size restarted the numbering ("Batch 1/3 … Batch 1/2").
+		// The total is a projection from the current size, so it shrinks
+		// when the size climbs — that change is logged explicitly.
+		$progress_before = $this->manager->get_progress( $feed_name );
+		$log_total       = isset( $context['total'] ) ? (int) $context['total'] : 0;
+		$log_batch_no    = (int) ( $progress_before['batches_done'] ?? 0 ) + 1;
+		$remaining_after = max( 0, $log_total - ( $offset + $batch_size ) );
+		$log_batches     = ( $batch_size > 0 ) ? $log_batch_no + (int) ceil( $remaining_after / $batch_size ) : $log_batch_no;
+
 		if ( $this->feed_logger ) {
-			$this->feed_logger->info( $feed_name, sprintf( 'Batch offset=%d, batch_size=%d, products_in_batch=%d', $offset, $batch_size, count( $ids ) ) );
+			$planned = (int) ( $progress_before['batches_total'] ?? 0 );
+			if ( $log_batch_no > 1 && $planned > 0 && $planned !== $log_batches ) {
+				$this->feed_logger->info(
+					$feed_name,
+					sprintf( 'Batch size adjusted to %s — now %s', FeedLogger::products( $batch_size ), FeedLogger::batches( $log_batches ) )
+				);
+			}
+			$this->feed_logger->info( $feed_name, sprintf( 'Batch %d/%d — processing…', $log_batch_no, $log_batches ) );
 			// Flush immediately: FeedLogger buffers until batch end, so a
 			// batch hard-killed mid-run (web-server timeout, OOM) would
 			// otherwise vanish from the log without even a start line —
@@ -448,6 +467,13 @@ class FeedGenerator {
 			}
 		}
 
+		// Retry idempotency: the smaller-batch retry (8.0.7) re-runs the SAME
+		// offset, but the rows the failed attempt already streamed stay in the
+		// working file — so a retried batch shipped partially duplicated. Record
+		// the working-file length before this offset writes anything and, when
+		// the same offset comes round again, roll the file back to it first.
+		$this->arm_batch_marker( $feed_name, $offset );
+
 		// Step 5: V5 product-loop hooks — fired before the actual iteration
 		// begins so compat shims like the Pro `MultiCurrency` orchestrator
 		// can swap currency context for the entire batch. V5 signature:
@@ -465,10 +491,25 @@ class FeedGenerator {
 		$count       = 0;
 		$error_count = 0;
 
+		// Exclusion accounting. Products dropped by a filter or that fail to
+		// load are NOT errors, so they never appeared in "written / skipped"
+		// — a feed could report "3 in batch, 0 written, 0 skipped" with no
+		// trace of WHY (support #68913: every product silently excluded).
+		// Tally by filter name via FilterManager's ctxfeed_filter_excluded
+		// action so the batch log names the responsible filter.
+		$excluded_by = array();
+		$unloadable  = 0;
+		$tally       = static function ( $filter_name ) use ( &$excluded_by ) {
+			$key                 = (string) $filter_name;
+			$excluded_by[ $key ] = ( $excluded_by[ $key ] ?? 0 ) + 1;
+		};
+		add_action( 'ctxfeed_filter_excluded', $tally, 10, 1 );
+
 		try {
 			foreach ( $ids as $product_id ) {
 				$product = wc_get_product( $product_id );
 				if ( ! $product ) {
+					++$unloadable;
 					continue;
 				}
 
@@ -564,6 +605,8 @@ class FeedGenerator {
 				}
 			}
 		} finally {
+			remove_action( 'ctxfeed_filter_excluded', $tally, 10 );
+
 			// Step 6: V5 product-loop after hook — fires on EVERY exit path
 			// (success or thrown row) so paired before/after listeners always
 			// tear down. PROD-FRD-10.7.
@@ -580,9 +623,57 @@ class FeedGenerator {
 		// Step 8: V8 after hook. @implements FEED-FRD-8.1.
 		do_action( 'ctxfeed_after_generate_batch', $feed_name, $offset, $count );
 
-		// Log batch result.
+		// Log batch result — including WHY products were left out.
+		$excluded_total = array_sum( $excluded_by );
 		if ( $this->feed_logger ) {
-			$this->feed_logger->info( $feed_name, sprintf( 'Batch complete: %d products written, %d skipped, in %.2fs', $count, $error_count, microtime( true ) - $start_time ) );
+			$detail = '';
+			if ( $excluded_total > 0 ) {
+				arsort( $excluded_by );
+				$parts = array();
+				foreach ( $excluded_by as $filter_name => $n ) {
+					$parts[] = $filter_name . ': ' . $n;
+				}
+				$detail = ' (' . implode( ', ', $parts ) . ')';
+			}
+
+			// Same lines the live console shows, in the same order: the
+			// cumulative count, then a skipped line (WARNING) and a
+			// left-out-by-filters line (INFO, with the filter names) only
+			// when there is something to say. Timing lives in the system
+			// trace ([PERF] line), not here.
+			$cumulative = min( $offset + $batch_size, $log_total > 0 ? $log_total : $offset + $batch_size );
+			$this->feed_logger->info(
+				$feed_name,
+				sprintf( 'Batch %d/%d — %s processed', $log_batch_no, $log_batches, FeedLogger::products( $cumulative ) )
+			);
+			if ( $error_count > 0 ) {
+				$this->feed_logger->warning(
+					$feed_name,
+					sprintf( 'Batch %d/%d — %s skipped (errors)', $log_batch_no, $log_batches, FeedLogger::products( $error_count ) )
+				);
+			}
+			if ( $excluded_total > 0 ) {
+				$this->feed_logger->info(
+					$feed_name,
+					sprintf( 'Batch %d/%d — %s left out by your filters%s', $log_batch_no, $log_batches, FeedLogger::products( $excluded_total ), $detail )
+				);
+			}
+			if ( $unloadable > 0 ) {
+				$this->feed_logger->warning(
+					$feed_name,
+					sprintf( 'Batch %d/%d — %s could not be loaded', $log_batch_no, $log_batches, FeedLogger::products( $unloadable ) )
+				);
+			}
+
+			// A batch that scanned products but wrote NONE is almost always a
+			// filter setting, not a plugin fault — say so, and name the filter.
+			if ( 0 === $count && $excluded_total > 0 && $excluded_total >= count( $ids ) ) {
+				$top = (string) array_key_first( $excluded_by );
+				$this->feed_logger->warning(
+					$feed_name,
+					sprintf( 'Every product in this batch was excluded — mostly by the "%s" filter. Review the feed\'s Filters / Advanced filters settings (and WooCommerce catalog visibility) if this is unexpected.', $top )
+				);
+			}
 		}
 
 		// Step 8: Update enriched progress. @implements FEED-FRD-2.2.
@@ -590,9 +681,10 @@ class FeedGenerator {
 		$total      = isset( $context['total'] ) ? (int) $context['total'] : 0;
 		$processed  = min( $offset + $batch_size, $total );
 
-		// Compute batch number and ETA.
-		$batch_number  = ( $batch_size > 0 ) ? (int) floor( $offset / $batch_size ) + 1 : 1;
-		$batches_total = ( $batch_size > 0 && $total > 0 ) ? (int) ceil( $total / $batch_size ) : 1;
+		// Batch number / projected total — the sequential values computed at
+		// batch start (see above), so progress, log and console agree.
+		$batch_number  = $log_batch_no;
+		$batches_total = $log_batches;
 
 		// Compute rolling average batch time for ETA estimation.
 		$progress          = $this->manager->get_progress( $feed_name );
@@ -606,14 +698,23 @@ class FeedGenerator {
 		$this->manager->update_progress(
 			$feed_name,
 			array(
-				'current'        => $processed,
-				'total'          => $total,
-				'status'         => 'generating',
-				'batch_size'     => $batch_size,
-				'batches_done'   => $batch_number,
-				'batches_total'  => $batches_total,
-				'eta_seconds'    => $eta_seconds,
-				'avg_batch_time' => round( $avg_batch_time, 4 ),
+				'current'             => $processed,
+				'total'               => $total,
+				'status'              => 'generating',
+				'batch_size'          => $batch_size,
+				'batches_done'        => $batch_number,
+				'batches_total'       => $batches_total,
+				'eta_seconds'         => $eta_seconds,
+				'avg_batch_time'      => round( $avg_batch_time, 4 ),
+				// Live-log-console feed: per-batch outcome + cumulative
+				// skips, so the Manage Feeds console can render real
+				// "N products -> tmp file" / "N skipped" lines without
+				// polling the log file. Read-only additions to the same
+				// progress write that already happens each batch.
+				'last_batch_written'  => $count,
+				'last_batch_skipped'  => $error_count,
+				'last_batch_excluded' => $excluded_total,
+				'skipped_total'       => (int) ( $progress['skipped_total'] ?? 0 ) + $error_count,
 			) 
 		);
 
@@ -629,13 +730,13 @@ class FeedGenerator {
 			$next_batch_size = $this->batch_calculator->calculate_next();
 		}
 
-		// Step 10: Performance logging. @implements FEED-FRD-2.5.
+		// Step 10: Performance trace (debug-mode system log). @implements FEED-FRD-2.5.
 		$duration_ms = $batch_time * 1000;
 		if ( $this->logger ) {
-			$this->logger->performance(
-				"Batch at offset {$offset}",
-				$duration_ms,
+			$this->logger->debug(
+				"[PERF] Batch at offset {$offset}",
 				array(
+					'duration_ms'     => round( $duration_ms, 2 ),
 					'products'        => $count,
 					'feed_name'       => $feed_name,
 					'offset'          => $offset,
@@ -679,6 +780,11 @@ class FeedGenerator {
 			return;
 		}
 
+		if ( $this->feed_logger ) {
+			$this->feed_logger->info( $feed_name, 'Writing the final feed file…' );
+			$this->feed_logger->flush( $feed_name );
+		}
+
 		// Write footer and close. @implements FEED-FRD-2.4.
 		// Pass config so the Custom Template 2 (XML) routing can fire for
 		// custom2-merchant providers. PROD-FRD-10.6.
@@ -705,6 +811,7 @@ class FeedGenerator {
 
 		$this->stream_writer->write_footer( $template->render_footer( $config ) );
 		$this->stream_writer->close();
+		$this->clear_batch_marker( $feed_name );
 
 		// Atomic delivery: the whole run streamed into $working_path, so the
 		// live feed was never touched. Swap it into place now — unless the run
@@ -809,7 +916,8 @@ class FeedGenerator {
 
 		// Write completion footer to per-feed log.
 		if ( $this->feed_logger ) {
-			$file_path = $this->stream_writer ? $this->stream_writer->get_file_path() : '';
+			// $file_path is the promoted (final) feed file; the writer still
+			// points at the renamed-away working file, which no longer exists.
 			$file_size = ( ! empty( $file_path ) && file_exists( $file_path ) ) ? size_format( filesize( $file_path ) ) : 'N/A';
 
 			$this->feed_logger->complete(
@@ -1003,6 +1111,77 @@ class FeedGenerator {
 	 */
 	private function get_working_file_path( string $feed_name, string $format, string $provider = '' ): string {
 		return $this->get_feed_file_path( $feed_name, $format, $provider ) . self::WORKING_SUFFIX;
+	}
+
+	/**
+	 * Marker transient key for a feed's in-flight batch.
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return string
+	 */
+	private function batch_marker_key( string $feed_name ): string {
+		return 'ctxfeed_batch_marker_' . $feed_name;
+	}
+
+	/**
+	 * Record where this offset starts in the working file, or roll back to it
+	 * when the same offset is being retried.
+	 *
+	 * A retry is recognised purely by "the marker already names this offset":
+	 * offsets only ever increase within a run, and offset 0 always writes a
+	 * fresh marker (its file was just truncated by open()), so a stale marker
+	 * from an earlier run can never survive past the first batch.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @param int    $offset    Batch offset about to be written.
+	 * @return void
+	 */
+	private function arm_batch_marker( string $feed_name, int $offset ): void {
+		if ( ! $this->stream_writer || ! function_exists( 'get_transient' ) || ! function_exists( 'set_transient' ) ) {
+			return;
+		}
+
+		$key    = $this->batch_marker_key( $feed_name );
+		$marker = get_transient( $key );
+
+		if ( $offset > 0
+			&& is_array( $marker )
+			&& isset( $marker['offset'], $marker['bytes'] )
+			&& (int) $marker['offset'] === $offset ) {
+			$bytes = (int) $marker['bytes'];
+			if ( $this->stream_writer->truncate_to( $bytes ) && $this->feed_logger ) {
+				$this->feed_logger->info(
+					$feed_name,
+					sprintf( 'Retry at offset %d: rolled the working file back to %d bytes so the retried rows are not duplicated.', $offset, $bytes )
+				);
+			}
+			return;
+		}
+
+		set_transient(
+			$key,
+			array(
+				'offset' => $offset,
+				'bytes'  => $this->stream_writer->current_size(),
+			),
+			defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600
+		);
+	}
+
+	/**
+	 * Drop the in-flight batch marker once the run has been finalized.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return void
+	 */
+	private function clear_batch_marker( string $feed_name ): void {
+		if ( function_exists( 'delete_transient' ) ) {
+			delete_transient( $this->batch_marker_key( $feed_name ) );
+		}
 	}
 
 	/**

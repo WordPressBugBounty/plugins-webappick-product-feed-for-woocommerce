@@ -58,6 +58,12 @@ class SFTPConnection {
 			throw new \Exception( sprintf( esc_html__( 'Could not connect to %1$s:%2$s. SSH2 is not enabled on this server.', 'woo-feed' ), esc_attr( $host ), esc_attr( $port ) ) );
 		}
 		$this->connection = ssh2_connect( $host, $port );
+		if ( ! $this->connection ) {
+			$last   = error_get_last();
+			$detail = is_array( $last ) && ! empty( $last['message'] ) ? ' ' . $last['message'] : '';
+			/* translators: 1: server host, 2: server port, 3: PHP's own error detail (may be empty). */
+			throw new \Exception( sprintf( esc_html__( 'Could not connect to %1$s:%2$s.%3$s', 'woo-feed' ), esc_attr( $host ), esc_attr( $port ), esc_html( $detail ) ) );
+		}
 
 		// Security: Man in the middle attack protection.
 		if ( $f_print ) {

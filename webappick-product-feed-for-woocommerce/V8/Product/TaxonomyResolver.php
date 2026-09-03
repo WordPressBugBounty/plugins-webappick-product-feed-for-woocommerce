@@ -101,6 +101,16 @@ class TaxonomyResolver {
 
 			case 'child_category_id':
 				return $this->resolve_child_category_id( $product, $config );
+
+			// WooCommerce core Brands taxonomy (product_brand) — REAL hierarchy,
+			// unlike the V5 term-id heuristic used for categories above:
+			// parent = the top-level ancestor of the assigned brand, child = the
+			// assigned brand itself (the deepest one when several are set).
+			case 'wc_brand_parent':
+				return $this->resolve_brand_level( $product, 'parent', $config );
+
+			case 'wc_brand_child':
+				return $this->resolve_brand_level( $product, 'child', $config );
 		}
 
 		return $this->resolve_generic_taxonomy( $product, $taxonomy, $config );
@@ -316,6 +326,71 @@ class TaxonomyResolver {
 			$product,
 			$config
 		);
+	}
+
+	/**
+	 * Parent or child brand from WooCommerce's hierarchical `product_brand`
+	 * taxonomy (WC 9.6+, formerly the WooCommerce Brands extension).
+	 *
+	 * A store files products under leaf brands ("Nike > Air Max"); Google's
+	 * `brand` wants the top-level name while a sub-brand attribute wants the
+	 * leaf (wp.org: "exports child brand instead of parent brand"). Terms are
+	 * read from the parent product for a variation. Several assigned brands
+	 * → parent joins the distinct top-level names, child is the deepest term.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param \WC_Product $product Product (or variation).
+	 * @param string      $level   'parent' | 'child'.
+	 * @param Config      $config  Feed configuration.
+	 * @return string Brand name(s), '' when the product has no brand.
+	 */
+	private function resolve_brand_level( \WC_Product $product, string $level, Config $config ): string {
+		$terms = get_the_terms( $this->effective_product_id( $product ), 'product_brand' );
+		if ( is_wp_error( $terms ) || empty( $terms ) ) {
+			return '';
+		}
+
+		$value = '';
+		if ( 'parent' === $level ) {
+			$roots = array();
+			foreach ( $terms as $term ) {
+				$ancestors = get_ancestors( (int) $term->term_id, 'product_brand', 'taxonomy' );
+				$root_name = $term->name;
+				if ( ! empty( $ancestors ) ) {
+					// get_ancestors() lists the nearest first; the last one is the root.
+					$root = get_term( (int) end( $ancestors ), 'product_brand' );
+					if ( $root && ! is_wp_error( $root ) ) {
+						$root_name = $root->name;
+					}
+				}
+				$roots[ $root_name ] = true;
+			}
+			$value = implode( ', ', array_keys( $roots ) );
+		} else {
+			$deepest = null;
+			$depth   = -1;
+			foreach ( $terms as $term ) {
+				$d = count( (array) get_ancestors( (int) $term->term_id, 'product_brand', 'taxonomy' ) );
+				if ( $d > $depth ) {
+					$depth   = $d;
+					$deepest = $term;
+				}
+			}
+			$value = $deepest ? (string) $deepest->name : '';
+		}
+
+		/**
+		 * Filter the resolved parent / child WooCommerce brand.
+		 *
+		 * @since 8.0.10
+		 *
+		 * @param string      $value   Resolved brand name(s).
+		 * @param string      $level   'parent' | 'child'.
+		 * @param \WC_Product $product Product.
+		 * @param Config      $config  Feed configuration.
+		 */
+		return (string) apply_filters( 'ctxfeed_wc_brand_level', $value, $level, $product, $config );
 	}
 
 	/**

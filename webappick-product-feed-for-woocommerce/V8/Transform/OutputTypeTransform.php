@@ -303,11 +303,11 @@ class OutputTypeTransform implements TransformInterface {
 				return $this->format_price( $value, $nf );
 
 			case '7': // Rounded Price.
-				if ( '' === $value || ! is_numeric( $value ) || (float) $value <= 0 ) {
+				$parsed = \CTXFeed\V8\Utility\LocalizedNumber::parse( $value, $nf['decimal_separator'], $nf['thousand_separator'] );
+				if ( null === $parsed || $parsed <= 0 ) {
 					return $value;
 				}
-				$rounded = is_float( (float) $value ) ? (string) round( (float) $value ) : $value;
-				return $this->format_price( $rounded, $nf );
+				return $this->format_number( round( $parsed ), $nf );
 
 			case '8': // Delete Space.
 				return $this->delete_space( $value );
@@ -393,11 +393,30 @@ class OutputTypeTransform implements TransformInterface {
 	 * @return string
 	 */
 	private function format_price( string $value, array $nf ): string {
-		if ( '' === $value || ! is_numeric( $value ) || (float) $value <= 0 ) {
+		// Parse with the feed's separators FIRST: the value may already be
+		// formatted (PriceResolver and NumberTransform run with the same
+		// config), and a bare (float) cast read a '.' thousand separator as
+		// a decimal point — "1.499" → "1" (support #68878). Parsing makes
+		// this code idempotent no matter how many stages run.
+		$parsed = \CTXFeed\V8\Utility\LocalizedNumber::parse( $value, $nf['decimal_separator'], $nf['thousand_separator'] );
+		if ( null === $parsed || $parsed <= 0 ) {
 			return $value;
 		}
+		return $this->format_number( $parsed, $nf );
+	}
+
+	/**
+	 * Format a parsed float with the feed’s number_format() settings.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param float                                                                    $number Parsed numeric value.
+	 * @param array{decimals:int, decimal_separator:string, thousand_separator:string} $nf     Format settings.
+	 * @return string
+	 */
+	private function format_number( float $number, array $nf ): string {
 		return number_format(
-			(float) $value,
+			$number,
 			$nf['decimals'],
 			$nf['decimal_separator'],
 			$nf['thousand_separator']

@@ -285,6 +285,53 @@ class Filesystem {
 	}
 
 	/**
+	 * Delete the previous engine's temporary feed files.
+	 *
+	 * V5 assembled every feed through `wf_store_(auto_)feed_{header,body,footer}_info_{feed}.{ext}`
+	 * files next to the live feed, re-reading and re-writing the body file on
+	 * every batch. When its cleanup missed (the body was named after the option
+	 * slug, the cleanup after the filename setting), the body grew by one full
+	 * feed per run — a customer reached 1.17 GB and PHP ran out of memory
+	 * (support #68942). V8 streams into a truncated `.tmp` instead and never
+	 * reads those files, so they are pure dead weight: sweep them, either for
+	 * one feed (before it generates) or for the whole feed directory (once,
+	 * after the upgrade).
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_name Feed slug to scope the sweep to; '' sweeps every feed.
+	 * @return int Number of files deleted.
+	 */
+	public function purge_legacy_temp_files( string $feed_name = '' ): int {
+		$base = $this->get_feed_dir();
+		if ( ! is_dir( $base ) ) {
+			return 0;
+		}
+
+		$suffix = '' !== $feed_name ? sanitize_file_name( $feed_name ) . '*' : '*';
+		// Legacy files sit in woo-feed/ itself (very old builds) or in the
+		// nested woo-feed/{provider}/{type}/ layout.
+		$dirs = array_merge( array( $base ), (array) glob( $base . '*/', GLOB_ONLYDIR ), (array) glob( $base . '*/*/', GLOB_ONLYDIR ) );
+
+		$deleted = 0;
+		foreach ( $dirs as $dir ) {
+			foreach ( array( 'wf_store_feed_', 'wf_store_auto_feed_' ) as $prefix ) {
+				foreach ( array( 'header', 'body', 'footer' ) as $part ) {
+					$pattern = trailingslashit( $dir ) . $prefix . $part . '_info_' . $suffix;
+					foreach ( (array) glob( $pattern ) as $file ) {
+						if ( is_file( $file ) ) {
+							wp_delete_file( $file );
+							++$deleted;
+						}
+					}
+				}
+			}
+		}
+
+		return $deleted;
+	}
+
+	/**
 	 * Clean up temporary files older than the specified threshold.
 	 *
 	 * Iterates the temp directory and removes files with modification

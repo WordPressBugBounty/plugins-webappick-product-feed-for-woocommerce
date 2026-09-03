@@ -29,16 +29,29 @@ class WidgetRegistry {
 	private array $widgets = array();
 
 	/**
-	 * Initialize default dashboard widgets.
+	 * Whether the default widgets have been registered yet.
+	 *
+	 * @var bool
 	 */
-	public function __construct() {
-		$this->registerDefaults();
-	}
+	private bool $defaults_registered = false;
 
 	/**
-	 * Register default (free) widgets.
+	 * Register default (free) widgets — LAZILY, on first access.
+	 *
+	 * Deliberately NOT called from the constructor: the container
+	 * instantiates this class while booting on `plugins_loaded`, and the
+	 * default titles are translated. Translating before `init` makes
+	 * WordPress ≥ 6.7 load the woo-feed textdomain just-in-time and log
+	 * "_load_textdomain_just_in_time was called incorrectly" on every
+	 * page load (wp.org report). Widgets are only ever READ from REST
+	 * requests, which run after `init` — so translating at first access
+	 * is both correct and notice-free.
 	 */
 	private function registerDefaults(): void {
+		if ( $this->defaults_registered ) {
+			return;
+		}
+		$this->defaults_registered = true;
 		$this->register(
 			'overview_cards',
 			array(
@@ -113,6 +126,10 @@ class WidgetRegistry {
 	 * @param array  $config Widget configuration.
 	 */
 	public function register( string $id, array $config ): void {
+		// Defaults first, so external registrations layer on top of them
+		// exactly as they did when the constructor registered defaults.
+		$this->registerDefaults();
+
 		$this->widgets[ $id ] = array_merge(
 			array(
 				'id'       => $id,
@@ -132,6 +149,7 @@ class WidgetRegistry {
 	 * @param string $id Widget identifier to remove.
 	 */
 	public function deregister( string $id ): void {
+		$this->registerDefaults();
 		unset( $this->widgets[ $id ] );
 	}
 
@@ -142,6 +160,8 @@ class WidgetRegistry {
 	 * @return array[] Widgets grouped by position.
 	 */
 	public function getWidgets(): array {
+		$this->registerDefaults();
+
 		$widgets = apply_filters( 'ctxfeed_dashboard_widgets', $this->widgets );
 
 		// Filter out Pro widgets if not licensed.

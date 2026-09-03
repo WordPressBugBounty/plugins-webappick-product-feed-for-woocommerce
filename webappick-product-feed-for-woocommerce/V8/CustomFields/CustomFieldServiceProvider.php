@@ -78,9 +78,20 @@ class CustomFieldServiceProvider extends ServiceProvider {
 		// Seed `woo_feed_settings` with default custom-field toggles BEFORE
 		// the registrar reads the option. Idempotent: only fills missing
 		// keys, never overwrites user preferences. PROD-FRD-10.3.
+		//
+		// Deferred to `init`: the defaults carry translated labels, and
+		// translating while the container boots on `plugins_loaded` makes
+		// WordPress ≥ 6.7 log the "_load_textdomain_just_in_time called
+		// incorrectly" notice on every page load (wp.org report). Every
+		// reader of the option (admin product screens, REST) runs after
+		// `init`, so priority 5 seeding stays "before the registrar reads".
 		/** @var CustomFieldInstaller $installer */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Inline @var type annotation for IDE/static analysis, not a documentation block.
 		$installer = $container->resolve( 'custom_fields.installer' );
-		$installer->seed_defaults();
+		if ( did_action( 'init' ) ) {
+			$installer->seed_defaults();
+		} else {
+			add_action( 'init', array( $installer, 'seed_defaults' ), 5 );
+		}
 
 		/** @var TaxonomyRegistrar $taxonomy */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Inline @var type annotation for IDE/static analysis, not a documentation block.
 		$taxonomy = $container->resolve( 'custom_fields.taxonomy' );

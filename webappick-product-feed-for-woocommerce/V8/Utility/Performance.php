@@ -4,7 +4,7 @@
  *
  * Captures execution time, DB query count, memory usage, and peak memory
  * per labeled operation. Supports multiple concurrent trackers. Delegates
- * logging to Core\Logger::performance().
+ * logging to Core\Logger::debug() ("[PERF]" system trace).
  *
  * @package    CTXFeed
  * @subpackage V8/Utility
@@ -64,7 +64,7 @@ class Performance {
 	 * Stop tracking and log the results.
 	 *
 	 * Calculates deltas for duration, queries, and memory. Logs the metrics
-	 * via Logger::performance(). Silently returns if the label was never started.
+	 * via Logger::debug() ("[PERF]" system trace). Silently returns if the label was never started.
 	 *
 	 * @since 8.0.0
 	 * @implements UTIL-FRD-6.2, UTIL-FRD-6.3
@@ -92,7 +92,8 @@ class Performance {
 		// Clean up tracker.
 		unset( self::$trackers[ $label ] );
 
-		// Delegate logging to Core\Logger.
-		Logger::performance( $label, $metrics['duration_ms'], $metrics );
+		// Perf lines are debug-mode traces in the plugin's own system log —
+		// never a WooCommerce log source.
+		Logger::debug( "[PERF] {$label}", $metrics );
 	}
 }

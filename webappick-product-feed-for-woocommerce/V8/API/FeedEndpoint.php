@@ -279,9 +279,12 @@ class FeedEndpoint extends RestController {
 				'logo'        => TemplateInfo::logo_url( $provider ),
 				'file_type'   => isset( $rules['feedType'] ) ? strtoupper( $rules['feedType'] ) : 'XML',
 				'feed_url'    => isset( $config['url'] ) ? $config['url'] : '',
-				'auto_update' => isset( $config['status'] ) ? 1 === (int) $config['status'] : true,
-				'interval'    => isset( $rules['cron'] ) ? $this->format_interval( $rules['cron'] ) : '—',
+				'auto_update' => $this->is_auto_update_on( $config ),
+				'interval'    => $this->display_interval( $config ),
 				'last_update' => $this->to_iso8601_utc( isset( $config['last_updated'] ) ? (string) $config['last_updated'] : '' ),
+				// A run started elsewhere (cron, another tab, another admin):
+				// the list picks it up and shows the live console for it.
+				'generating'  => $this->is_generating( $feed_name ),
 			);
 		}
 
@@ -322,6 +325,24 @@ class FeedEndpoint extends RestController {
 		// get_gmt_from_date() reads $local in the site timezone and returns the
 		// GMT equivalent; the 'c' format yields ISO-8601 with a +00:00 offset.
 		return get_gmt_from_date( $local, 'c' );
+	}
+
+	/**
+	 * Whether a feed's generation run is still moving (see
+	 * FeedScheduler::is_run_in_progress()).
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return bool
+	 */
+	private function is_generating( string $feed_name ): bool {
+		if ( ! class_exists( '\\CTXFeed\\V8\\Feed\\FeedScheduler' ) ) {
+			return false;
+		}
+		$manager = new \CTXFeed\V8\Feed\FeedManager();
+
+		return \CTXFeed\V8\Feed\FeedScheduler::is_run_in_progress( $manager->get_progress( $feed_name ) );
 	}
 
 	/**
@@ -635,6 +656,9 @@ class FeedEndpoint extends RestController {
 		// Delete both option keys.
 		delete_option( $option_name );
 		delete_option( 'wf_config' . $feed_slug );
+
+		// The feed's log goes with it.
+		( new \CTXFeed\V8\Utility\FeedLogger() )->delete( $feed_slug );
 
 		return $this->success( array( 'deleted' => true ) );
 	}
@@ -1456,6 +1480,7 @@ class FeedEndpoint extends RestController {
 
 						delete_option( $feed_data['option_name'] );
 						delete_option( 'wf_config' . $feed_slug );
+						( new \CTXFeed\V8\Utility\FeedLogger() )->delete( $feed_slug );
 						$results[] = true;
 					}
 					break;
@@ -2334,8 +2359,8 @@ class FeedEndpoint extends RestController {
 			'logo'        => TemplateInfo::logo_url( $provider ),
 			'file_type'   => isset( $rules['feedType'] ) ? strtoupper( $rules['feedType'] ) : 'XML',
 			'feed_url'    => isset( $config['url'] ) ? $config['url'] : '',
-			'auto_update' => isset( $config['status'] ) ? 1 === (int) $config['status'] : true,
-			'interval'    => isset( $rules['cron'] ) ? $this->format_interval( $rules['cron'] ) : '—',
+			'auto_update' => $this->is_auto_update_on( $config ),
+			'interval'    => $this->display_interval( $config ),
 			'last_update' => $this->to_iso8601_utc( isset( $config['last_updated'] ) ? (string) $config['last_updated'] : '' ),
 			'feedrules'   => $rules,
 			'config'      => $config,
@@ -2449,6 +2474,46 @@ class FeedEndpoint extends RestController {
 			'168' => 'Every Week',
 		);
 
-		return $map[ $interval ] ?? $interval;
+		if ( isset( $map[ $interval ] ) ) {
+			return $map[ $interval ];
+		}
+
+		/* translators: %d: number of hours */
+		return is_numeric( $interval ) ? sprintf( __( 'Every %d Hours', 'woo-feed' ), (int) $interval ) : $interval;
+	}
+
+	/**
+	 * Auto-update flag as the scheduler reads it: `status === 1`.
+	 *
+	 * A missing status means the feed is NOT scheduled, so it must not be
+	 * displayed as on.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param array $config Unserialised `wf_feed_{slug}` option.
+	 * @return bool
+	 */
+	private function is_auto_update_on( array $config ): bool {
+		return isset( $config['status'] ) && 1 === (int) $config['status'];
+	}
+
+	/**
+	 * Schedule column value: the interval the feed WILL run at, or '—' when
+	 * auto-update is off (rendered as "Manual").
+	 *
+	 * Uses the scheduler's own resolution (per-feed interval, else 24h), so
+	 * a feed without a per-feed value shows "24h" instead of "Manual".
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param array $config Unserialised `wf_feed_{slug}` option.
+	 * @return string
+	 */
+	private function display_interval( array $config ): string {
+		if ( ! $this->is_auto_update_on( $config ) ) {
+			return '—';
+		}
+
+		return $this->format_interval( (string) \CTXFeed\V8\Feed\FeedScheduler::effective_interval_hours( $config ) );
 	}
 }

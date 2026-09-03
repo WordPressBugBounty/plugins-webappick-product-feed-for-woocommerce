@@ -79,6 +79,10 @@ class CoreServiceProvider extends ServiceProvider {
 	 */
 	public function boot( Container $container ): void {
 
+		// PHP fatals raised inside the plugin land in WooCommerce → Status →
+		// Logs under the `ctxfeed` source.
+		Logger::register_fatal_handler();
+
 		/** @var HookManager $hook_manager */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Inline @var type annotation for IDE/static analysis, not a documentation block.
 		$hook_manager = $container->resolve( 'core.hook_manager' );
 		$hook_manager->boot( $container );

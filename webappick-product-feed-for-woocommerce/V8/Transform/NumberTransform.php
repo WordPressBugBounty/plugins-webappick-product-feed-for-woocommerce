@@ -84,15 +84,22 @@ class NumberTransform implements TransformInterface {
 		$price_attrs = apply_filters( 'ctxfeed_number_transform_attributes', $price_attrs, $config );
 
 		foreach ( $price_attrs as $attr ) {
-			// Only format numeric values. @implements XFRM-FRD-5.3.
-			if ( isset( $product_data[ $attr ] ) && is_numeric( $product_data[ $attr ] ) ) {
-				$product_data[ $attr ] = number_format(
-					(float) $product_data[ $attr ],
-					$decimals,
-					$dec_sep,
-					$thou_sep
-				);
+			if ( ! isset( $product_data[ $attr ] ) ) {
+				continue;
 			}
+
+			// Parse BEFORE formatting so this stage is idempotent. The value
+			// has usually ALREADY been formatted by PriceResolver with the
+			// same config — a bare (float) cast read the thousand separator
+			// as a decimal point ("1.499" → 1.499 → "1"), shipping a
+			// 1 499 SEK product to Google as 1 SEK (support #68878).
+			// @implements XFRM-FRD-5.3.
+			$parsed = \CTXFeed\V8\Utility\LocalizedNumber::parse( $product_data[ $attr ], $dec_sep, $thou_sep );
+			if ( null === $parsed ) {
+				continue; // Not a number in any accepted form — leave untouched.
+			}
+
+			$product_data[ $attr ] = number_format( $parsed, $decimals, $dec_sep, $thou_sep );
 		}
 
 		return $product_data;
