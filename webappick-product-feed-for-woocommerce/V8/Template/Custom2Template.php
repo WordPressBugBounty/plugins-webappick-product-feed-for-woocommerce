@@ -44,6 +44,7 @@ use CTXFeed\V8\Filter\FilterManager;
 use CTXFeed\V8\Product\AttributeResolver;
 use CTXFeed\V8\Transform\CommandProcessor;
 use CTXFeed\V8\Transform\StringTransform;
+use CTXFeed\V8\Product\TermCache;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -691,7 +692,7 @@ class Custom2Template implements TemplateInterface {
 	 */
 	private function get_category_paths( \WC_Product $product, Config $config ): array {
 		$pid       = $product->is_type( 'variation' ) ? $product->get_parent_id() : $product->get_id();
-		$term_ids  = wp_get_post_terms( $pid, 'product_cat', array( 'fields' => 'ids' ) );
+		$term_ids  = TermCache::get_ids( $pid, 'product_cat' );
 		$separator = apply_filters( 'woo_feed_filter_category_separator', ' > ', $product, $config );
 
 		if ( is_wp_error( $term_ids ) || empty( $term_ids ) ) {

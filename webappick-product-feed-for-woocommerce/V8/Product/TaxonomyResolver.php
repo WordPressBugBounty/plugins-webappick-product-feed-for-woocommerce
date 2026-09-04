@@ -62,6 +62,18 @@ if ( ! defined( 'ABSPATH' ) ) {
 class TaxonomyResolver {
 
 	/**
+	 * Memoised ancestor paths, keyed by "taxonomy:term_id".
+	 *
+	 * Term names are stable for the life of a batch request; products in
+	 * the same category/brand tree would otherwise re-walk identical
+	 * ancestor chains for every item.
+	 *
+	 * @since 8.0.11
+	 * @var array<string,string>
+	 */
+	private $path_memo = array();
+
+	/**
 	 * V5 default fallback string when a product has no product_cat terms
 	 * assigned. Matches V5 ProductInfo primary_category / child_category.
 	 *
@@ -427,7 +439,7 @@ class TaxonomyResolver {
 	private function pick_extremum_term_id( \WC_Product $product, string $extremum ): int {
 		$source = $product;
 		if ( $product->is_type( 'variation' ) ) {
-			$parent = wc_get_product( $product->get_parent_id() );
+			$parent = ProductMemo::get( (int) $product->get_parent_id() );
 			if ( $parent instanceof \WC_Product ) {
 				$source = $parent;
 			}
@@ -464,11 +476,7 @@ class TaxonomyResolver {
 	 * @return string
 	 */
 	private function resolve_generic_taxonomy( \WC_Product $product, string $taxonomy, Config $config ): string {
-		$terms = wp_get_post_terms(
-			$product->get_id(),
-			$taxonomy,
-			array( 'fields' => 'all' )
-		);
+		$terms = TermCache::get_terms( $product->get_id(), $taxonomy );
 
 		if ( is_wp_error( $terms ) || empty( $terms ) ) {
 			return '';
@@ -502,9 +510,15 @@ class TaxonomyResolver {
 	 * @return string Full category path.
 	 */
 	private function build_ancestor_path( \WP_Term $term ): string {
+		$key = $term->taxonomy . ':' . $term->term_id;
+		if ( isset( $this->path_memo[ $key ] ) ) {
+			return $this->path_memo[ $key ];
+		}
+
 		$ancestors = get_ancestors( $term->term_id, $term->taxonomy, 'taxonomy' );
 
 		if ( empty( $ancestors ) ) {
+			$this->path_memo[ $key ] = $term->name;
 			return $term->name;
 		}
 
@@ -520,6 +534,8 @@ class TaxonomyResolver {
 
 		$path_parts[] = $term->name;
 
-		return implode( ' > ', $path_parts );
+		$this->path_memo[ $key ] = implode( ' > ', $path_parts );
+
+		return $this->path_memo[ $key ];
 	}
 }

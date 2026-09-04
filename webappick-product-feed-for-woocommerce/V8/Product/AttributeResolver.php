@@ -293,8 +293,16 @@ class AttributeResolver {
 			'sale_price_effective_date',
 		);
 
+		// A legitimate ZERO is not "empty": V5's fallbacks triggered on
+		// `'' === $value` only, so quantity 0 (out of stock) stayed 0.
+		// `empty()` alone would inherit the PARENT's value for it —
+		// wrong data (e.g. an out-of-stock variation reporting the
+		// variable parent's aggregate stock).
+		$is_zero = 0 === $value || 0.0 === $value || '0' === $value;
+
 		if (
 			empty( $value )
+			&& ! $is_zero
 			&& $product->is_type( 'variation' )
 			&& empty( $mapping['no_variation_fallback'] )
 				&& ! in_array( (string) ( $mapping['wc_attr'] ?? '' ), $no_parent_fallback, true )
@@ -340,7 +348,7 @@ class AttributeResolver {
 				// — V5 6.6.x woo_feed_filter_variation_title_with_attributes.
 				// Null from the filter keeps WC's own variation name.
 				if ( $product->is_type( 'variation' ) ) {
-					$parent          = wc_get_product( $product->get_parent_id() );
+					$parent          = ProductMemo::get( (int) $product->get_parent_id() );
 					$variation_parts = array();
 					foreach ( array_keys( (array) $product->get_attributes() ) as $attr_slug ) {
 						$attr_value = $product->get_attribute( $attr_slug );
@@ -393,7 +401,7 @@ class AttributeResolver {
 			// PROD-FRD-10.10.
 			case 'parent_title':
 				if ( $product->is_type( 'variation' ) ) {
-					$parent = wc_get_product( $product->get_parent_id() );
+					$parent = ProductMemo::get( (int) $product->get_parent_id() );
 					$title  = $parent instanceof \WC_Product ? $parent->get_name() : '';
 				} else {
 					$title = '';
@@ -433,7 +441,7 @@ class AttributeResolver {
 					$desc = $product->get_short_description();
 				}
 				if ( $product->is_type( 'variation' ) ) {
-					$parent_prod = wc_get_product( $product->get_parent_id() );
+					$parent_prod = ProductMemo::get( (int) $product->get_parent_id() );
 					if ( $parent_prod instanceof \WC_Product ) {
 						$desc = $parent_prod->get_description();
 						if ( '' === $desc ) {
@@ -455,7 +463,7 @@ class AttributeResolver {
 			case 'parent_description':
 				$parent_desc = $product->get_description();
 				if ( $product->is_type( 'variation' ) ) {
-					$parent_prod = wc_get_product( $product->get_parent_id() );
+					$parent_prod = ProductMemo::get( (int) $product->get_parent_id() );
 					if ( $parent_prod instanceof \WC_Product ) {
 						$parent_desc = $parent_prod->get_description();
 					}
@@ -493,7 +501,7 @@ class AttributeResolver {
 			case 'parent_sku':
 				$parent_sku = $product->get_sku();
 				if ( $product->is_type( 'variation' ) ) {
-					$parent_prod = wc_get_product( $product->get_parent_id() );
+					$parent_prod = ProductMemo::get( (int) $product->get_parent_id() );
 					if ( $parent_prod instanceof \WC_Product ) {
 						$parent_sku = $parent_prod->get_sku();
 					}
@@ -526,7 +534,7 @@ class AttributeResolver {
 			case 'parent_link':
 				$parent_link = $product->get_permalink();
 				if ( $product->is_type( 'variation' ) ) {
-					$parent_prod = wc_get_product( $product->get_parent_id() );
+					$parent_prod = ProductMemo::get( (int) $product->get_parent_id() );
 					if ( $parent_prod instanceof \WC_Product ) {
 						$parent_link = $parent_prod->get_permalink();
 					}
@@ -1047,7 +1055,7 @@ class AttributeResolver {
 			case 'custom_xml_categories':
 				$cat_product = $product;
 				if ( $product->is_type( 'variation' ) ) {
-					$cat_parent = wc_get_product( $product->get_parent_id() );
+					$cat_parent = ProductMemo::get( (int) $product->get_parent_id() );
 					if ( $cat_parent instanceof \WC_Product ) {
 						$cat_product = $cat_parent;
 					}
@@ -1087,7 +1095,7 @@ class AttributeResolver {
 
 					// Variation fallback to parent.
 					if ( '' === $value && $product->is_type( 'variation' ) ) {
-						$parent = wc_get_product( $product->get_parent_id() );
+						$parent = ProductMemo::get( (int) $product->get_parent_id() );
 						if ( $parent instanceof \WC_Product ) {
 							$value = $this->meta->resolve( $parent, $meta_key, $config );
 						}
@@ -1130,7 +1138,7 @@ class AttributeResolver {
 				if ( null !== $this->category_mapping && CategoryMappingResolver::handles( $attr ) ) {
 					$lookup_product = $product;
 					if ( $product->is_type( 'variation' ) ) {
-						$parent = wc_get_product( $product->get_parent_id() );
+						$parent = ProductMemo::get( (int) $product->get_parent_id() );
 						if ( $parent instanceof \WC_Product ) {
 							$lookup_product = $parent;
 						}
@@ -1228,7 +1236,7 @@ class AttributeResolver {
 
 		// Variation fallback: try parent product if variation has empty value.
 		if ( '' === $value && $product->is_type( 'variation' ) ) {
-			$parent = wc_get_product( $product->get_parent_id() );
+			$parent = ProductMemo::get( (int) $product->get_parent_id() );
 			if ( $parent instanceof \WC_Product ) {
 				$value = $parent->get_attribute( $attr_name );
 			}
@@ -1561,7 +1569,7 @@ class AttributeResolver {
 				'unit'                      => 'disable',
 				'unit_pricing_measure'      => 'disable',
 				'unit_pricing_base_measure' => 'disable',
-			) 
+			)
 		);
 	}
 

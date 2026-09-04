@@ -237,6 +237,9 @@ class NoticeProvider {
 	/**
 	 * Free source: warn when error/debug logging is disabled.
 	 *
+	 * Per-feed generation logs are always written (8.0.11+); this setting
+	 * only gates the extra system diagnostics log, so the copy says that.
+	 *
 	 * @since 8.0.0
 	 *
 	 * @return array Zero or one notice.
@@ -257,7 +260,7 @@ class NoticeProvider {
 				'severity'    => 'warning',
 				'priority'    => 40,
 				'title'       => __( 'Debug logging is off', 'woo-feed' ),
-				'message'     => __( 'Turn on error & debug logging so feed problems can be diagnosed from the System status page.', 'woo-feed' ),
+				'message'     => __( 'Per-feed generation logs are always kept. Turn on error & debug logging to also capture system diagnostics on the System status page.', 'woo-feed' ),
 				'action'      => array(
 					'label' => __( 'Open settings', 'woo-feed' ),
 					'url'   => '/settings',

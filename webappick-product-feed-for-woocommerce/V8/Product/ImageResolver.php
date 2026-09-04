@@ -3,7 +3,8 @@
  * ImageResolver — Resolves product images including featured, gallery, and indexed.
  *
  * Supports configurable image sizes and returns URLs for feed output.
- * Image metadata is already cache-primed by CacheWarmer.
+ * Attachment posts + meta are bulk-primed by CacheWarmer (products,
+ * parents, and their thumbnail/gallery attachment IDs).
  *
  * @package    CTXFeed
  * @subpackage V8/Product
@@ -26,6 +27,30 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @since 8.0.0
  */
 class ImageResolver {
+
+	/**
+	 * Memoised formatted attachment URLs, keyed "attachment_id|size".
+	 *
+	 * Variations without their own gallery re-resolve the SAME parent
+	 * attachments; the URL for an (attachment, size) pair is deterministic
+	 * per request. FIFO-capped.
+	 *
+	 * @since 8.0.12
+	 * @var array<string,string>
+	 */
+	private $url_memo = array();
+
+	/**
+	 * Memoised gallery URL lists, keyed "product_id|size".
+	 *
+	 * A feed mapping image_1..image_10 plus additional_image_link rebuilds
+	 * the same gallery list up to 11 times per product. Attributes of one
+	 * product resolve contiguously, so a tiny FIFO suffices.
+	 *
+	 * @since 8.0.12
+	 * @var array<string,array>
+	 */
+	private $gallery_memo = array();
 
 	/**
 	 * Resolve an image attribute for a product.
@@ -97,7 +122,7 @@ class ImageResolver {
 			if ( ! empty( $own_id ) ) {
 				return $this->format_attachment_url( $own_id, $size );
 			}
-			$parent = wc_get_product( $product->get_parent_id() );
+			$parent = ProductMemo::get( (int) $product->get_parent_id() );
 			if ( $parent instanceof \WC_Product ) {
 				$parent_id = $parent->get_image_id();
 				if ( ! empty( $parent_id ) ) {
@@ -131,7 +156,7 @@ class ImageResolver {
 		$image_id = $product->get_image_id();
 
 		if ( $product->is_type( 'variation' ) ) {
-			$parent = wc_get_product( $product->get_parent_id() );
+			$parent = ProductMemo::get( (int) $product->get_parent_id() );
 			if ( $parent instanceof \WC_Product ) {
 				$parent_image = $parent->get_image_id();
 				if ( ! empty( $parent_image ) ) {
@@ -162,9 +187,14 @@ class ImageResolver {
 	 * @return string Formatted URL, or empty string.
 	 */
 	private function format_attachment_url( int $attachment_id, string $size ): string {
+		$memo_key = $attachment_id . '|' . $size;
+		if ( isset( $this->url_memo[ $memo_key ] ) ) {
+			return $this->url_memo[ $memo_key ];
+		}
+
 		$url = wp_get_attachment_image_url( $attachment_id, $size );
 		if ( ! $url ) {
-			return '';
+			return $this->remember_url( $memo_key, '' );
 		}
 
 		$url     = (string) $url;
@@ -175,7 +205,24 @@ class ImageResolver {
 			$url = get_site_url() . $url;
 		}
 
-		return $this->encode_url( rtrim( $url, '/' ) );
+		return $this->remember_url( $memo_key, $this->encode_url( rtrim( $url, '/' ) ) );
+	}
+
+	/**
+	 * Store a formatted URL in the FIFO memo and return it.
+	 *
+	 * @since 8.0.12
+	 *
+	 * @param string $key Memo key ("attachment_id|size").
+	 * @param string $url Formatted URL ('' for unresolvable attachments).
+	 * @return string The URL, unchanged.
+	 */
+	private function remember_url( string $key, string $url ): string {
+		if ( count( $this->url_memo ) >= 500 ) {
+			unset( $this->url_memo[ array_key_first( $this->url_memo ) ] );
+		}
+		$this->url_memo[ $key ] = $url;
+		return $url;
 	}
 
 	/**
@@ -299,6 +346,11 @@ class ImageResolver {
 	 * @return string[] Array of gallery image URLs.
 	 */
 	private function get_gallery_urls( \WC_Product $product, string $size ): array {
+		$memo_key = $product->get_id() . '|' . $size;
+		if ( isset( $this->gallery_memo[ $memo_key ] ) ) {
+			return $this->gallery_memo[ $memo_key ];
+		}
+
 		$gallery_ids = $product->get_gallery_image_ids();
 
 		// Variations have no native WC gallery. V5 6.6.x: variation
@@ -310,13 +362,9 @@ class ImageResolver {
 			$gallery_ids = (array) apply_filters( 'woo_feed_filter_variation_gallery_attachment_ids', array(), $product );
 
 			if ( empty( $gallery_ids ) ) {
-				$parent      = wc_get_product( $product->get_parent_id() );
+				$parent      = ProductMemo::get( (int) $product->get_parent_id() );
 				$gallery_ids = $parent instanceof \WC_Product ? $parent->get_gallery_image_ids() : array();
 			}
-		}
-
-		if ( empty( $gallery_ids ) ) {
-			return array();
 		}
 
 		$urls = array();
@@ -327,6 +375,11 @@ class ImageResolver {
 				$urls[] = $url;
 			}
 		}
+
+		if ( count( $this->gallery_memo ) >= 50 ) {
+			unset( $this->gallery_memo[ array_key_first( $this->gallery_memo ) ] );
+		}
+		$this->gallery_memo[ $memo_key ] = $urls;
 
 		return $urls;
 	}

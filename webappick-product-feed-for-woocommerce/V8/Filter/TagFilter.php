@@ -14,6 +14,7 @@
 namespace CTXFeed\V8\Filter;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Product\TermCache;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -49,7 +50,7 @@ class TagFilter implements FilterInterface {
 			return true;
 		}
 
-		$product_tags = wp_get_post_terms( $product->get_id(), 'product_tag', array( 'fields' => 'ids' ) );
+		$product_tags = TermCache::get_ids( $product->get_id(), 'product_tag' );
 
 		// Log WP_Error before graceful degradation. @implements FLTR-FRD-6.3.
 		if ( is_wp_error( $product_tags ) ) {

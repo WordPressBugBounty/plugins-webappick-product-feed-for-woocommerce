@@ -21,6 +21,7 @@
 namespace CTXFeed\V8\Filter;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Product\ProductMemo;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -56,7 +57,7 @@ class EmptyFieldFilter implements FilterInterface {
 
 			if ( empty( $description ) ) {
 				if ( $product->is_type( 'variation' ) ) {
-					$parent = wc_get_product( $product->get_parent_id() );
+					$parent = ProductMemo::get( (int) $product->get_parent_id() );
 					if ( $parent instanceof \WC_Product && empty( $parent->get_description() ) ) {
 						return false;
 					}
@@ -80,7 +81,7 @@ class EmptyFieldFilter implements FilterInterface {
 		if ( FilterHelper::bool( $config->get( 'is_emptyImage', false ) ) ) {
 			if ( empty( $product->get_image_id() ) ) {
 				if ( $product->is_type( 'variation' ) ) {
-					$parent = wc_get_product( $product->get_parent_id() );
+					$parent = ProductMemo::get( (int) $product->get_parent_id() );
 					if ( $parent instanceof \WC_Product && empty( $parent->get_image_id() ) ) {
 						return false;
 					}

@@ -63,6 +63,7 @@ namespace CTXFeed\V8\Transform;
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Core\FeatureGate;
 use CTXFeed\V8\Product\AttributeResolver;
+use CTXFeed\V8\Product\ProductMemo;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -594,7 +595,7 @@ class CommandProcessor {
 			return $value;
 		}
 
-		$parent = wc_get_product( $parent_id );
+		$parent = ProductMemo::get( (int) $parent_id );
 		if ( ! $parent instanceof \WC_Product ) {
 			return $value;
 		}

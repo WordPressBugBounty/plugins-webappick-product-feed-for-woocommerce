@@ -35,6 +35,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 class XMLTemplate implements TemplateInterface {
 
 	/**
+	 * Memoised result of {@see is_cdata_enabled()} — option read + filter
+	 * dispatch once per template instance instead of once per element.
+	 *
+	 * @since 8.0.12
+	 * @var bool|null
+	 */
+	private $cdata_enabled_memo = null;
+
+	/**
 	 * Render the XML header.
 	 *
 	 * Loads channel-specific template file if available (e.g., google.txt,
@@ -386,8 +395,12 @@ class XMLTemplate implements TemplateInterface {
 
 		$value = (string) $value;
 
-		// Check global CDATA setting.
-		$cdata_enabled = $this->is_cdata_enabled();
+		// Check global CDATA setting — memoised: the setting is immutable per
+		// request but this runs for EVERY scalar element of every row.
+		if ( null === $this->cdata_enabled_memo ) {
+			$this->cdata_enabled_memo = $this->is_cdata_enabled();
+		}
+		$cdata_enabled = $this->cdata_enabled_memo;
 
 		if ( $cdata_enabled && '' !== $value ) {
 			// Strip existing CDATA markers, then wrap fresh.

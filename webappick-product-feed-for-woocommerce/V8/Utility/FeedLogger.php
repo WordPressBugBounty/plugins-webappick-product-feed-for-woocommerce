@@ -63,14 +63,24 @@ class FeedLogger {
 	/**
 	 * Constructor.
 	 *
-	 * Checks the `enable_error_debugging` setting from `woo_feed_settings`.
-	 * When disabled, all methods become no-ops — zero overhead.
+	 * Per-feed logging is always on: the log is buffered in memory and written
+	 * with a single fwrite per batch, so the cost is negligible (~1 ms/batch)
+	 * and the log is the primary support artifact when a generation fails.
+	 * The `ctxfeed_feed_log_enabled` filter is a kill-switch for sites that
+	 * need to disable it (disk quota, privacy).
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.11 Always enabled; `enable_error_debugging` now only gates the system log.
 	 */
 	public function __construct() {
-		$settings      = get_option( 'woo_feed_settings', array() );
-		$this->enabled = isset( $settings['enable_error_debugging'] ) && 'on' === $settings['enable_error_debugging'];
+		/**
+		 * Filter whether per-feed generation logs are written.
+		 *
+		 * @since 8.0.11
+		 *
+		 * @param bool $enabled Default true.
+		 */
+		$this->enabled = (bool) apply_filters( 'ctxfeed_feed_log_enabled', true );
 
 		$upload_dir    = wp_get_upload_dir();
 		$this->log_dir = trailingslashit( $upload_dir['basedir'] ) . 'woo-feed/logs/';

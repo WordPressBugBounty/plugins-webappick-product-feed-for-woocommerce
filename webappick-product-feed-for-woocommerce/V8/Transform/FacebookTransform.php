@@ -19,6 +19,7 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Product\ProductMemo;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -187,7 +188,7 @@ class FacebookTransform implements TransformInterface {
 			return $description;
 		}
 
-		$product = wc_get_product( $product_id );
+		$product = ProductMemo::get( $product_id );
 
 		if ( ! $product || ! $product->is_type( 'variation' ) ) {
 			return $description;

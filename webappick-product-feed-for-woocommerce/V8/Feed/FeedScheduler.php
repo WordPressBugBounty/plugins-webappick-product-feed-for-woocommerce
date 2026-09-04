@@ -66,6 +66,26 @@ class FeedScheduler {
 	const RECURRING_ACTION = 'ctxfeed_recurring_generation';
 
 	/**
+	 * Progress silence (seconds) after which a generating feed with NO live
+	 * batch/finalize action counts as a dead chain (a batch killed with
+	 * SIGKILL runs no shutdown handler, so the 8.0.7 retry never fires).
+	 * Batches heartbeat every 3 s — 90 silent seconds is 30 missed beats.
+	 *
+	 * @since 8.0.10
+	 * @var int
+	 */
+	const REVIVE_SILENCE_SECONDS = 90;
+
+	/**
+	 * Revives allowed per run before the feed is marked failed (each revive
+	 * halves the batch, so 5 narrow a killer product down toward the floor).
+	 *
+	 * @since 8.0.10
+	 * @var int
+	 */
+	const MAX_CHAIN_REVIVES = 5;
+
+	/**
 	 * Action Scheduler group name.
 	 *
 	 * @since 8.0.0
@@ -229,12 +249,13 @@ class FeedScheduler {
 	 *
 	 * @param string $feed_name Feed slug identifier.
 	 * @param Config $config    Feed configuration object.
+	 * @param string $trigger   'manual' (default) or 'scheduled' — scheduled runs use the lower batch ceiling.
 	 *
 	 * @return true|\WP_Error True on success, WP_Error if generation lock held by another feed.
 	 *
 	 * @throws \Throwable Re-thrown from the synchronous fast-path so REST callers receive the real generation error.
 	 */
-	public function schedule_generation( string $feed_name, Config $config ) {
+	public function schedule_generation( string $feed_name, Config $config, string $trigger = 'manual' ) {
 		// Self-overlap guard: a second "generate" for a feed whose run is still
 		// moving must be refused, not started. The site-wide lock below lets the
 		// SAME feed re-acquire it (batches refresh the TTL that way), so without
@@ -281,7 +302,7 @@ class FeedScheduler {
 		// a failure before the sync try-block would leave the lock stuck for its
 		// full 600s TTL and reject every other feed as already-locked.
 		try {
-			return $this->run_generation( $feed_name, $config );
+			return $this->run_generation( $feed_name, $config, $trigger );
 		} catch ( \Throwable $e ) {
 			if ( $this->batch_calculator ) {
 				// Ownership-scoped: a safe no-op if the lock was already freed.
@@ -373,11 +394,12 @@ class FeedScheduler {
 	 * @param string $feed_name Feed slug identifier.
 	 * @param Config $config    Feed configuration.
 	 *
+	 * @param string $trigger 'manual' or 'scheduled' (lower batch ceiling).
 	 * @return bool True once generation has run (sync) or been scheduled (async).
 	 * @throws \Throwable On any product-resolution or synchronous-generation
 	 *                    failure; the caller releases the lock and re-throws.
 	 */
-	private function run_generation( string $feed_name, Config $config ): bool {
+	private function run_generation( string $feed_name, Config $config, string $trigger = 'manual' ): bool {
 		$query = new ProductQuery();
 		// Bind the query to this feed so get_total_count() persists the
 		// product-ID list as a snapshot. Subsequent batches reuse the same
@@ -395,6 +417,9 @@ class FeedScheduler {
 		// Auto-calculate initial batch size based on server limits. @implements FEED-FRD-11.1.
 		$auto_batch_size = 200; // Fallback if no BatchCalculator.
 		if ( $this->batch_calculator ) {
+			// Bind the feed so calculate_initial() can seed from the
+			// previous run's persisted per-product measurement.
+			$this->batch_calculator->set_feed_name( $feed_name );
 			$auto_batch_size = $this->batch_calculator->calculate_initial();
 		}
 
@@ -411,6 +436,12 @@ class FeedScheduler {
 		 * @param string $feed_name  Feed slug identifier.
 		 */
 		$batch_size = apply_filters( 'ctxfeed_batch_size', $auto_batch_size, $feed_name );
+
+		// Scheduled (auto-update) runs are unattended — cap them lower so each
+		// action stays small and progress commits often (see the constant).
+		if ( 'scheduled' === $trigger ) {
+			$batch_size = min( $batch_size, BatchCalculator::SCHEDULED_BATCH_CEILING );
+		}
 
 		$batches_total = ( $batch_size > 0 && $total > 0 ) ? (int) ceil( $total / $batch_size ) : 1;
 		$env_profile   = $this->batch_calculator ? $this->batch_calculator->get_environment_profile() : 'unknown';
@@ -457,6 +488,7 @@ class FeedScheduler {
 				'current'             => 0,
 				'total'               => $total,
 				'status'              => 'generating',
+				'trigger'             => $trigger,
 				'batch_size'          => $batch_size,
 				'batches_done'        => 0,
 				'batches_total'       => $batches_total,
@@ -1208,8 +1240,9 @@ class FeedScheduler {
 
 		Logger::info( "Recurring auto-update triggered: {$feed_name}" );
 
-		// Start a fresh generation cycle with auto-calculated batch size.
-		$this->schedule_generation( $feed_name, $config );
+		// Start a fresh generation cycle with auto-calculated batch size,
+		// marked as a scheduled run (lower batch ceiling, see BatchCalculator).
+		$this->schedule_generation( $feed_name, $config, 'scheduled' );
 	}
 
 	/**
@@ -1270,9 +1303,15 @@ class FeedScheduler {
 			$this->in_flight_batch = null;
 
 			$next_batch_size = isset( $result['next_batch_size'] ) ? (int) $result['next_batch_size'] : $batch_size;
+			// A time-boxed batch consumed fewer ids than its nominal size: the
+			// next offset must follow the ids actually processed.
+			$step = isset( $result['step'] ) && (int) $result['step'] > 0 ? (int) $result['step'] : $batch_size;
+
+			// Forward progress resets the dead-chain revive budget.
+			delete_transient( 'ctxfeed_chain_revives_' . $feed_name );
 
 			// Chain next batch or finalize with adaptive batch size. @implements FEED-FRD-3.2.
-			$this->schedule_next_or_finalize( $feed_name, $offset, $batch_size, $total, $next_batch_size );
+			$this->schedule_next_or_finalize( $feed_name, $offset, $step, $total, $next_batch_size );
 		} catch ( \Throwable $e ) {
 			// Catchable failure handled here — disarm the shutdown guard.
 			$this->in_flight_batch = null;
@@ -1471,6 +1510,179 @@ class FeedScheduler {
 	}
 
 	/**
+	 * Revive a feed whose batch chain died without a trace.
+	 *
+	 * A batch killed with SIGKILL (host process limits, kernel OOM, a
+	 * segfault inside one product) runs no shutdown handler: the 8.0.7
+	 * halved-batch retry never fires, Action Scheduler stamps the action
+	 * failed, and the run sits at status=generating forever. When the
+	 * progress record has been silent past REVIVE_SILENCE_SECONDS and no
+	 * batch/finalize action is pending or in-progress, this re-queues a
+	 * batch at the last heartbeat position with HALF the batch size (the
+	 * retry-idempotency marker keeps the file consistent). Repeated deaths
+	 * halve toward BATCH_FLOOR; after MAX_CHAIN_REVIVES the run is marked
+	 * failed with the product window named in the feed log.
+	 *
+	 * Called from the browser runner (POST /feeds/{id}/run — the open admin
+	 * tab polls it, so a watched run self-heals within seconds).
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return bool True when a revive (or the give-up) was performed.
+	 */
+	public function maybe_revive_dead_chain( string $feed_name ): bool {
+		if ( ! function_exists( 'as_get_scheduled_actions' ) || ! function_exists( 'as_schedule_single_action' ) ) {
+			return false;
+		}
+
+		$manager  = $this->manager ? $this->manager : new FeedManager();
+		$progress = $manager->get_progress( $feed_name );
+		if ( 'generating' !== ( $progress['status'] ?? '' ) ) {
+			return false;
+		}
+
+		$touched = strtotime( (string) ( $progress['updated_at'] ?? '' ) );
+		if ( false === $touched ) {
+			return false;
+		}
+		$now = (int) strtotime( current_time( 'mysql' ) );
+		if ( ( $now - $touched ) < self::REVIVE_SILENCE_SECONDS ) {
+			return false;
+		}
+
+		if ( $this->feed_has_live_actions( $feed_name ) ) {
+			return false;
+		}
+
+		$total   = (int) ( $progress['total'] ?? 0 );
+		$current = (int) ( $progress['current'] ?? 0 );
+
+		$attempts = (int) get_transient( 'ctxfeed_chain_revives_' . $feed_name );
+		if ( $attempts >= self::MAX_CHAIN_REVIVES ) {
+			if ( $this->feed_logger ) {
+				$this->feed_logger->error(
+					$feed_name,
+					sprintf(
+						'Generation failed — the batch at products %d–%d died %d times in a row without an error to catch. One of these products is likely crashing PHP; check the server error log for this window.',
+						$current + 1,
+						min( $total, $current + BatchCalculator::BATCH_FLOOR ),
+						$attempts
+					)
+				);
+				$this->feed_logger->flush( $feed_name );
+			}
+			$manager->update_progress( $feed_name, array( 'status' => 'failed' ) );
+			if ( $this->batch_calculator ) {
+				$this->batch_calculator->release_lock( $feed_name );
+			}
+			delete_transient( 'ctxfeed_chain_revives_' . $feed_name );
+			Logger::error( "Dead batch chain gave up after {$attempts} revives: {$feed_name}" );
+			return true;
+		}
+		set_transient( 'ctxfeed_chain_revives_' . $feed_name, $attempts + 1, HOUR_IN_SECONDS );
+
+		if ( $this->batch_calculator ) {
+			$this->batch_calculator->acquire_lock( $feed_name );
+		}
+
+		if ( $total > 0 && $current >= $total ) {
+			// Everything was written; only the finalize died.
+			as_schedule_single_action(
+				time(),
+				self::FINALIZE_ACTION,
+				array(
+					'feed_name' => $feed_name,
+					'total'     => $total,
+				),
+				self::GROUP 
+			);
+			Logger::warning( "Dead chain revived at finalize: {$feed_name}" );
+			return true;
+		}
+
+		$size = max( BatchCalculator::BATCH_FLOOR, (int) floor( max( 1, (int) ( $progress['batch_size'] ?? 200 ) ) / 2 ) );
+
+		if ( $this->feed_logger ) {
+			$this->feed_logger->info(
+				$feed_name,
+				sprintf(
+					'A batch died without a trace (process killed) — resuming at product %s with %s per batch (revive %d/%d)',
+					FeedLogger::products( $current ),
+					FeedLogger::products( $size ),
+					$attempts + 1,
+					self::MAX_CHAIN_REVIVES
+				)
+			);
+			$this->feed_logger->flush( $feed_name );
+		}
+		// Touch the progress record so the silence window restarts and the
+		// admin console shows movement again.
+		$manager->update_progress( $feed_name, array( 'batch_size' => $size ) );
+
+		as_schedule_single_action(
+			time(),
+			self::GENERATE_ACTION,
+			array(
+				'feed_name'  => $feed_name,
+				'offset'     => $current,
+				'batch_size' => $size,
+				'total'      => $total,
+			),
+			self::GROUP
+		);
+		Logger::warning(
+			"Dead batch chain revived: {$feed_name}",
+			array(
+				'offset'     => $current,
+				'batch_size' => $size,
+				'revive'     => $attempts + 1,
+			) 
+		);
+
+		return true;
+	}
+
+	/**
+	 * Whether any batch or finalize action for this feed is pending or
+	 * in-progress (a live chain).
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return bool
+	 */
+	protected function feed_has_live_actions( string $feed_name ): bool {
+		foreach ( array( self::GENERATE_ACTION, self::FINALIZE_ACTION ) as $hook ) {
+			foreach ( array( 'pending', 'in-progress' ) as $status ) {
+				try {
+					$actions = as_get_scheduled_actions(
+						array(
+							'hook'     => $hook,
+							'group'    => self::GROUP,
+							'status'   => $status,
+							'per_page' => 50,
+						)
+					);
+				} catch ( \Throwable $e ) {
+					return true; // Cannot tell — assume alive rather than double-schedule.
+				}
+				foreach ( (array) $actions as $action ) {
+					if ( ! is_object( $action ) || ! method_exists( $action, 'get_args' ) ) {
+						continue;
+					}
+					$args = (array) $action->get_args();
+					if ( ( $args['feed_name'] ?? '' ) === $feed_name ) {
+						return true;
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
+	/**
 	 * Browser-driven fallback: run this feed's PENDING batch/finalize actions
 	 * synchronously, up to a wall-clock budget.
 	 *
@@ -1513,6 +1725,11 @@ class FeedScheduler {
 		if ( $budget_seconds <= 0 ) {
 			$budget_seconds = 20.0;
 		}
+
+		// Revive a dead chain first: a batch killed too hard for any handler
+		// (SIGKILL, segfault) leaves status=generating with no queued action —
+		// nothing would ever run again without this.
+		$this->maybe_revive_dead_chain( $feed_name );
 
 		$start = microtime( true );
 		$ran   = 0;

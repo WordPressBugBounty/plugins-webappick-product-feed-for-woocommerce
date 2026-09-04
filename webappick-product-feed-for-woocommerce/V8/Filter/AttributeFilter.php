@@ -15,6 +15,7 @@
 namespace CTXFeed\V8\Filter;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Product\TermCache;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -57,7 +58,7 @@ class AttributeFilter implements FilterInterface {
 				continue;
 			}
 
-			$product_terms = wp_get_post_terms( $product->get_id(), $taxonomy, array( 'fields' => 'slugs' ) );
+			$product_terms = TermCache::get_slugs( $product->get_id(), $taxonomy );
 
 			// Log WP_Error before continuing. @implements FLTR-FRD-7.3.
 			if ( is_wp_error( $product_terms ) ) {

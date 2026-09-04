@@ -140,20 +140,29 @@ class StringTransform implements TransformInterface {
 			// deleting the whole value. Valid JSON (directly, or after
 			// swapping Meta's single quotes for double quotes) is never a
 			// WP shortcode, so it bypasses the cleanup.
-			$is_json = in_array( substr( ltrim( $value ), 0, 1 ), array( '[', '{' ), true )
-				&& ( null !== json_decode( $value, true )
-					|| null !== json_decode( str_replace( "'", '"', $value ), true ) );
+			// Fast path: a value with no '[' can contain neither a
+			// shortcode nor a bracket pattern, so the whole cleanup —
+			// including the JSON sniff's json_decode — is a no-op for it.
+			if (
+				$config->get( 'remove_shortcodes', true )
+				&& '' !== $value
+				&& false !== strpos( $value, '[' )
+			) {
+				$is_json = in_array( substr( ltrim( $value ), 0, 1 ), array( '[', '{' ), true )
+					&& ( null !== json_decode( $value, true )
+						|| null !== json_decode( str_replace( "'", '"', $value ), true ) );
 
-			if ( $config->get( 'remove_shortcodes', true ) && '' !== $value && ! $is_json ) {
-				if ( function_exists( 'do_shortcode' ) ) {
-					$value = (string) do_shortcode( $value );
+				if ( ! $is_json ) {
+					if ( function_exists( 'do_shortcode' ) ) {
+						$value = (string) do_shortcode( $value );
+					}
+					$value = strip_shortcodes( $value );
+					$value = preg_replace(
+						'/\[\/*[č?a-zA-Z1-90_| -=\'"\{\}]*\/*\]/m',
+						'',
+						$value
+					) ?? $value;
 				}
-				$value = strip_shortcodes( $value );
-				$value = preg_replace(
-					'/\[\/*[č?a-zA-Z1-90_| -=\'"\{\}]*\/*\]/m',
-					'',
-					$value
-				) ?? $value;
 			}
 
 			// Character limit (applied last). @implements XFRM-FRD-4.3.

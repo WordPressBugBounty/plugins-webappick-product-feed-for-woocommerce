@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.10
+Stable tag: 8.0.11
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,17 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.11 =
+* Performance: feed generation is several times faster. On our 2,400-product test store a full run dropped from 42 to 9 seconds, and variation-heavy catalogs gain the most: a variation's parent product data is now resolved once per parent instead of once per variation, product images are bulk-loaded per batch instead of queried one by one, and category/tag lookups are served from the already-warmed cache. Every value served from the new caches is spot-checked against a freshly computed one during the run; on any difference the plugin logs it and finishes the run on the slower, always-correct path.
+* Fix: a feed whose batch was killed by the server without any error (the run froze with no failure message) now restarts itself from the exact product it reached, with a smaller batch; if the same spot keeps dying the feed is marked failed and the log names the products to check. The performance trace now shows where each batch's time went and names unusually slow products.
+* Fix: the "Feed generation is taking longer than expected" warning no longer interrupts a long feed that is still making progress — the page keeps watching as long as the product count moves, and only gives up after 4 hours.
+* Change: batches are capped at 2,000 products for manual generation and 1,000 for scheduled auto-updates, on top of the automatic sizing and the time limit — large stores get steady, predictable batches instead of ever-growing ones.
+* Fix: a batch now stops on its own before the background scheduler's time limit and hands the remaining products to the next batch, so a large batch can no longer be stamped "failed" and run twice. The generation log shows the product count climbing inside a batch, and a run that really stops is reported in the log instead of a vanishing "stalled" message.
+* New: every feed writes its generation log — no need to turn on "error & debug logging" first, so support can always ask for the log of a failed run. The debug setting now only controls the extra system diagnostics log. (Sites that must not write logs can disable them with the ctxfeed_feed_log_enabled filter.)
+* Fix: an out-of-stock variation with quantity 0 no longer inherits its parent product's total stock in the feed — zero stays zero, matching the classic engine.
+* Change: the first batch of a run is sized from the previous run's measured speed instead of a fixed estimate, so slow stores no longer overshoot on batch one and fast stores ramp up sooner.
+* New: the performance trace in the log now breaks each batch down by attribute, counts database queries per pipeline stage, and records how long the background scheduler idled between batches — the numbers support needs to diagnose a slow feed on your host.
 
 = Version 8.0.10 =
 * New: "Parent Brand (WooCommerce)" and "Child Brand (WooCommerce)" attributes for the hierarchical WooCommerce Brands taxonomy (the top-level brand and the assigned sub-brand), and the WooCommerce Brands taxonomy is available to free users in the attribute dropdown.

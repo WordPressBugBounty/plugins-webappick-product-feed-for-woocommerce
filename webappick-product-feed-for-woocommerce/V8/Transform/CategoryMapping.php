@@ -15,6 +15,7 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Product\TermCache;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -123,7 +124,7 @@ class CategoryMapping implements TransformInterface {
 		}
 
 		// Get product's WC categories.
-		$product_terms = wp_get_post_terms( $product_id, 'product_cat', array( 'fields' => 'ids' ) );
+		$product_terms = TermCache::get_ids( $product_id, 'product_cat' );
 
 		if ( is_wp_error( $product_terms ) || empty( $product_terms ) ) {
 			return $product_data;

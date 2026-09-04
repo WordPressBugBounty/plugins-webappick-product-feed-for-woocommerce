@@ -44,28 +44,65 @@ class CacheWarmer {
 			return;
 		}
 
-		// 1. Bulk load ALL post meta in ONE query.
-		// @implements PROD-FRD-1.1
-		update_meta_cache( 'post', $product_ids );
-
-		// 2. Bulk load ALL taxonomy terms.
-		// @implements PROD-FRD-1.2
-		$taxonomies = get_object_taxonomies( 'product' );
-		update_object_term_cache( $product_ids, $taxonomies );
+		// 1+2+4. Bulk-prime post objects, ALL post meta, and taxonomy term
+		// relationships in a handful of queries. One `_prime_post_caches()`
+		// per ID set does all three correctly — it derives each post's real
+		// taxonomies from its post type. (The previous explicit
+		// `update_object_term_cache( $ids, $taxonomies )` call passed
+		// TAXONOMY names where WP expects POST TYPES, so it was a silent
+		// no-op, and the explicit `update_meta_cache()` was a duplicate
+		// traversal of what this call already primes.)
+		// @implements PROD-FRD-1.1, PROD-FRD-1.2, PROD-FRD-1.4
+		_prime_post_caches( $product_ids, true, true );
 
 		// 3. Pre-load parent products for variations.
 		// @implements PROD-FRD-1.3
 		$parent_ids = $this->get_parent_ids( $product_ids );
 
 		if ( ! empty( $parent_ids ) ) {
-			update_meta_cache( 'post', $parent_ids );
-			update_object_term_cache( $parent_ids, $taxonomies );
 			_prime_post_caches( $parent_ids, true, true );
 		}
 
-		// 4. Prime WP post object cache.
-		// @implements PROD-FRD-1.4
-		_prime_post_caches( $product_ids, true, true );
+		// 3b. Prime image attachments. Every image attribute resolves
+		// through wp_get_attachment_image_url(), which reads the
+		// attachment's post row and its _wp_attachment_metadata /
+		// _wp_attached_file meta — 1-3 lazy queries per attachment per
+		// batch when un-primed. The IDs are already in the warm product
+		// meta, so this is one bulk prime instead of thousands of
+		// single-row reads.
+		$attachment_ids = array();
+		foreach ( array_merge( $product_ids, $parent_ids ) as $pid ) {
+			$thumb_id = (int) get_post_meta( $pid, '_thumbnail_id', true );
+			if ( $thumb_id > 0 ) {
+				$attachment_ids[ $thumb_id ] = true;
+			}
+
+			$gallery = (string) get_post_meta( $pid, '_product_image_gallery', true );
+			if ( '' !== $gallery ) {
+				foreach ( explode( ',', $gallery ) as $gallery_id ) {
+					$gallery_id = (int) $gallery_id;
+					if ( $gallery_id > 0 ) {
+						$attachment_ids[ $gallery_id ] = true;
+					}
+				}
+			}
+		}
+
+		if ( ! empty( $attachment_ids ) ) {
+			_prime_post_caches( array_keys( $attachment_ids ), false, true );
+		}
+
+		// 3c. Warm the CHILDREN of variable products in the batch. A
+		// parents-only feed with `quantity` mapped reads each child's
+		// `_stock` meta (AttributeResolver::resolve_quantity via
+		// get_visible_children) — one lazy meta query per child per parent
+		// when un-warmed, because step 1 only covers the batch IDs and
+		// step 3 only covers PARENTS OF variations, never children of
+		// variables.
+		$child_ids = $this->get_child_ids( $product_ids );
+		if ( ! empty( $child_ids ) ) {
+			update_meta_cache( 'post', $child_ids );
+		}
 
 		// 5. Allow compat plugins to warm their own caches.
 		// @implements PROD-FRD-1.5
@@ -99,5 +136,34 @@ class CacheWarmer {
 		);
 
 		return array_map( 'absint', $parent_ids );
+	}
+
+	/**
+	 * Variation children of any variable products in the batch.
+	 *
+	 * Mirrors {@see get_parent_ids()}: one raw ID query per batch.
+	 *
+	 * @since 8.0.12
+	 *
+	 * @param int[] $product_ids Batch product IDs.
+	 *
+	 * @return int[] Child variation IDs.
+	 */
+	private function get_child_ids( array $product_ids ): array {
+		global $wpdb;
+
+		if ( empty( $product_ids ) ) {
+			return array();
+		}
+
+		$ids_placeholder = implode( ',', array_map( 'absint', $product_ids ) );
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Cache-priming helper: this single query IS what populates the caches for the batch, so caching it would be circular. One query per Action Scheduler batch.
+		$child_ids = $wpdb->get_col(
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $ids_placeholder is built above by absint()-casting every element and joining with commas, so it can only ever contain digits and commas; $wpdb->prepare() has no placeholder for a variable-length IN() list.
+			"SELECT ID FROM {$wpdb->posts} WHERE post_parent IN ({$ids_placeholder}) AND post_type = 'product_variation' AND post_status IN ( 'publish', 'private' )"
+		);
+
+		return array_map( 'absint', $child_ids );
 	}
 }

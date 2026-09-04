@@ -1378,6 +1378,18 @@ class FeedEndpoint extends RestController {
 		$manager  = $container->resolve( 'feed.manager' );
 		$progress = $manager->get_progress( $feed_name );
 
+		// How long the admin may see NO movement before the run is presumed
+		// dead: 1.5 × the batch time budget plus scheduling slack. Batches
+		// heartbeat every few seconds, so a live run never gets near it.
+		$budget = 300;
+		if ( $container->has( 'feed.batch_calculator' ) ) {
+			$calculator = $container->resolve( 'feed.batch_calculator' );
+			if ( is_object( $calculator ) && method_exists( $calculator, 'time_budget_seconds' ) ) {
+				$budget = (int) $calculator->time_budget_seconds();
+			}
+		}
+		$progress['stale_after'] = (int) ceil( $budget * 1.5 ) + 30;
+
 		return $this->success( $progress );
 	}
 

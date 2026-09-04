@@ -122,6 +122,31 @@ class OutputTypeTransform implements TransformInterface {
 	}
 
 	/**
+	 * Config object the memos below were built from (held by reference so
+	 * its object identity cannot be recycled while the memo is alive).
+	 *
+	 * @since 8.0.11
+	 * @var Config|null
+	 */
+	private $memo_config = null;
+
+	/**
+	 * Memoised attr => code lookup for {@see $memo_config}.
+	 *
+	 * @since 8.0.11
+	 * @var array<string,mixed>|null
+	 */
+	private $memo_lookup = null;
+
+	/**
+	 * Memoised normalized code sets, keyed by merchant attribute.
+	 *
+	 * @since 8.0.11
+	 * @var array<string,array<string,int>>
+	 */
+	private $memo_selected = array();
+
+	/**
 	 * Apply the configured V5 output_type code to each attribute value.
 	 *
 	 * @since 8.0.0
@@ -133,7 +158,16 @@ class OutputTypeTransform implements TransformInterface {
 	 * @return array Product data with output_type operations applied per attribute.
 	 */
 	public function transform( array $product_data, Config $config ): array {
-		$lookup = $this->build_lookup( $config );
+		// The lookup and per-attribute code sets depend only on feed config,
+		// which is fixed for the life of a batch — build them once per
+		// Config instead of re-zipping arrays for every product.
+		if ( $config !== $this->memo_config ) {
+			$this->memo_config   = $config;
+			$this->memo_lookup   = $this->build_lookup( $config );
+			$this->memo_selected = array();
+		}
+
+		$lookup = $this->memo_lookup;
 		if ( empty( $lookup ) ) {
 			return $product_data;
 		}
@@ -169,7 +203,10 @@ class OutputTypeTransform implements TransformInterface {
 			// selection order. Codes 1/default and the parent codes
 			// (18/19/20/23/24, handled upstream) simply aren't in
 			// FORMAT_CODE_ORDER, so they're skipped without a special case.
-			$selected = array_flip( self::normalize_codes( $lookup[ $lookup_attr ] ) );
+			if ( ! array_key_exists( $lookup_attr, $this->memo_selected ) ) {
+				$this->memo_selected[ $lookup_attr ] = array_flip( self::normalize_codes( $lookup[ $lookup_attr ] ) );
+			}
+			$selected = $this->memo_selected[ $lookup_attr ];
 			if ( empty( $selected ) ) {
 				continue;
 			}

@@ -48,6 +48,24 @@ if ( ! defined( 'ABSPATH' ) ) {
 class FeedGenerator {
 
 	/**
+	 * Share of the batch time budget a batch may spend scanning products
+	 * before it hands the remaining ids to the next batch.
+	 *
+	 * @since 8.0.10
+	 * @var float
+	 */
+	const TIME_BOX_SHARE = 0.6;
+
+	/**
+	 * Seconds between progress heartbeats inside a batch.
+	 *
+	 * @since 8.0.10
+	 * @var int
+	 */
+	const HEARTBEAT_SECONDS = 3;
+
+
+	/**
 	 * Suffix for the temp working file a run streams into before it is
 	 * atomically promoted onto the live feed in finalize().
 	 *
@@ -310,6 +328,23 @@ class FeedGenerator {
 			$this->batch_calculator->set_feed_name( $feed_name );
 		}
 
+		// Fresh product memo per batch — parent objects are reused heavily
+		// WITHIN a batch but must never go stale ACROSS batches.
+		\CTXFeed\V8\Product\ProductMemo::clear();
+
+		// Inter-batch gap: wall-clock the scheduler chain spent idle between
+		// the previous batch's end and this one's start. CPU traces cannot
+		// see it, yet on cron-weak hosts it can dominate end-to-end time —
+		// this number is what decides batch-chaining work.
+		$gap_ms = null;
+		if ( $this->manager && $offset > 0 ) {
+			$prev_progress = $this->manager->get_progress( $feed_name );
+			$ended_at      = (float) ( $prev_progress['batch_ended_at'] ?? 0 );
+			if ( $ended_at > 0 && microtime( true ) - $ended_at < 3600 ) {
+				$gap_ms = round( ( microtime( true ) - $ended_at ) * 1000, 1 );
+			}
+		}
+
 		// Step 1: Capture timing and memory baseline. @implements FEED-FRD-11.2.
 		$start_time   = microtime( true );
 		$start_memory = memory_get_usage();
@@ -491,6 +526,45 @@ class FeedGenerator {
 		$count       = 0;
 		$error_count = 0;
 
+		// Time box. A batch must finish well inside Action Scheduler's period
+		// (300 s by default) — an action still running past it is stamped
+		// failed and RE-QUEUED, so a second copy of the same batch starts while
+		// the first is still writing (customer site, 2026-09-03: 2,831 products
+		// took 78 s, 3,572 took over 300 s — cost per product is not linear at
+		// scale). Rather than trust a projection, stop scanning when the box is
+		// used up and hand the remaining ids to the next batch; the scheduler
+		// advances by the number actually processed.
+		$time_box_seconds = $this->batch_time_box_seconds();
+		$deadline         = $start_time + $time_box_seconds;
+		$processed_ids    = 0;
+		$time_boxed       = false;
+		$last_heartbeat   = $start_time;
+
+		// Per-stage timing (seconds) + the slowest single product. Costs two
+		// microtime() calls per stage per product and answers "where do the
+		// milliseconds go?" from a customer log instead of a guess.
+		$stage_s = array(
+			'load'      => 0.0,
+			'filter'    => 0.0,
+			'resolve'   => 0.0,
+			'transform' => 0.0,
+			'render'    => 0.0,
+			'write'     => 0.0,
+		);
+		$slowest = array(
+			'id' => 0,
+			'ms' => 0.0,
+		);
+
+		// Per-stage query counts ($wpdb->num_queries deltas — maintained by
+		// WP without SAVEQUERIES). A resolve stage issuing more than a
+		// handful of queries per product is the signal for a cache-priming
+		// gap; free to collect.
+		global $wpdb;
+		$track_q = is_object( $wpdb ) && isset( $wpdb->num_queries );
+		$stage_q = array_fill_keys( array_keys( $stage_s ), 0 );
+		$q_start = $track_q ? (int) $wpdb->num_queries : 0;
+
 		// Exclusion accounting. Products dropped by a filter or that fail to
 		// load are NOT errors, so they never appeared in "written / skipped"
 		// — a feed could report "3 in batch, 0 written, 0 skipped" with no
@@ -507,13 +581,43 @@ class FeedGenerator {
 
 		try {
 			foreach ( $ids as $product_id ) {
-				$product = wc_get_product( $product_id );
+				$now_ts = microtime( true );
+				if ( $processed_ids > 0 && $now_ts >= $deadline ) {
+					$time_boxed = true;
+					break;
+				}
+				++$processed_ids;
+
+				// Heartbeat: touch the progress record every few seconds so the
+				// admin sees the count climbing inside a long batch and the
+				// stall detector never mistakes a working batch for a dead one.
+				if ( ( $now_ts - $last_heartbeat ) >= self::HEARTBEAT_SECONDS ) {
+					$last_heartbeat = $now_ts;
+					$this->manager->heartbeat( $feed_name, $offset + $processed_ids - 1 );
+				}
+
+				$p0               = microtime( true );
+				$q0               = $track_q ? (int) $wpdb->num_queries : 0;
+				$product          = wc_get_product( $product_id );
+				$p1               = microtime( true );
+				$q1               = $track_q ? (int) $wpdb->num_queries : 0;
+				$stage_s['load'] += $p1 - $p0;
+				$stage_q['load'] += $q1 - $q0;
 				if ( ! $product ) {
 					++$unloadable;
 					continue;
 				}
 
-				if ( ! $this->filter_manager->should_include( $product, $config ) ) {
+				// One-slot register: transforms that re-load "their own"
+				// product by ID get this object back from ProductMemo.
+				\CTXFeed\V8\Product\ProductMemo::remember_current( $product );
+
+				$included           = $this->filter_manager->should_include( $product, $config );
+				$p2                 = microtime( true );
+				$q2                 = $track_q ? (int) $wpdb->num_queries : 0;
+				$stage_s['filter'] += $p2 - $p1;
+				$stage_q['filter'] += $q2 - $q1;
+				if ( ! $included ) {
 					continue;
 				}
 
@@ -540,8 +644,12 @@ class FeedGenerator {
 						continue;
 					}
 
-					$product_data = $this->product_repo->resolve_single( $product, $config );
-					$transformed  = $this->transform->apply( $product_data, $config );
+					$product_data        = $this->product_repo->resolve_single( $product, $config );
+					$p3                  = microtime( true );
+					$q3                  = $track_q ? (int) $wpdb->num_queries : 0;
+					$stage_s['resolve'] += $p3 - $p2;
+					$stage_q['resolve'] += $q3 - $q2;
+					$transformed         = $this->transform->apply( $product_data, $config );
 
 					// Skroutz native nested <variations>: build per-child variation
 					// blocks from a variable parent's children. Config-gated inside
@@ -581,7 +689,15 @@ class FeedGenerator {
 					// sub-loops (variations/images/categories) defined in the
 					// user-supplied template. Other templates ignore this arg.
 					// PROD-FRD-10.6.
-					$row = $this->template_engine->render_row( $transformed, $config, $product );
+					$p4                    = microtime( true );
+					$q4                    = $track_q ? (int) $wpdb->num_queries : 0;
+					$stage_s['transform'] += $p4 - $p3;
+					$stage_q['transform'] += $q4 - $q3;
+					$row                   = $this->template_engine->render_row( $transformed, $config, $product );
+					$p5                    = microtime( true );
+					$q5                    = $track_q ? (int) $wpdb->num_queries : 0;
+					$stage_s['render']    += $p5 - $p4;
+					$stage_q['render']    += $q5 - $q4;
 
 					// JSON: rows stream with a trailing comma (a streaming writer
 					// cannot know which row is last); finalize() trims the final
@@ -591,7 +707,17 @@ class FeedGenerator {
 					}
 
 					$this->stream_writer->write_row( $row );
+					$stage_s['write'] += microtime( true ) - $p5;
+					$stage_q['write'] += ( $track_q ? (int) $wpdb->num_queries : 0 ) - $q5;
 					++$count;
+
+					$product_ms = ( microtime( true ) - $p0 ) * 1000;
+					if ( $product_ms > $slowest['ms'] ) {
+						$slowest = array(
+							'id' => (int) $product_id,
+							'ms' => $product_ms,
+						);
+					}
 				} catch ( \Throwable $e ) {
 					// Isolate this one product: record it and keep the batch going.
 					++$error_count;
@@ -679,7 +805,24 @@ class FeedGenerator {
 		// Step 8: Update enriched progress. @implements FEED-FRD-2.2.
 		$batch_time = microtime( true ) - $start_time;
 		$total      = isset( $context['total'] ) ? (int) $context['total'] : 0;
-		$processed  = min( $offset + $batch_size, $total );
+		// The step this batch really covered: every id when it ran to the end,
+		// only the ids scanned when the time box cut it short.
+		$step      = $time_boxed ? $processed_ids : $batch_size;
+		$processed = min( $offset + $step, $total );
+		if ( $time_boxed ) {
+			$scanned = max( $processed_ids, 1 );
+			if ( $this->feed_logger ) {
+				$this->feed_logger->info(
+					$feed_name,
+					sprintf(
+						/* translators: 1: products processed in this batch, 2: seconds the batch ran. */
+						__( 'Batch paused after %1$s in %2$ds to stay inside the scheduler time limit — continuing with the rest in the next batch', 'woo-feed' ),
+						FeedLogger::products( $processed_ids ),
+						(int) round( $batch_time )
+					)
+				);
+			}
+		}
 
 		// Batch number / projected total — the sequential values computed at
 		// batch start (see above), so progress, log and console agree.
@@ -715,6 +858,9 @@ class FeedGenerator {
 				'last_batch_skipped'  => $error_count,
 				'last_batch_excluded' => $excluded_total,
 				'skipped_total'       => (int) ( $progress['skipped_total'] ?? 0 ) + $error_count,
+				// End-of-batch stamp: the NEXT batch reports the scheduler
+				// gap (its start minus this) as gap_ms in the [PERF] trace.
+				'batch_ended_at'      => microtime( true ),
 			) 
 		);
 
@@ -728,6 +874,23 @@ class FeedGenerator {
 			// the survivor count and spirals to BATCH_FLOOR on heavily-filtered feeds.
 			$this->batch_calculator->record_batch( $scanned, $batch_time, $memory_delta );
 			$next_batch_size = $this->batch_calculator->calculate_next();
+
+			// Unattended (auto-update) runs keep a lower ceiling than manual
+			// ones — see BatchCalculator::SCHEDULED_BATCH_CEILING.
+			if ( 'scheduled' === (string) ( $progress['trigger'] ?? '' ) ) {
+				$next_batch_size = min( $next_batch_size, BatchCalculator::SCHEDULED_BATCH_CEILING );
+			}
+		}
+
+		// A single product costing over a second is pathological (a resolver
+		// stuck on it, a huge description, an external call) — name it in the
+		// feed log so support can go straight to the product.
+		$slow_threshold_ms = (float) apply_filters( 'ctxfeed_slow_product_ms', 1000.0 );
+		if ( $this->feed_logger && $slowest['ms'] >= $slow_threshold_ms ) {
+			$this->feed_logger->info(
+				$feed_name,
+				sprintf( 'Product #%d alone took %ds to resolve — worth investigating', $slowest['id'], (int) round( $slowest['ms'] / 1000 ) )
+			);
 		}
 
 		// Step 10: Performance trace (debug-mode system log). @implements FEED-FRD-2.5.
@@ -744,6 +907,13 @@ class FeedGenerator {
 					'next_batch_size' => $next_batch_size,
 					'batch_time_sec'  => round( $batch_time, 4 ),
 					'memory_delta_kb' => round( $memory_delta / 1024, 1 ),
+					'stage_ms'        => array_map( static fn( $sec ) => round( $sec * 1000, 1 ), $stage_s ),
+					'stage_queries'   => $stage_q,
+					'queries'         => $track_q ? (int) $wpdb->num_queries - $q_start : 0,
+					'top_attrs_ms'    => $this->product_repo ? $this->product_repo->drain_attr_timings() : array(),
+					'gap_ms'          => $gap_ms,
+					'slowest_product' => $slowest['id'],
+					'slowest_ms'      => round( $slowest['ms'], 1 ),
 				) 
 			);
 		}
@@ -757,7 +927,45 @@ class FeedGenerator {
 			'count'           => $count,
 			'next_batch_size' => $next_batch_size,
 			'errors'          => $error_count,
+			// Ids this batch consumed — the scheduler advances the offset by
+			// this, not by the nominal batch size (differs when time-boxed).
+			'step'            => $step,
+			'time_boxed'      => $time_boxed,
+			// Where the batch's time went (ms per pipeline stage) and the
+			// single most expensive product — the same data the [PERF] trace
+			// logs, exposed for callers and tests.
+			'stage_ms'        => array_map( static fn( $sec ) => round( $sec * 1000, 1 ), $stage_s ),
+			'stage_queries'   => $stage_q,
+			'gap_ms'          => $gap_ms,
+			'slowest_product' => $slowest['id'],
+			'slowest_ms'      => round( $slowest['ms'], 1 ),
 		);
+	}
+
+	/**
+	 * Seconds one batch may spend scanning products before it hands the rest
+	 * to the next batch: 60% of the batch time budget (the shorter of PHP's
+	 * limit and Action Scheduler's period), so the batch, its progress write
+	 * and the next-batch scheduling all fit inside the period.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @return float Seconds.
+	 */
+	private function batch_time_box_seconds(): float {
+		$budget = $this->batch_calculator ? (float) $this->batch_calculator->time_budget_seconds() : 300.0;
+		$box    = $budget * self::TIME_BOX_SHARE;
+
+		/**
+		 * Filter the per-batch time box (seconds of product scanning before a
+		 * batch hands over to the next one).
+		 *
+		 * @since 8.0.10
+		 *
+		 * @param float $box    Seconds.
+		 * @param float $budget The underlying time budget (seconds).
+		 */
+		return max( 0.0, (float) apply_filters( 'ctxfeed_batch_time_box_seconds', $box, $budget ) );
 	}
 
 	/**
@@ -883,8 +1091,12 @@ class FeedGenerator {
 			}
 		}
 
-		// Clean up BatchCalculator state: clear history and release lock.
+		// Clean up BatchCalculator state: persist this run's measured
+		// per-product time for the next run's first-batch seed, then clear
+		// history and release lock.
 		if ( $this->batch_calculator ) {
+			$this->batch_calculator->set_feed_name( $feed_name );
+			$this->batch_calculator->persist_time_per();
 			$this->batch_calculator->clear_history( $feed_name );
 			$this->batch_calculator->release_lock( $feed_name );
 		}

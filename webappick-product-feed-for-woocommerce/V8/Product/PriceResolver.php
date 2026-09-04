@@ -29,6 +29,22 @@ if ( ! defined( 'ABSPATH' ) ) {
 class PriceResolver {
 
 	/**
+	 * Config the memoised price format below was resolved from.
+	 *
+	 * @since 8.0.12
+	 * @var Config|null
+	 */
+	private $format_memo_config = null;
+
+	/**
+	 * Memoised [ decimals, decimal separator, thousand separator ].
+	 *
+	 * @since 8.0.12
+	 * @var array|null
+	 */
+	private $format_memo = null;
+
+	/**
 	 * Resolve a price attribute for a product.
 	 *
 	 * Routes to the appropriate WC price getter based on attribute name.
@@ -425,27 +441,35 @@ class PriceResolver {
 	 * @return string Formatted price string (e.g., "29.99").
 	 */
 	private function format_price( $price, Config $config ): string {
-		// V5-compatible keys — user-entered values override WC defaults.
-		// Empty strings mean "use WooCommerce default".
-		$decimals_raw = $config->get( 'decimals', '' );
-		$dec_sep_raw  = $config->get( 'decimal_separator', '' );
-		$thou_sep_raw = $config->get( 'thousand_separator', '' );
+		// The format triple depends only on feed config + store settings,
+		// both fixed per request — resolve once per Config, not per price.
+		// The Config REFERENCE is held so an object id cannot be recycled.
+		if ( $config !== $this->format_memo_config ) {
+			// V5-compatible keys — user-entered values override WC defaults.
+			// Empty strings mean "use WooCommerce default".
+			$decimals_raw = $config->get( 'decimals', '' );
+			$dec_sep_raw  = $config->get( 'decimal_separator', '' );
+			$thou_sep_raw = $config->get( 'thousand_separator', '' );
 
-		$decimals     = ( '' === $decimals_raw || null === $decimals_raw )
-			? wc_get_price_decimals()
-			: (int) $decimals_raw;
-		$decimal_sep  = ( '' === $dec_sep_raw || null === $dec_sep_raw )
-			? wc_get_price_decimal_separator()
-			: wp_specialchars_decode( wp_unslash( $dec_sep_raw ) );
-		$thousand_sep = ( '' === $thou_sep_raw || null === $thou_sep_raw )
-			? wc_get_price_thousand_separator()
-			: wp_specialchars_decode( wp_unslash( $thou_sep_raw ) );
+			$this->format_memo_config = $config;
+			$this->format_memo        = array(
+				( '' === $decimals_raw || null === $decimals_raw )
+					? wc_get_price_decimals()
+					: (int) $decimals_raw,
+				( '' === $dec_sep_raw || null === $dec_sep_raw )
+					? wc_get_price_decimal_separator()
+					: wp_specialchars_decode( wp_unslash( $dec_sep_raw ) ),
+				( '' === $thou_sep_raw || null === $thou_sep_raw )
+					? wc_get_price_thousand_separator()
+					: wp_specialchars_decode( wp_unslash( $thou_sep_raw ) ),
+			);
+		}
 
 		return number_format(
 			(float) $price,
-			$decimals,
-			$decimal_sep,
-			$thousand_sep
+			$this->format_memo[0],
+			$this->format_memo[1],
+			$this->format_memo[2]
 		);
 	}
 }

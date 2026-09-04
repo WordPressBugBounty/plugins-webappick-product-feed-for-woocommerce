@@ -30,12 +30,28 @@ if ( ! defined( 'ABSPATH' ) ) {
 class VariationResolver {
 
 	/**
+	 * Shadow-verify every Nth memo hit against a fresh resolution.
+	 *
+	 * @since 8.0.12
+	 * @var int
+	 */
+	const SHADOW_SAMPLE_EVERY = 50;
+
+	/**
 	 * Attribute resolver reference (set via setter injection).
 	 *
 	 * @since 8.0.0
 	 * @var AttributeResolver|null
 	 */
 	private $attribute_resolver = null;
+
+	/**
+	 * Memo-hit counter driving the shadow-verification sampling.
+	 *
+	 * @since 8.0.12
+	 * @var int
+	 */
+	private $hit_count = 0;
 
 	/**
 	 * Set the AttributeResolver instance.
@@ -76,7 +92,7 @@ class VariationResolver {
 			return '';
 		}
 
-		$parent = wc_get_product( $parent_id );
+		$parent = ProductMemo::get( (int) $parent_id );
 
 		if ( ! $parent ) {
 			return '';
@@ -87,6 +103,56 @@ class VariationResolver {
 			return '';
 		}
 
-		return $this->attribute_resolver->resolve( $parent, $mapping, $config );
+		/**
+		 * Kill-switch for the parent resolved-VALUE memo.
+		 *
+		 * The value for a (parent, mapping) pair is identical for every
+		 * variation of that parent within a run, so it is resolved once and
+		 * reused. Sites with a nondeterministic resolver filter can turn the
+		 * memo off here; the shadow verifier also disables it automatically
+		 * for the rest of a batch when a sampled hit disagrees with a fresh
+		 * resolution.
+		 *
+		 * @since 8.0.12
+		 *
+		 * @param bool $enabled Default true.
+		 */
+		if ( ! apply_filters( 'ctxfeed_parent_value_memo', true ) ) {
+			return $this->attribute_resolver->resolve( $parent, $mapping, $config );
+		}
+
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.serialize_serialize -- mapping identity hash for the memo key; never unserialized.
+		$key = $parent_id . '|' . md5( serialize( $mapping ) );
+
+		if ( ProductMemo::has_value( $key ) ) {
+			$memoized = ProductMemo::get_value( $key );
+
+			// Shadow verification: every Nth hit is recomputed fresh. The
+			// sampled call always RETURNS the fresh value; a mismatch is
+			// logged and fails the memo open for the rest of the batch.
+			++$this->hit_count;
+			if ( 1 === $this->hit_count % self::SHADOW_SAMPLE_EVERY ) {
+				$fresh = $this->attribute_resolver->resolve( $parent, $mapping, $config );
+				if ( $fresh !== $memoized ) {
+					ProductMemo::disable_values();
+					\CTXFeed\V8\Core\Logger::error(
+						sprintf(
+							'Parent value memo mismatch for parent #%d attr "%s" (variation #%d) — memo disabled for this batch.',
+							$parent_id,
+							(string) ( $mapping['wc_attr'] ?? '' ),
+							$variation->get_id()
+						)
+					);
+				}
+				return $fresh;
+			}
+
+			return $memoized;
+		}
+
+		$fresh = $this->attribute_resolver->resolve( $parent, $mapping, $config );
+		ProductMemo::set_value( $key, $fresh );
+
+		return $fresh;
 	}
 }

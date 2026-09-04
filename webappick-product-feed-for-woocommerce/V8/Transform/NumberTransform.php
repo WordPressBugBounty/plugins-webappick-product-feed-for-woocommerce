@@ -28,6 +28,29 @@ if ( ! defined( 'ABSPATH' ) ) {
 class NumberTransform implements TransformInterface {
 
 	/**
+	 * Config object the memoised format below was resolved from.
+	 *
+	 * Holding the reference (not just an id) means PHP cannot recycle the
+	 * object id for a different Config while the memo is alive.
+	 *
+	 * @since 8.0.11
+	 * @var Config|null
+	 */
+	private $memo_config = null;
+
+	/**
+	 * Memoised resolved number format: [ decimals, dec_sep, thou_sep ].
+	 *
+	 * The format depends only on feed config + store settings, both fixed
+	 * for the life of a batch, so it is resolved once per Config instead of
+	 * once per product (wc_get_price_*() are option lookups).
+	 *
+	 * @since 8.0.11
+	 * @var array|null
+	 */
+	private $memo_format = null;
+
+	/**
 	 * Format numeric price attributes in product data.
 	 *
 	 * Reads decimal count, decimal separator, and thousand separator
@@ -44,25 +67,11 @@ class NumberTransform implements TransformInterface {
 	 * @return array Product data with formatted numbers.
 	 */
 	public function transform( array $product_data, Config $config ): array {
-		// V5-compatible keys — user-entered values override WC defaults, but an
-		// EMPTY STRING means "use the WooCommerce default". A blank feed field is
-		// persisted as '' (the key is present), so Config::get()'s default
-		// argument never fires; casting that '' directly would make (int) '' === 0
-		// and round every price to a whole number. Guard the empty string first,
-		// exactly as PriceResolver::format_price() and OutputTypeTransform do.
-		$decimals_raw = $config->get( 'decimals', '' );
-		$dec_sep_raw  = $config->get( 'decimal_separator', '' );
-		$thou_sep_raw = $config->get( 'thousand_separator', '' );
-
-		$decimals = ( '' === $decimals_raw || null === $decimals_raw || ! is_numeric( $decimals_raw ) )
-			? (int) wc_get_price_decimals()
-			: (int) $decimals_raw;
-		$dec_sep  = ( '' === $dec_sep_raw || null === $dec_sep_raw )
-			? wc_get_price_decimal_separator()
-			: wp_specialchars_decode( wp_unslash( $dec_sep_raw ) );
-		$thou_sep = ( '' === $thou_sep_raw || null === $thou_sep_raw )
-			? wc_get_price_thousand_separator()
-			: wp_specialchars_decode( wp_unslash( $thou_sep_raw ) );
+		if ( $config !== $this->memo_config ) {
+			$this->memo_config = $config;
+			$this->memo_format = $this->resolve_format( $config );
+		}
+		list( $decimals, $dec_sep, $thou_sep ) = $this->memo_format;
 
 		$price_attrs = array(
 			'price',
@@ -103,5 +112,39 @@ class NumberTransform implements TransformInterface {
 		}
 
 		return $product_data;
+	}
+
+	/**
+	 * Resolve the effective number format from feed config.
+	 *
+	 * V5-compatible keys — user-entered values override WC defaults, but an
+	 * EMPTY STRING means "use the WooCommerce default". A blank feed field is
+	 * persisted as '' (the key is present), so Config::get()'s default
+	 * argument never fires; casting that '' directly would make (int) '' === 0
+	 * and round every price to a whole number. Guard the empty string first,
+	 * exactly as PriceResolver::format_price() and OutputTypeTransform do.
+	 *
+	 * @since 8.0.11
+	 *
+	 * @param Config $config Feed configuration.
+	 *
+	 * @return array{0:int,1:string,2:string} Decimals, decimal separator, thousand separator.
+	 */
+	private function resolve_format( Config $config ): array {
+		$decimals_raw = $config->get( 'decimals', '' );
+		$dec_sep_raw  = $config->get( 'decimal_separator', '' );
+		$thou_sep_raw = $config->get( 'thousand_separator', '' );
+
+		$decimals = ( '' === $decimals_raw || null === $decimals_raw || ! is_numeric( $decimals_raw ) )
+			? (int) wc_get_price_decimals()
+			: (int) $decimals_raw;
+		$dec_sep  = ( '' === $dec_sep_raw || null === $dec_sep_raw )
+			? wc_get_price_decimal_separator()
+			: wp_specialchars_decode( wp_unslash( $dec_sep_raw ) );
+		$thou_sep = ( '' === $thou_sep_raw || null === $thou_sep_raw )
+			? wc_get_price_thousand_separator()
+			: wp_specialchars_decode( wp_unslash( $thou_sep_raw ) );
+
+		return array( $decimals, $dec_sep, $thou_sep );
 	}
 }

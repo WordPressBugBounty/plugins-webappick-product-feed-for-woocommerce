@@ -98,19 +98,36 @@ class BatchCalculator {
 	const BATCH_FLOOR = 25;
 
 	/**
-	 * Fixed upper clamp for the batch size — 0 = none (owner decision,
-	 * 2026-09-03): a server with the memory and the time can process any
-	 * number of products per batch; the memory and time budgets alone bound
-	 * the size. Hosts can still impose a hard cap through the
-	 * `ctxfeed_batch_ceiling` filter (0 keeps it unlimited), and power users
-	 * can force any size via `ctxfeed_batch_size`.
+	 * Fixed upper clamp for the batch size.
+	 *
+	 * Reinstated at 2,000 (owner decision, 2026-09-03, after a live run):
+	 * per-product cost turns non-linear at scale — on a real 17K-product
+	 * store 2,831 products took 78 s while 3,572 took over 300 s — so an
+	 * uncapped adaptive size overshoots before the measurements catch up.
+	 * The time budget and the in-batch time box still bound the worst case;
+	 * this ceiling keeps the adaptive climb from probing it. Override with
+	 * the `ctxfeed_batch_ceiling` filter (0 = unlimited); `ctxfeed_batch_size`
+	 * still forces a size outright.
 	 *
 	 * @since 8.0.0
-	 * @since 8.0.10 No fixed ceiling (was 2000).
 	 * @implements FEED-FRD-11.5
 	 * @var int
 	 */
-	const BATCH_CEILING = 0;
+	const BATCH_CEILING = 2000;
+
+	/**
+	 * Upper clamp for SCHEDULED (auto-update) runs.
+	 *
+	 * Unattended runs have no admin watching and often ride WP-Cron slices
+	 * shared with other jobs, so each batch is kept small: progress commits
+	 * more often, every action finishes far inside Action Scheduler's
+	 * 5-minute period even on a busy night, and a mid-run failure loses at
+	 * most 1,000 products of work.
+	 *
+	 * @since 8.0.10
+	 * @var int
+	 */
+	const SCHEDULED_BATCH_CEILING = 1000;
 
 	/**
 	 * Action Scheduler's default timeout/failure period (5 minutes). An
@@ -209,8 +226,12 @@ class BatchCalculator {
 		// Memory-safe batch count.
 		$memory_safe = (int) floor( $available_memory / self::MEMORY_PER_PRODUCT );
 
-		// Time-safe batch count.
-		$time_safe = (int) floor( ( $max_time * self::TIME_SAFETY_MARGIN ) / self::TIME_PER_PRODUCT );
+		// Time-safe batch count — seeded from the LAST run's measured
+		// per-product cost when one is persisted. The 0.05 s constant was
+		// wrong in both directions in the field (measured 28-84 ms/product
+		// on customer sites), causing first-batch overshoot and halving
+		// retries on slow stores.
+		$time_safe = (int) floor( ( $max_time * self::TIME_SAFETY_MARGIN ) / $this->seed_time_per() );
 
 		// Take the more restrictive limit.
 		$initial = min( $memory_safe, $time_safe );
@@ -453,6 +474,56 @@ class BatchCalculator {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Per-product time to seed the FIRST batch of a run.
+	 *
+	 * Returns the previous run's measured average when persisted (clamped
+	 * to a sane range so a corrupt value cannot produce absurd batches),
+	 * else the TIME_PER_PRODUCT constant.
+	 *
+	 * @since 8.0.12
+	 *
+	 * @return float Seconds per product.
+	 */
+	private function seed_time_per(): float {
+		if ( '' === $this->feed_name ) {
+			return self::TIME_PER_PRODUCT;
+		}
+
+		$saved = get_transient( "ctxfeed_time_per_{$this->feed_name}" );
+		if ( ! is_numeric( $saved ) ) {
+			return self::TIME_PER_PRODUCT;
+		}
+
+		return min( 2.0, max( 0.005, (float) $saved ) );
+	}
+
+	/**
+	 * Persist this run's measured per-product time for the NEXT run's seed.
+	 *
+	 * Called at finalize, BEFORE clear_history() wipes the rolling window.
+	 * No-op when the run recorded nothing.
+	 *
+	 * @since 8.0.12
+	 *
+	 * @return void
+	 */
+	public function persist_time_per(): void {
+		if ( '' === $this->feed_name || empty( $this->history ) ) {
+			return;
+		}
+
+		$total = 0.0;
+		foreach ( $this->history as $entry ) {
+			$total += (float) ( $entry['time_per'] ?? 0 );
+		}
+
+		$avg = $total / count( $this->history );
+		if ( $avg > 0 ) {
+			set_transient( "ctxfeed_time_per_{$this->feed_name}", $avg, WEEK_IN_SECONDS );
+		}
 	}
 
 	/**

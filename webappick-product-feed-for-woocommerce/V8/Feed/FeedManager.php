@@ -290,6 +290,7 @@ class FeedManager {
 			'total'          => isset( $data['total'] ) ? (int) $data['total'] : $existing['total'],
 			'percent'        => 0,
 			'status'         => isset( $data['status'] ) ? $data['status'] : $existing['status'],
+			'trigger'        => isset( $data['trigger'] ) ? (string) $data['trigger'] : ( $existing['trigger'] ?? '' ),
 			'batch_size'     => isset( $data['batch_size'] ) ? (int) $data['batch_size'] : $existing['batch_size'],
 			'batches_done'   => isset( $data['batches_done'] ) ? (int) $data['batches_done'] : $existing['batches_done'],
 			'batches_total'  => isset( $data['batches_total'] ) ? (int) $data['batches_total'] : $existing['batches_total'],
@@ -297,6 +298,10 @@ class FeedManager {
 			'updated_at'     => $now,
 			'eta_seconds'    => isset( $data['eta_seconds'] ) ? (int) $data['eta_seconds'] : $existing['eta_seconds'],
 			'avg_batch_time' => isset( $data['avg_batch_time'] ) ? (float) $data['avg_batch_time'] : $existing['avg_batch_time'],
+			// End-of-batch stamp (microtime float) — the next batch reports
+			// the scheduler gap from it. Must be listed here: the fixed key
+			// list DROPS unknown fields (see the BATCH_COUNTERS note below).
+			'batch_ended_at' => isset( $data['batch_ended_at'] ) ? (float) $data['batch_ended_at'] : (float) ( $existing['batch_ended_at'] ?? 0 ),
 		);
 
 		// Per-batch counters for the live generation console. These were
@@ -312,6 +317,26 @@ class FeedManager {
 		}
 
 		set_transient( "ctxfeed_progress_{$feed_id}", $progress, HOUR_IN_SECONDS );
+	}
+
+	/**
+	 * Touch a running feed's progress inside a batch: bump the processed count
+	 * and the timestamp, nothing else. Called every few seconds from the batch
+	 * loop so the admin sees products ticking up during a long batch and the
+	 * stall detector knows the run is alive.
+	 *
+	 * @since 8.0.10
+	 *
+	 * @param string $feed_id Feed slug.
+	 * @param int    $current Products processed so far (cumulative).
+	 * @return void
+	 */
+	public function heartbeat( string $feed_id, int $current ): void {
+		$existing = $this->get_progress( $feed_id );
+		if ( 'generating' !== ( $existing['status'] ?? '' ) ) {
+			return;
+		}
+		$this->update_progress( $feed_id, array( 'current' => max( (int) $existing['current'], $current ) ) );
 	}
 
 	/**
@@ -333,6 +358,7 @@ class FeedManager {
 				'total'          => 0,
 				'percent'        => 0,
 				'status'         => 'pending',
+				'trigger'        => '',
 				'batch_size'     => 0,
 				'batches_done'   => 0,
 				'batches_total'  => 0,
@@ -350,6 +376,7 @@ class FeedManager {
 				'total'          => 0,
 				'percent'        => 0,
 				'status'         => 'pending',
+				'trigger'        => '',
 				'batch_size'     => 0,
 				'batches_done'   => 0,
 				'batches_total'  => 0,

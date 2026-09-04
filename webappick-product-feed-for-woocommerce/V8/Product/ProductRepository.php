@@ -33,6 +33,40 @@ if ( ! defined( 'ABSPATH' ) ) {
 class ProductRepository {
 
 	/**
+	 * Config the compiled execution plan below was built from (reference
+	 * held so the object id cannot be recycled while the plan is alive).
+	 *
+	 * @since 8.0.12
+	 * @var Config|null
+	 */
+	private $plan_config = null;
+
+	/**
+	 * Compiled per-feed execution plan:
+	 * - rows:            mapping structs for every merchant attribute
+	 * - parent_codes:    index => parent-aware output_type codes present
+	 * - parent_commands: index => parent command code ('' when none / gate closed)
+	 *
+	 * All of it is feed-constant; rebuilding it per product per attribute
+	 * was pure allocation churn in the hot loop.
+	 *
+	 * @since 8.0.12
+	 * @var array|null
+	 */
+	private $plan = null;
+
+	/**
+	 * Cumulative per-attribute resolve time (seconds), keyed merchant attr.
+	 *
+	 * Two microtime() calls per attribute per product; read + reset by the
+	 * generator once per batch for the [PERF] trace's top-attributes list.
+	 *
+	 * @since 8.0.12
+	 * @var array<string,float>
+	 */
+	private $attr_seconds = array();
+
+	/**
 	 * Cache warmer instance.
 	 *
 	 * @since 8.0.0
@@ -255,7 +289,7 @@ class ProductRepository {
 				$parent_product = null;
 				if ( $product->is_type( 'variation' ) ) {
 					$parent_id      = $product->get_parent_id();
-					$parent_product = $parent_id ? wc_get_product( $parent_id ) : null;
+					$parent_product = $parent_id ? ProductMemo::get( (int) $parent_id ) : null;
 				}
 
 				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- $legacy_filter is built above as "woo_feed_filter_product_{$wc_attr}", so it always carries the registered woo_feed prefix; the sniff cannot resolve the variable.
@@ -317,30 +351,22 @@ class ProductRepository {
 			return $value;
 		}
 
-		$output_types = (array) $config->get( 'output_type', array() );
-		if ( empty( $output_types ) ) {
-			return $value;
-		}
-
-		$index = (int) $mapping['index'];
-		if ( ! isset( $output_types[ $index ] ) ) {
-			return $value;
-		}
-
 		// A row can carry SEVERAL output_type codes (V5 multiselect). Only
 		// the parent-aware codes are handled here — codes 1-17, 21-22 belong
-		// to OutputTypeTransform downstream. Apply each present parent code in
-		// V5's fixed order, threading the value (V5 runs these as sequential
-		// in_array() checks inside FormatOutput::get_output()).
-		$selected = array_flip( OutputTypeTransform::normalize_codes( $output_types[ $index ] ) );
-		if ( empty( $selected ) ) {
+		// to OutputTypeTransform downstream. The codes present per row are
+		// precompiled in the execution plan; the typical row has none and
+		// costs one isset(). Codes apply in V5's fixed order, threading the
+		// value (V5 runs these as sequential in_array() checks inside
+		// FormatOutput::get_output()).
+		$plan  = $this->plan_for( $config );
+		$index = (int) $mapping['index'];
+
+		if ( ! isset( $plan['parent_codes'][ $index ] ) ) {
 			return $value;
 		}
 
-		foreach ( array( '18', '19', '20', '23', '24' ) as $code ) {
-			if ( isset( $selected[ $code ] ) ) {
-				$value = $this->apply_one_parent_code( $value, $product, $mapping, $config, $code );
-			}
+		foreach ( $plan['parent_codes'][ $index ] as $code ) {
+			$value = $this->apply_one_parent_code( $value, $product, $mapping, $config, $code );
 		}
 
 		return $value;
@@ -378,7 +404,7 @@ class ProductRepository {
 				return $value;
 			}
 
-			$parent_product = wc_get_product( $parent_id );
+			$parent_product = ProductMemo::get( (int) $parent_id );
 			if ( ! $parent_product instanceof \WC_Product ) {
 				return $value;
 			}
@@ -397,7 +423,7 @@ class ProductRepository {
 				return $value;
 			}
 
-			$source_product = wc_get_product( $source_id );
+			$source_product = ProductMemo::get( (int) $source_id );
 			if ( ! $source_product instanceof \WC_Product ) {
 				return $value;
 			}
@@ -447,20 +473,15 @@ class ProductRepository {
 			return $value;
 		}
 
-		// Commands are a Pro feature — closed gate is a no-op. XFRM-FRD-9.4.
-		if ( ! FeatureGate::has( CommandProcessor::FEATURE ) ) {
+		// Commands are a Pro feature; the FeatureGate check and command
+		// parsing are precompiled into the execution plan (a closed gate
+		// compiles to no commands at all). XFRM-FRD-9.4.
+		$plan = $this->plan_for( $config );
+		if ( ! isset( $plan['parent_commands'][ (int) $mapping['index'] ] ) ) {
 			return $value;
 		}
 
-		$commands = $config->get_attribute_command( (int) $mapping['index'] );
-		if ( '' === $commands ) {
-			return $value;
-		}
-
-		$code = CommandProcessor::parent_output_code( $commands );
-		if ( '' === $code ) {
-			return $value;
-		}
+		$code = $plan['parent_commands'][ (int) $mapping['index'] ];
 
 		// Parent commands only apply to variations (V5 parity).
 		if ( ! $product->is_type( 'variation' ) ) {
@@ -472,7 +493,7 @@ class ProductRepository {
 			return $value;
 		}
 
-		$parent_product = wc_get_product( $parent_id );
+		$parent_product = ProductMemo::get( (int) $parent_id );
 		if ( ! $parent_product instanceof \WC_Product ) {
 			return $value;
 		}
@@ -614,6 +635,109 @@ class ProductRepository {
 	}
 
 	/**
+	 * Drain the per-attribute timing accumulator (ms, descending).
+	 *
+	 * @since 8.0.12
+	 *
+	 * @param int $top How many attributes to return.
+	 *
+	 * @return array<string,float> merchant_attr => cumulative ms.
+	 */
+	public function drain_attr_timings( int $top = 8 ): array {
+		$timings            = $this->attr_seconds;
+		$this->attr_seconds = array();
+
+		arsort( $timings );
+		$timings = array_slice( $timings, 0, $top, true );
+
+		return array_map(
+			static function ( $sec ) {
+				return round( $sec * 1000, 1 );
+			},
+			$timings
+		);
+	}
+
+	/**
+	 * Build (or reuse) the compiled execution plan for a Config.
+	 *
+	 * @since 8.0.12
+	 *
+	 * @param Config $config Feed configuration.
+	 *
+	 * @return array{rows:array,parent_codes:array,parent_commands:array}
+	 */
+	private function plan_for( Config $config ): array {
+		if ( $config === $this->plan_config && null !== $this->plan ) {
+			return $this->plan;
+		}
+
+		$merchant_attrs = $config->get_merchant_attributes();
+		$wc_attrs       = $config->get_attributes();
+		$types          = $config->get_type();
+		$defaults       = $config->get_default();
+		$output_types   = (array) $config->get( 'output_type', array() );
+		$commands_open  = FeatureGate::has( CommandProcessor::FEATURE );
+
+		$rows            = array();
+		$parent_codes    = array();
+		$parent_commands = array();
+
+		foreach ( $merchant_attrs as $index => $channel_attr ) {
+			$rows[ $index ] = array(
+				'wc_attr'       => isset( $wc_attrs[ $index ] ) ? $wc_attrs[ $index ] : '',
+				'type'          => isset( $types[ $index ] ) ? $types[ $index ] : 'attribute',
+				'default'       => isset( $defaults[ $index ] ) ? $defaults[ $index ] : '',
+				// V5 hooks (e.g. woo_feed_after_dynamic_attribute_value)
+				// expect the channel field name (e.g. "g:price") as a
+				// positional arg. Thread it through the mapping so V8
+				// resolvers can fire the same V5 signature. PROD-FRD-10.5.
+				'merchant_attr' => (string) $channel_attr,
+				// Parallel-array position; kept for V5 parity with code
+				// paths that key off the row position. PROD-FRD-10.8.
+				'index'         => (int) $index,
+			);
+
+			// Parent-aware output_type codes (18/19/20/23/24) present on
+			// this row — precomputed so the per-product path skips the
+			// normalize/flip entirely for the (typical) rows without them.
+			if ( isset( $output_types[ $index ] ) ) {
+				$selected = array_flip( OutputTypeTransform::normalize_codes( $output_types[ $index ] ) );
+				$present  = array();
+				foreach ( array( '18', '19', '20', '23', '24' ) as $code ) {
+					if ( isset( $selected[ $code ] ) ) {
+						$present[] = $code;
+					}
+				}
+				if ( ! empty( $present ) ) {
+					$parent_codes[ $index ] = $present;
+				}
+			}
+
+			// Parent command code for this row ('' when none). Commands are
+			// a Pro feature — closed gate compiles to no commands at all.
+			if ( $commands_open ) {
+				$commands = $config->get_attribute_command( (int) $index );
+				if ( '' !== $commands ) {
+					$code = CommandProcessor::parent_output_code( $commands );
+					if ( '' !== $code ) {
+						$parent_commands[ $index ] = $code;
+					}
+				}
+			}
+		}
+
+		$this->plan_config = $config;
+		$this->plan        = array(
+			'rows'            => $rows,
+			'parent_codes'    => $parent_codes,
+			'parent_commands' => $parent_commands,
+		);
+
+		return $this->plan;
+	}
+
+	/**
 	 * Resolve a single product's attributes into a key-value array.
 	 *
 	 * Builds the attribute mapping structure from Config parallel arrays
@@ -632,10 +756,7 @@ class ProductRepository {
 	 * @return array Associative array of channel_attr => resolved_value.
 	 */
 	public function resolve_single( \WC_Product $product, Config $config ): array {
-		$merchant_attrs = $config->get_merchant_attributes();
-		$wc_attrs       = $config->get_attributes();
-		$types          = $config->get_type();
-		$defaults       = $config->get_default();
+		$plan = $this->plan_for( $config );
 
 		// @hook ctxfeed_before_resolve_product
 		do_action( 'ctxfeed_before_resolve_product', $product->get_id(), $config );
@@ -652,26 +773,15 @@ class ProductRepository {
 		// PROD-FRD-10.11.
 		$seen = array();
 
-		foreach ( $merchant_attrs as $index => $channel_attr ) {
-			$mapping = array(
-				'wc_attr'       => isset( $wc_attrs[ $index ] ) ? $wc_attrs[ $index ] : '',
-				'type'          => isset( $types[ $index ] ) ? $types[ $index ] : 'attribute',
-				'default'       => isset( $defaults[ $index ] ) ? $defaults[ $index ] : '',
-				// V5 hooks (e.g. woo_feed_after_dynamic_attribute_value)
-				// expect the channel field name (e.g. "g:price") as a
-				// positional arg. Thread it through the mapping so V8
-				// resolvers can fire the same V5 signature. PROD-FRD-10.5.
-				'merchant_attr' => (string) $channel_attr,
-				// Parallel-array position. Used by resolve_with_filters
-				// to look up the matching `output_type` code for V5 codes
-				// 18/19/20/23/24 (parent-product re-resolution).
-				// PROD-FRD-10.8.
-				'index'         => (int) $index,
-			);
-
+		foreach ( $plan['rows'] as $mapping ) {
+			$t0    = microtime( true );
 			$value = $this->resolve_with_filters( $product, $mapping, $config );
 
-			$key          = self::dedup_merchant_key( (string) $channel_attr, $seen );
+			$attr = $mapping['merchant_attr'];
+
+			$this->attr_seconds[ $attr ] = ( $this->attr_seconds[ $attr ] ?? 0.0 ) + ( microtime( true ) - $t0 );
+
+			$key          = self::dedup_merchant_key( $attr, $seen );
 			$data[ $key ] = $value;
 		}
 
@@ -681,13 +791,11 @@ class ProductRepository {
 		// attribute-resolved column from the fully resolved row; an explicit
 		// static override the merchant set is left untouched. @implements G-05.
 		if ( array_key_exists( 'identifier_exists', $data ) ) {
-			foreach ( $merchant_attrs as $i => $name ) {
-				if ( 'identifier_exists' !== $name ) {
+			foreach ( $plan['rows'] as $row ) {
+				if ( 'identifier_exists' !== $row['merchant_attr'] ) {
 					continue;
 				}
-				$is_attribute = 'attribute' === ( isset( $types[ $i ] ) ? $types[ $i ] : 'attribute' )
-					&& 'identifier_exists' === ( isset( $wc_attrs[ $i ] ) ? $wc_attrs[ $i ] : '' );
-				if ( $is_attribute ) {
+				if ( 'attribute' === $row['type'] && 'identifier_exists' === $row['wc_attr'] ) {
 					$data['identifier_exists'] = $this->resolver->identifier_exists_from_row( $product, $data );
 				}
 				break;
