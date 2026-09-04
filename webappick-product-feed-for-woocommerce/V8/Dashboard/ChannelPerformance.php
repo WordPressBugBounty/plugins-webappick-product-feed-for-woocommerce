@@ -69,7 +69,7 @@ class ChannelPerformance {
 
 			$grid[] = array(
 				'slug'             => $slug,
-				'name'             => $info ? $info->getName() : ucfirst( $slug ),
+				'name'             => $info ? $info->get_name() : ucfirst( $slug ),
 				'feed_count'       => (int) $row['feed_count'],
 				'product_count'    => (int) $row['total_products'],
 				'avg_health_score' => round( (float) $row['avg_health_score'], 1 ),
@@ -135,7 +135,7 @@ class ChannelPerformance {
 
 		return array(
 			'slug'   => $slug,
-			'name'   => $info ? $info->getName() : ucfirst( $slug ),
+			'name'   => $info ? $info->get_name() : ucfirst( $slug ),
 			'feeds'  => $feed_data,
 			'totals' => array(
 				'feed_count'       => count( $feed_data ),

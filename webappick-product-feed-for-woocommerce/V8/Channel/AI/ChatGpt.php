@@ -3,7 +3,9 @@
  * ChatGpt — OpenAI / ChatGPT Shopping feed channel.
  *
  * OpenAI Product Feed Spec (chatgpt.com/merchants): own schema with
- * eligibility flags (enable_search / enable_checkout), seller and
+ * eligibility flags (is_eligible_search / is_eligible_checkout — the
+ * spec's primary names; enable_search / enable_checkout are its accepted
+ * legacy aliases), seller and
  * return-policy fields. Ingestible formats: CSV/TSV/JSONL — not XML.
  *
  * @package    CTXFeed
@@ -81,7 +83,7 @@ class ChatGpt extends AbstractChannel {
 	 * @return string[] Required attribute names.
 	 */
 	public function get_required_attributes(): array {
-		return array( 'enable_search', 'enable_checkout', 'id', 'title', 'description', 'link', 'image_link', 'price', 'availability' );
+		return array( 'is_eligible_search', 'is_eligible_checkout', 'id', 'title', 'description', 'link', 'image_link', 'price', 'availability' );
 	}
 
 	/**
@@ -94,39 +96,39 @@ class ChatGpt extends AbstractChannel {
 	 */
 	public function get_default_mappings(): array {
 		return array(
-			'enable_search'   => array(
+			'is_eligible_search'   => array(
 				'type'  => 'pattern',
 				'value' => 'true',
 			),
-			'enable_checkout' => array(
+			'is_eligible_checkout' => array(
 				'type'  => 'pattern',
 				'value' => 'false',
 			),
-			'id'              => array(
+			'id'                   => array(
 				'type'    => 'attribute',
 				'wc_attr' => 'id',
 			),
-			'title'           => array(
+			'title'                => array(
 				'type'    => 'attribute',
 				'wc_attr' => 'title',
 			),
-			'description'     => array(
+			'description'          => array(
 				'type'    => 'attribute',
 				'wc_attr' => 'description',
 			),
-			'link'            => array(
+			'link'                 => array(
 				'type'    => 'attribute',
 				'wc_attr' => 'link',
 			),
-			'image_link'      => array(
+			'image_link'           => array(
 				'type'    => 'attribute',
 				'wc_attr' => 'image',
 			),
-			'price'           => array(
+			'price'                => array(
 				'type'    => 'attribute',
 				'wc_attr' => 'price',
 			),
-			'availability'    => array(
+			'availability'         => array(
 				'type'    => 'attribute',
 				'wc_attr' => 'availability',
 			),

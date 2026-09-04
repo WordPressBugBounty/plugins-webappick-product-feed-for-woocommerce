@@ -4,7 +4,7 @@
  *
  * The OpenAI Product Feed Spec (chatgpt.com/merchants) uses its own
  * schema — the merchant attribute keys ARE the OpenAI field names
- * (enable_search, enable_checkout, seller_name, return_policy, … —
+ * (is_eligible_search, is_eligible_checkout, seller_name, return_policy, … —
  * V5's chatgpt template, ported verbatim). This transform owns the
  * value formats:
  * - money "<number> <ISO-4217>" on price/sale_price
@@ -102,7 +102,10 @@ class ChatGptTransform implements TransformInterface {
 	 * @return array Modified product data.
 	 */
 	private function transform_flags( array $data ): array {
-		foreach ( array( 'enable_search', 'enable_checkout', 'is_ads_eligible' ) as $flag ) {
+		// Primary spec names first; enable_search / enable_checkout are
+		// OpenAI's legacy aliases — feeds created before 8.0.12 still carry
+		// them in their saved mapping and must keep normalizing.
+		foreach ( array( 'is_eligible_search', 'is_eligible_checkout', 'enable_search', 'enable_checkout', 'is_ads_eligible' ) as $flag ) {
 			if ( ! isset( $data[ $flag ] ) || '' === $data[ $flag ] || is_array( $data[ $flag ] ) ) {
 				continue;
 			}

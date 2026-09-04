@@ -2397,9 +2397,9 @@ class MerchantAttributes {
 				1  => array(
 					'optionGroup' => 'OpenAI Flag',
 					'options'     => array(
-						'enable_search'   => 'Controls whether the product can be surfaced in ChatGPT search results',
-						'enable_checkout' => 'Allows direct purchase inside ChatGPT.',
-						'is_ads_eligible' => 'Whether the product is eligible for Ads (required for Ads feeds)',
+						'is_eligible_search'   => 'Controls whether the product can be surfaced in ChatGPT search results',
+						'is_eligible_checkout' => 'Allows direct purchase inside ChatGPT.',
+						'is_ads_eligible'      => 'Whether the product is eligible for Ads (required for Ads feeds)',
 					),
 				),
 				2  => array(

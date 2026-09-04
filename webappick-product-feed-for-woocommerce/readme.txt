@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.11
+Stable tag: 8.0.12
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,12 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.12 =
+* Fix: the ChatGPT (OpenAI) template now outputs the spec's primary column names is_eligible_search and is_eligible_checkout (the old enable_search / enable_checkout are OpenAI's legacy aliases and keep working for existing feeds), alongside the is_ads_eligible attribute required for OpenAI Ads.
+* Fix (with CTX Feed Pro 8.0.3): WPML secondary-language feeds now match the shop. When WPML's product mode is "use translation if available or fallback", products without a translation stay in the feed as their original-language post instead of disappearing — a 4,500-product store no longer exports a 558-product Danish feed.
+* Fix: the dashboard's channel performance grid showed raw channel slugs (e.g. "Chatgpt" instead of "ChatGPT (OpenAI)") and logged a harmless error per channel on every load.
+* Note (CTX Feed Pro 8.0.3): currency and multilingual integrations are now mutually exclusive — with two currency plugins or two multilingual plugins active, CTX Feed uses one, ignores the other, and shows a clear warning naming both, instead of converting prices twice or emptying the feed.
 
 = Version 8.0.11 =
 * Performance: feed generation is several times faster. On our 2,400-product test store a full run dropped from 42 to 9 seconds, and variation-heavy catalogs gain the most: a variation's parent product data is now resolved once per parent instead of once per variation, product images are bulk-loaded per batch instead of queried one by one, and category/tag lookups are served from the already-warmed cache. Every value served from the new caches is spot-checked against a freshly computed one during the run; on any difference the plugin logs it and finishes the run on the slower, always-correct path.

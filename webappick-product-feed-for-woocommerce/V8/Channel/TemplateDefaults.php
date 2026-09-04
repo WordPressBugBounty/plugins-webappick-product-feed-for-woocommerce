@@ -10623,8 +10623,8 @@ class TemplateDefaults {
 			),
 			'chatgpt'                => array(
 				'mattributes' => array(
-					'enable_search',
-					'enable_checkout',
+					'is_eligible_search',
+					'is_eligible_checkout',
 					'id',
 					'title',
 					'description',
