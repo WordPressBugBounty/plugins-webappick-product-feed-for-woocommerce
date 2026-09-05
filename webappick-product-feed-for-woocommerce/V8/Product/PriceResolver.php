@@ -445,8 +445,15 @@ class PriceResolver {
 		// both fixed per request — resolve once per Config, not per price.
 		// The Config REFERENCE is held so an object id cannot be recycled.
 		if ( $config !== $this->format_memo_config ) {
-			// V5-compatible keys — user-entered values override WC defaults.
-			// Empty strings mean "use WooCommerce default".
+			// V5-compatible keys — user-entered values win. The fallbacks are
+			// MACHINE defaults, never WooCommerce's DISPLAY separators: feeds
+			// are parsed by channels, and WC display settings on locale stores
+			// (thousand '.', decimal ',') produced channel-invalid prices like
+			// "2.169.00 PLN" (#68983). V5 never applied these settings to
+			// prices at all, so dot-decimal/no-thousands is also the parity
+			// behavior every existing feed shipped with. An EMPTY separator
+			// field is honored literally — '' thousand separator means NONE
+			// (there is no other way for a user to say "no separator").
 			$decimals_raw = $config->get( 'decimals', '' );
 			$dec_sep_raw  = $config->get( 'decimal_separator', '' );
 			$thou_sep_raw = $config->get( 'thousand_separator', '' );
@@ -457,11 +464,11 @@ class PriceResolver {
 					? wc_get_price_decimals()
 					: (int) $decimals_raw,
 				( '' === $dec_sep_raw || null === $dec_sep_raw )
-					? wc_get_price_decimal_separator()
+					? '.'
 					: wp_specialchars_decode( wp_unslash( $dec_sep_raw ) ),
-				( '' === $thou_sep_raw || null === $thou_sep_raw )
-					? wc_get_price_thousand_separator()
-					: wp_specialchars_decode( wp_unslash( $thou_sep_raw ) ),
+				( null === $thou_sep_raw || false === $thou_sep_raw )
+					? ''
+					: wp_specialchars_decode( wp_unslash( (string) $thou_sep_raw ) ),
 			);
 		}
 

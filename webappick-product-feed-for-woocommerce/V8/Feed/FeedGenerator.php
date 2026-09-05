@@ -988,6 +988,28 @@ class FeedGenerator {
 			return;
 		}
 
+		$format   = $config->get( 'feedType', 'xml' );
+		$provider = $config->get_provider();
+
+		// Duplicate-finalize belt (the scheduler guards this too): the run's
+		// working file is RENAMED away by promotion, so its absence means the
+		// run was already finalized (or never wrote a batch — offset 0 always
+		// creates it). Proceeding would recreate an empty working file via
+		// open_append below, write only the footer newline, and promote a
+		// 1-byte file over the feed the first finalize just published, since
+		// progress still reports the full product total (#68345). The
+		// same-process path (tests, WP-CLI) keeps its open handle and is
+		// exempt — the file exists while the handle is open anyway.
+		$working_path = $this->get_working_file_path( $feed_name, $format, $provider );
+		$same_process = $this->stream_writer->is_open() && $this->stream_writer->get_file_path() === $working_path;
+		if ( ! $same_process && ! file_exists( $working_path ) ) {
+			if ( $this->feed_logger ) {
+				$this->feed_logger->info( $feed_name, 'Finalize skipped — the feed file was already published by an earlier finalize.' );
+				$this->feed_logger->flush( $feed_name );
+			}
+			return;
+		}
+
 		if ( $this->feed_logger ) {
 			$this->feed_logger->info( $feed_name, 'Writing the final feed file…' );
 			$this->feed_logger->flush( $feed_name );
@@ -996,8 +1018,6 @@ class FeedGenerator {
 		// Write footer and close. @implements FEED-FRD-2.4.
 		// Pass config so the Custom Template 2 (XML) routing can fire for
 		// custom2-merchant providers. PROD-FRD-10.6.
-		$format   = $config->get( 'feedType', 'xml' );
-		$provider = $config->get_provider();
 		$template = $this->template_engine->get_template( $format, $config );
 
 		// finalize() runs in its own Action Scheduler request — the batch
@@ -1006,8 +1026,7 @@ class FeedGenerator {
 		// resolves for promote/export). The path must match the batch write
 		// path exactly (same provider-nested location) or the footer lands
 		// in a different file.
-		$working_path = $this->get_working_file_path( $feed_name, $format, $provider );
-		if ( ! $this->stream_writer->is_open() || $this->stream_writer->get_file_path() !== $working_path ) {
+		if ( ! $same_process ) {
 			$this->stream_writer->open_append( $working_path, $format );
 		}
 
@@ -1323,6 +1342,76 @@ class FeedGenerator {
 	 */
 	private function get_working_file_path( string $feed_name, string $format, string $provider = '' ): string {
 		return $this->get_feed_file_path( $feed_name, $format, $provider ) . self::WORKING_SUFFIX;
+	}
+
+	/**
+	 * Whether the feed's working (.tmp) file exists on disk.
+	 *
+	 * Promotion renames the working file onto the live feed, so a missing
+	 * working file identifies an already-finalized run. The scheduler uses
+	 * this to drop duplicate FINALIZE actions before they touch progress —
+	 * see the #68345 note on finalize().
+	 *
+	 * @since 8.0.13
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return bool
+	 */
+	public function has_working_file( string $feed_name ): bool {
+		// Fail OPEN: when the check itself cannot run (no manager/config —
+		// partial wiring in tests or a torn-down container), let finalize
+		// proceed and apply its own guards rather than silently dropping a
+		// legitimate finalization.
+		if ( ! $this->manager ) {
+			return true;
+		}
+		$config = $this->manager->get_config( $feed_name );
+		if ( ! $config ) {
+			return true;
+		}
+
+		return file_exists(
+			$this->get_working_file_path(
+				$feed_name,
+				$config->get( 'feedType', 'xml' ),
+				$config->get_provider()
+			)
+		);
+	}
+
+	/**
+	 * Discard a cancelled run's on-disk leftovers: the working (.tmp) file
+	 * and the in-flight batch marker. The LIVE feed file is never touched.
+	 *
+	 * Part of {@see FeedScheduler::cancel_feed_runs()} — without this, a
+	 * later run would append after the cancelled run's partial rows (the
+	 * marker/truncate machinery only guards same-run retries).
+	 *
+	 * @since 8.0.13
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return void
+	 */
+	public function discard_working_file( string $feed_name ): void {
+		$this->clear_batch_marker( $feed_name );
+
+		if ( ! $this->manager ) {
+			return;
+		}
+		$config = $this->manager->get_config( $feed_name );
+		if ( ! $config ) {
+			return;
+		}
+
+		$working_path = $this->get_working_file_path(
+			$feed_name,
+			$config->get( 'feedType', 'xml' ),
+			$config->get_provider()
+		);
+
+		if ( file_exists( $working_path ) && function_exists( 'wp_delete_file' ) ) {
+			wp_delete_file( $working_path );
+		}
 	}
 
 	/**

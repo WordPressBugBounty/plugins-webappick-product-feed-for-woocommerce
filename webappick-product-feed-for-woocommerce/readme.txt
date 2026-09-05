@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.12
+Stable tag: 8.0.13
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,15 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.13 =
+* Fix: a large feed could finish as a 1-byte file. When a slow finalization step was retried while the original was still running, the duplicate overwrote the freshly published feed with an empty one; a duplicated finalization is now recognised and skipped, and the published feed is left untouched.
+* Fix: turning auto-update OFF now actually stops the feed. Runs already queued kept starting on their own after the toggle was switched off; the toggle now cancels the feed's queued batches and in-flight run on the spot, unblocking editing immediately — and after a plugin update, every feed with auto-update off gets its leftover queue cleared automatically.
+* Fix: feed prices no longer inherit the store's display separators. A store showing prices as "2.169,00" on the front end shipped that formatting into machine-read feeds; feeds now always use dot-decimal with no thousands grouping unless you explicitly configure separators in the feed's Number Format settings (an empty thousands separator now genuinely means none).
+* Fix: All in One SEO titles and descriptions rendered as raw templates (e.g. "#post_title #separator_sa #site_title") in feeds; AIOSEO's smart tags are now rendered through AIOSEO itself.
+* Added: the Version Control page shows a CTX Feed Pro card — installed version, latest release, and a one-click update (an active license is required to download; without one the card links to the License page). Release notes on the page now render as tagged change lists instead of a wall of text.
+* Security: the "Our Plugins" one-click installer now requires the real plugin-install capability and only accepts WebAppick's own catalog; category-mapping data is unserialized with object instantiation disabled; the feed-log download path is additionally sanitised. None of these were publicly reported; all are defence-in-depth hardening.
+* Note (CTX Feed Pro 8.0.4): WPML secondary-language feeds no longer export 0 products when generation runs from a scheduled task or an admin session in another language — the product query now runs in the feed's language, with translation mapping as a safety net. Pro 8.0.4 also adds in-dashboard update notifications for the Pro plugin (this is the last Pro update that must be installed manually).
 
 = Version 8.0.12 =
 * Fix: the ChatGPT (OpenAI) template now outputs the spec's primary column names is_eligible_search and is_eligible_checkout (the old enable_search / enable_checkout are OpenAI's legacy aliases and keep working for existing feeds), alongside the is_ads_eligible attribute required for OpenAI Ads.

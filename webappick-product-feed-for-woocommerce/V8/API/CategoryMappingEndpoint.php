@@ -304,7 +304,13 @@ class CategoryMappingEndpoint extends RestController {
 		$i         = 0;
 
 		while ( is_string( $value ) && is_serialized( $value ) && $i < $max_depth ) {
-			$value = maybe_unserialize( $value );
+			// Sanitizer::safe_unserialize, NOT maybe_unserialize: WP core's
+			// helper unserializes without allowed_classes=false, so a crafted
+			// serialized mapping row would instantiate live objects (PHP
+			// object injection — the class the CTX-908 fix closed everywhere
+			// else; this path had slipped through). Same maybe_unserialize
+			// semantics otherwise: plain arrays/scalars round-trip unchanged.
+			$value = \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( $value );
 			++$i;
 		}
 

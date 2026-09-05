@@ -1128,6 +1128,161 @@ class FeedScheduler {
 	public function reconcile_after_upgrade(): void {
 		$this->clear_legacy_wp_cron_events();
 		$this->sync_all_recurring_schedules( $this->manager );
+		$this->purge_disabled_feed_queues();
+	}
+
+	/**
+	 * Cancel every queued/in-flight run belonging to feeds whose auto-update
+	 * is OFF — the plugin-side cleanup for a wedged queue (#68345).
+	 *
+	 * Runs once per plugin update (from {@see reconcile_after_upgrade()}):
+	 * a disabled feed with pending work is by definition unwanted work — the
+	 * store owner turned the toggle off precisely to stop it, but queued
+	 * batch/finalize/recurring actions used to survive both the toggle and
+	 * the update, resuming for hours on large catalogs. Enabled feeds are
+	 * never touched.
+	 *
+	 * @since 8.0.13
+	 *
+	 * @return void
+	 */
+	public function purge_disabled_feed_queues(): void {
+		$manager = $this->manager ? $this->manager : new FeedManager();
+
+		foreach ( $manager->get_all_feed_names() as $feed_name ) {
+			$feed_data = get_option( 'wf_feed_' . $feed_name );
+			if ( is_string( $feed_data ) && function_exists( 'maybe_unserialize' ) ) {
+				$feed_data = maybe_unserialize( $feed_data );
+			}
+			if ( ! is_array( $feed_data ) || 1 === (int) ( $feed_data['status'] ?? 0 ) ) {
+				continue;
+			}
+
+			$this->cancel_feed_runs( $feed_name );
+		}
+	}
+
+	/**
+	 * Stop a feed's generation completely: cancel its queued Action Scheduler
+	 * work, clear its run state, release the lock, and discard the partial
+	 * working file. The LIVE feed file is never touched.
+	 *
+	 * The user-facing "make it stop" primitive (#68345): called when
+	 * auto-update is toggled OFF and for disabled feeds after a plugin
+	 * update; a dedicated Stop control can reuse it as is. Cancels the
+	 * recurring instance AND the lock-busy re-queue singles (both carry the
+	 * feed_name arg), so nothing respawns the run afterwards.
+	 *
+	 * @since 8.0.13
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return void
+	 */
+	public function cancel_feed_runs( string $feed_name ): void {
+		$cancelled = $this->cancel_pending_actions_for( $feed_name );
+
+		if ( function_exists( 'delete_transient' ) ) {
+			// The in-flight run state: the progress record (a stale
+			// 'generating' blocks editing and re-triggers the page-visit
+			// runner) and the dead-chain revive budget.
+			delete_transient( 'ctxfeed_progress_' . $feed_name );
+			delete_transient( 'ctxfeed_chain_revives_' . $feed_name );
+		}
+
+		if ( $this->batch_calculator ) {
+			$this->batch_calculator->release_lock( $feed_name );
+		}
+
+		if ( $this->generator && method_exists( $this->generator, 'discard_working_file' ) ) {
+			$this->generator->discard_working_file( $feed_name );
+		}
+
+		if ( $cancelled > 0 ) {
+			Logger::info( "Cancelled {$cancelled} queued generation action(s): {$feed_name}" );
+		}
+
+		if ( $this->feed_logger ) {
+			$this->feed_logger->info( $feed_name, 'Generation stopped — queued batches cancelled and run state cleared.' );
+			$this->feed_logger->flush( $feed_name );
+		}
+	}
+
+	/**
+	 * Cancel every PENDING Action Scheduler action carrying this feed's name
+	 * (batches, finalizes, recurring instances and re-queue singles).
+	 *
+	 * `as_unschedule_all_actions()` needs an EXACT args match and the batch
+	 * hooks carry offset/size/total args, so this walks pending ids and
+	 * inspects each action's args instead — same approach as
+	 * {@see next_pending_action_id()}. Paged with a hard cap so a
+	 * pathological backlog (hundreds of queued batches on a 497K-product
+	 * store) still clears in one call without looping forever.
+	 *
+	 * @since 8.0.13
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return int Number of actions cancelled.
+	 */
+	private function cancel_pending_actions_for( string $feed_name ): int {
+		if ( ! function_exists( 'as_get_scheduled_actions' ) || ! class_exists( '\ActionScheduler' ) ) {
+			return 0;
+		}
+
+		$cancelled = 0;
+
+		foreach ( array( self::GENERATE_ACTION, self::FINALIZE_ACTION, self::RECURRING_ACTION ) as $hook ) {
+			// Offset paging over the pending set. Cancelling REMOVES rows from
+			// that set, so the offset only advances past hit-free pages (all
+			// other feeds' actions); a page with hits is re-read at the same
+			// offset because everything cancelled just shifted out of it. The
+			// guard caps the walk at ~5,000 pending actions per hook.
+			$offset = 0;
+			for ( $guard = 0; $guard < 50; $guard++ ) {
+				try {
+					$ids = as_get_scheduled_actions(
+						array(
+							'hook'     => $hook,
+							'group'    => self::GROUP,
+							'status'   => \ActionScheduler_Store::STATUS_PENDING,
+							'per_page' => 100,
+							'offset'   => $offset,
+						),
+						'ids'
+					);
+				} catch ( \Throwable $e ) {
+					break;
+				}
+
+				$ids = (array) $ids;
+				if ( empty( $ids ) ) {
+					break;
+				}
+
+				$hit = 0;
+				foreach ( $ids as $id ) {
+					$action = \ActionScheduler::store()->fetch_action( (int) $id );
+					if ( ! $action ) {
+						continue;
+					}
+					$args = $action->get_args();
+					$name = isset( $args['feed_name'] ) ? (string) $args['feed_name'] : (string) ( $args[0] ?? '' );
+					if ( $name === $feed_name ) {
+						\ActionScheduler::store()->cancel_action( (int) $id );
+						++$cancelled;
+						++$hit;
+					}
+				}
+
+				if ( 0 === $hit ) {
+					if ( count( $ids ) < 100 ) {
+						break;
+					}
+					$offset += count( $ids );
+				}
+			}
+		}
+
+		return $cancelled;
 	}
 
 	/**
@@ -1196,6 +1351,23 @@ class FeedScheduler {
 	 */
 	public function handle_recurring( string $feed_name ): void {
 		$manager = $this->manager ? $this->manager : new FeedManager();
+
+		// Guard 0: honour the CURRENT auto-update toggle, not the one from
+		// when this action was queued. Recurring triggers reach here from two
+		// stale paths — the lock-busy 60-second re-queue singles below, and
+		// recurring instances already claimed when the user flipped the toggle
+		// — and neither is cancelled by turning auto-update off. Without this
+		// re-check a user who disables auto-update mid-backlog watches feeds
+		// keep starting fresh runs "on their own" (#68345, a 497K-product
+		// store where each queued single respawned an hours-long run).
+		$feed_data = get_option( 'wf_feed_' . $feed_name );
+		if ( is_string( $feed_data ) && function_exists( 'maybe_unserialize' ) ) {
+			$feed_data = maybe_unserialize( $feed_data );
+		}
+		if ( is_array( $feed_data ) && 1 !== (int) ( $feed_data['status'] ?? 0 ) ) {
+			Logger::info( "Skipping recurring generation — auto-update is off: {$feed_name}" );
+			return;
+		}
 
 		// Guard 1: Skip if THIS feed is already generating (self-overlap).
 		$progress = $manager->get_progress( $feed_name );
@@ -1808,6 +1980,19 @@ class FeedScheduler {
 	public function handle_finalization( string $feed_name, int $total ): void {
 		if ( ! $this->generator ) {
 			Logger::error( 'FeedGenerator not set in FeedScheduler' );
+			return;
+		}
+
+		// Duplicate-finalize guard: promotion RENAMES the working file away,
+		// so a second FINALIZE_ACTION for the same run (a dead-chain revive
+		// racing a slow-but-alive finalize, an Action Scheduler re-run) finds
+		// no working file. Without this check it would recreate an EMPTY one
+		// via open_append, write just the footer newline, and — because
+		// progress still reports the full product total — rename a 1-byte
+		// file over the feed the first finalize just published (#68345).
+		// Checked BEFORE touching progress so the completed status survives.
+		if ( method_exists( $this->generator, 'has_working_file' ) && ! $this->generator->has_working_file( $feed_name ) ) {
+			Logger::info( "Finalize skipped — no working file, the run was already finalized: {$feed_name}" );
 			return;
 		}
 

@@ -101,7 +101,39 @@ class AIOSEOCompatibility {
 			}
 		}
 
+		// AIOSEO v4 titles — per-post AND the post-type default — are smart-tag
+		// TEMPLATES ("#post_title #separator_sa #site_title"). Unrendered they
+		// ship the literal tag names into the feed; run them through AIOSEO's
+		// own tag replacer.
+		$aioseo_title = $this->render_aioseo_tags( $aioseo_title, $product->get_id() );
+
 		return ! empty( $aioseo_title ) ? $aioseo_title : $title;
+	}
+
+	/**
+	 * Render AIOSEO smart tags (#post_title, #site_title, …) in a template
+	 * string via AIOSEO's own replacer. Pass-through when the API is absent
+	 * (very old AIOSEO) or the string carries no tags.
+	 *
+	 * @param string $value   Template string from AIOSEO.
+	 * @param int    $post_id Product ID for post-scoped tags.
+	 *
+	 * @return string
+	 */
+	private function render_aioseo_tags( $value, $post_id ) {
+		if ( ! is_string( $value ) || '' === $value || false === strpos( $value, '#' ) || ! function_exists( 'aioseo' ) ) {
+			return $value;
+		}
+
+		$aioseo = aioseo();
+		if ( is_object( $aioseo ) && isset( $aioseo->tags ) && method_exists( $aioseo->tags, 'replaceTags' ) ) {
+			$rendered = $aioseo->tags->replaceTags( $value, (int) $post_id );
+			if ( is_string( $rendered ) && '' !== trim( $rendered ) ) {
+				return trim( $rendered );
+			}
+		}
+
+		return $value;
 	}
 
 	/**
@@ -126,6 +158,8 @@ class AIOSEOCompatibility {
 				$aioseo_description = $aioseo->meta->description->getPostTypeDescription( 'product' );
 			}
 		}
+
+		$aioseo_description = $this->render_aioseo_tags( $aioseo_description, $product->get_id() );
 
 		return ! empty( $aioseo_description ) ? $aioseo_description : $description;
 	}

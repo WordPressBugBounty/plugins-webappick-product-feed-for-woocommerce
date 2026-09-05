@@ -152,7 +152,12 @@ final class UpsellPages {
 	public function ajax_install_plugin(): void {
 		check_ajax_referer( 'woo-feed-our-plugins-nonce', 'nonce' );
 
-		if ( ! current_user_can( 'manage_options' ) ) {
+		// install_plugins, NOT manage_options: they differ exactly where it
+		// matters — multisite site admins hold manage_options without install
+		// rights, and DISALLOW_FILE_MODS is enforced through install_plugins —
+		// the same capability class as the plugin's historical <6.6.12
+		// arbitrary plugin installation vulnerability.
+		if ( ! current_user_can( 'install_plugins' ) ) {
 			wp_send_json(
 				array(
 					'status' => 401,
@@ -183,7 +188,13 @@ final class UpsellPages {
 	 * @return string 'activated' | 'installed' | 'failed'.
 	 */
 	private function install_and_activate( string $plugin_slug ): string {
-		if ( ! current_user_can( 'manage_options' ) || '' === $plugin_slug ) {
+		// The Our Plugins page only ever installs WebAppick's own catalog —
+		// whitelist against it so this endpoint can never be used to install
+		// an arbitrary wp.org plugin, and require the real install capability.
+		if (
+			! current_user_can( 'install_plugins' )
+			|| ! in_array( $plugin_slug, \CTXFeed\V8\API\OurPluginsEndpoint::PLUGIN_SLUGS, true )
+		) {
 			return 'failed';
 		}
 

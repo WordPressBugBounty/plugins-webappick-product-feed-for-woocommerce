@@ -520,8 +520,9 @@ class FeedEndpoint extends RestController {
 			// Reconcile the Action Scheduler recurring entry with the new
 			// status. Without this, the toggle was previously a UI-only
 			// flag — wp_options changed but no recurring action was ever
-			// registered (or cancelled).
-			$this->sync_feed_schedule( $option_name, $config );
+			// registered (or cancelled). Toggling OFF also purges the feed's
+			// queued/in-flight runs (see sync_feed_schedule).
+			$this->sync_feed_schedule( $option_name, $config, ! $auto_update );
 
 			return $this->success(
 				array(
@@ -1198,9 +1199,14 @@ class FeedEndpoint extends RestController {
 		$log_file_path = $log_dir . sanitize_file_name( $feed_slug ) . '.log';
 
 		// 2. Fallback: glob scan for {slug}-*.log (legacy dated log format).
+		// sanitize_file_name like the primary path above: the slug comes from
+		// an existing wf_feed_ option so it should already be clean, but a
+		// path-building input never goes into a filesystem pattern unsanitised
+		// (defence in depth — the V5-era log download fell to exactly this
+		// class of traversal).
 		if ( empty( $log_file_path ) || ! file_exists( $log_file_path ) ) {
 			if ( is_dir( $log_dir ) ) {
-				$pattern = $log_dir . $feed_slug . '-*.log';
+				$pattern = $log_dir . sanitize_file_name( $feed_slug ) . '-*.log';
 				$files   = glob( $pattern );
 				if ( ! empty( $files ) ) {
 					usort(
@@ -1568,9 +1574,9 @@ class FeedEndpoint extends RestController {
 							$config['status'] = ( 'auto_update_on' === $action ) ? 1 : 0;
 							$results[]        = update_option( $feed_data['option_name'], $config, false );
 
-							// Reconcile recurring action — on registers,
-							// off cancels.
-							$this->sync_feed_schedule( $feed_data['option_name'], $config );
+							// Reconcile recurring action — on registers, off
+							// cancels AND purges the feed's queued runs.
+							$this->sync_feed_schedule( $feed_data['option_name'], $config, 'auto_update_off' === $action );
 						}
 					}
 					break;
@@ -2441,10 +2447,14 @@ class FeedEndpoint extends RestController {
 	 *
 	 * @param string $option_name `wf_feed_<slug>` option name.
 	 * @param array  $feed_data   Stored feed array (status, feedrules, ...).
+	 * @param bool   $purge_runs  Also cancel the feed's queued/in-flight runs —
+	 *                            pass true ONLY on an explicit auto-update
+	 *                            toggle-OFF (the user's stop gesture, #68345),
+	 *                            never on ordinary saves.
 	 *
 	 * @return void
 	 */
-	private function sync_feed_schedule( string $option_name, array $feed_data ): void {
+	private function sync_feed_schedule( string $option_name, array $feed_data, bool $purge_runs = false ): void {
 		if ( ! defined( 'CTXFEED_V8_ACTIVE' ) || ! CTXFEED_V8_ACTIVE ) {
 			return; // V5 owns its own cron — don't touch.
 		}
@@ -2462,6 +2472,16 @@ class FeedEndpoint extends RestController {
 			/** @var FeedScheduler $scheduler */ // phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Inline @var type annotation for IDE/static analysis, not a documentation block.
 			$scheduler = $container->resolve( 'feed.scheduler' );
 			$scheduler->sync_recurring_schedule( $feed_name, $feed_data );
+
+			// Toggle-OFF is the user's "make it stop" gesture (#68345):
+			// besides cancelling the recurring schedule, kill everything
+			// already queued or in flight for this feed — batches, finalize,
+			// the lock-busy re-queue singles — and clear the run state so
+			// editing unblocks. Only the explicit toggle transitions pass
+			// $purge_runs; ordinary saves never cancel a running generation.
+			if ( $purge_runs && method_exists( $scheduler, 'cancel_feed_runs' ) ) {
+				$scheduler->cancel_feed_runs( $feed_name );
+			}
 		} catch ( \Throwable $e ) {
 			// Schedule sync must never break a feed save. Log and move on.
 			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Not debug code: schedule sync must never break a feed save, so the exception is swallowed. Without this line the failure would be completely silent.
