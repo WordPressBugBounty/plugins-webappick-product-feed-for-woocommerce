@@ -14,6 +14,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Core\Logger;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -186,6 +187,11 @@ class ProductQuery {
 		$query       = new \WC_Product_Query( $args );
 		$product_ids = $query->get_products();
 
+		// Include-mode category push-down: shrink the ID set BEFORE variation
+		// expansion and per-product filtering, so a 5-product category feed
+		// on a 500K-product store doesn't load the whole catalog (#68989).
+		$product_ids = $this->prune_to_included_categories( $product_ids, $config );
+
 		// Expand variations if configured.
 		// @implements PROD-FRD-3.2.
 		if ( in_array( 'variable', (array) $product_types, true ) ) {
@@ -231,6 +237,171 @@ class ProductQuery {
 
 		// @hook ctxfeed_product_ids
 		return apply_filters( 'ctxfeed_product_ids', $product_ids, $config );
+	}
+
+	/**
+	 * Prune the queried IDs to products carrying one of the feed's INCLUDE
+	 * categories, before variations expand and batches load full products.
+	 *
+	 * CategoryFilter stays the source of truth — it still runs per product.
+	 * This is purely an early SUPERSET cut, so it may only ever REMOVE ids
+	 * the filter would definitely reject; on any doubt it returns the ids
+	 * untouched (fail open). The guarantees that make the cut safe:
+	 *
+	 *   - Include mode only. Exclude mode and empty selections pass through
+	 *     (has_term semantics for exclude can't be safely inverted here).
+	 *   - Term resolution mirrors has_term()/is_object_in_term(): a string
+	 *     entry matches by slug OR name, so both are resolved (name__in
+	 *     catches same-name terms a single get_term_by would miss), plus
+	 *     numeric entries as term ids — the resolved set can only be a
+	 *     superset of what has_term would match.
+	 *   - Variations are expanded AFTER this cut and CategoryFilter checks
+	 *     the PARENT's terms, so pruning parents is equivalent.
+	 *   - Children of selected categories are NOT implied — has_term
+	 *     matches assigned terms only, and so does this.
+	 *
+	 * Cost control: one COUNT on term_relationships first; when the matched
+	 * set wouldn't meaningfully shrink the catalog (>= 80%), the id fetch
+	 * is skipped entirely so wide selections never pay for a large
+	 * intermediate array. Kill switch: `ctxfeed_category_query_pushdown`.
+	 *
+	 * @since 8.0.14
+	 *
+	 * @param array  $ids    Queried product ids.
+	 * @param Config $config Feed configuration.
+	 * @return array Possibly pruned ids (order preserved).
+	 */
+	private function prune_to_included_categories( array $ids, Config $config ): array {
+		$categories = (array) $config->get( 'categories', array() );
+		$mode_all   = (array) $config->get( 'filter_mode', array() );
+		$mode       = isset( $mode_all['categories'] ) ? $mode_all['categories'] : 'include';
+
+		if ( empty( $categories ) || 'include' !== $mode || empty( $ids ) ) {
+			return $ids;
+		}
+
+		/**
+		 * Filter whether the include-mode category push-down runs.
+		 *
+		 * Disabling falls back to per-product-only category filtering.
+		 *
+		 * @since 8.0.14
+		 *
+		 * @param bool   $enabled Whether the push-down is enabled.
+		 * @param Config $config  Feed configuration.
+		 */
+		if ( ! apply_filters( 'ctxfeed_category_query_pushdown', true, $config ) ) {
+			return $ids;
+		}
+
+		$tt_ids = $this->resolve_category_tt_ids( $categories );
+		if ( empty( $tt_ids ) ) {
+			return $ids;
+		}
+
+		global $wpdb;
+		$placeholders = implode( ',', array_fill( 0, count( $tt_ids ), '%d' ) );
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Single indexed read of term_relationships ($placeholders is literal %d tokens filled by prepare); WP offers no bulk "object ids for terms" API that avoids loading term objects.
+		$matched_count = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(DISTINCT object_id) FROM {$wpdb->term_relationships} WHERE term_taxonomy_id IN ($placeholders)",
+				$tt_ids
+			)
+		);
+
+		// Wide selection — nothing meaningful to cut; don't pay for fetching
+		// a huge id list only to keep almost everything.
+		if ( $matched_count >= (int) ceil( count( $ids ) * 0.8 ) ) {
+			return $ids;
+		}
+
+		$matched = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT DISTINCT object_id FROM {$wpdb->term_relationships} WHERE term_taxonomy_id IN ($placeholders)",
+				$tt_ids
+			)
+		);
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+
+		if ( empty( $matched ) ) {
+			// Fail open — an empty match here would zero the feed on any
+			// resolution blind spot; let the per-product filter decide.
+			return $ids;
+		}
+
+		$keep = array_fill_keys( array_map( 'intval', $matched ), true );
+
+		$pruned = array();
+		foreach ( $ids as $id ) {
+			if ( isset( $keep[ (int) $id ] ) ) {
+				$pruned[] = $id;
+			}
+		}
+
+		Logger::info(
+			sprintf(
+				'Category push-down narrowed the catalog scan: %d of %d products carry the selected categories.',
+				count( $pruned ),
+				count( $ids )
+			)
+		);
+
+		return $pruned;
+	}
+
+	/**
+	 * Resolve the configured category values into term_taxonomy_ids the way
+	 * has_term() would match them: strings by slug AND by name, numeric
+	 * entries additionally as term ids. Unresolvable entries contribute
+	 * nothing (has_term would not match them either).
+	 *
+	 * @since 8.0.14
+	 *
+	 * @param array $values Configured category values (V5 stores slugs).
+	 * @return int[] Unique term_taxonomy_ids.
+	 */
+	private function resolve_category_tt_ids( array $values ): array {
+		$values = array_values( array_filter( array_map( 'strval', $values ), 'strlen' ) );
+		if ( empty( $values ) ) {
+			return array();
+		}
+
+		// WP_Term_Query arg names: 'slug' and 'name' (both take arrays) —
+		// NOT the WP_Query-style slug__in/name__in, which WP_Term_Query
+		// silently ignores (returning EVERY term, which the 80%-skip then
+		// turns into a harmless no-op — caught in live verification).
+		$lookups = array(
+			array( 'slug' => $values ),
+			array( 'name' => $values ),
+		);
+
+		$numeric = array_map( 'intval', array_filter( $values, 'is_numeric' ) );
+		if ( ! empty( $numeric ) ) {
+			$lookups[] = array( 'include' => $numeric );
+		}
+
+		$tt_ids = array();
+		foreach ( $lookups as $extra ) {
+			$terms = get_terms(
+				array_merge(
+					array(
+						'taxonomy'   => 'product_cat',
+						'hide_empty' => false,
+						'fields'     => 'tt_ids',
+					),
+					$extra
+				)
+			);
+
+			if ( is_array( $terms ) ) {
+				foreach ( $terms as $tt_id ) {
+					$tt_ids[ (int) $tt_id ] = true;
+				}
+			}
+		}
+
+		return array_keys( $tt_ids );
 	}
 
 	/**

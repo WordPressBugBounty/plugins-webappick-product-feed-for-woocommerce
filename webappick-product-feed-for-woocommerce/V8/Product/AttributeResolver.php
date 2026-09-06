@@ -285,12 +285,31 @@ class AttributeResolver {
 		// variations' sale prices (WC_Product_Variable semantics) — i.e.
 		// a SIBLING's discount — telling Google a full-price variant is
 		// on sale. Same reasoning for the sale date fields.
+		// The GALLERY image family is excluded too (owner decision
+		// 2026-09-05, #68988): a variation ships only its OWN gallery —
+		// empty means empty, never the parent's images. Stores that want
+		// the parent gallery opt in per attribute with the "parent if
+		// empty" output command (code 20). The main `image` /
+		// `feature_image` attributes are NOT listed: their parent-thumbnail
+		// behavior is handled inside ImageResolver and matches the
+		// storefront.
 		static $no_parent_fallback = array(
 			'sale_price',
 			'sale_price_with_tax',
 			'sale_price_sdate',
 			'sale_price_edate',
 			'sale_price_effective_date',
+			'images',
+			'image_1',
+			'image_2',
+			'image_3',
+			'image_4',
+			'image_5',
+			'image_6',
+			'image_7',
+			'image_8',
+			'image_9',
+			'image_10',
 		);
 
 		// A legitimate ZERO is not "empty": V5's fallbacks triggered on

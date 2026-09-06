@@ -1050,6 +1050,14 @@ class FeedGenerator {
 		$product_total = isset( $progress['total'] ) ? (int) $progress['total'] : 0;
 		$this->promote_working_file( $working_path, $file_path, $product_total, $feed_name );
 
+		// Self-heal the #68989 directory fork: while sanitize_file_name was
+		// mangling the feed-type folder, generations landed in
+		// `{provider}/unnamed-file.{ext}/` instead of `{provider}/{ext}/`.
+		// Now that the file promotes to the correct path again, delete the
+		// stale forked copy so nothing keeps serving (or confusing anyone
+		// with) an outdated duplicate of this feed.
+		$this->cleanup_forked_feed_copy( $file_path, $format );
+
 		// Promote feed: update wf_feed_ with URL and timestamp.
 		if ( ! empty( $file_path ) ) {
 			$this->manager->promote_feed( $feed_name, $file_path );
@@ -1314,8 +1322,12 @@ class FeedGenerator {
 		$upload_dir = wp_upload_dir();
 		$feed_dir   = trailingslashit( $upload_dir['basedir'] ) . 'woo-feed/';
 		if ( '' !== $provider ) {
-			$feed_dir .= trailingslashit( sanitize_file_name( $provider ) )
-				. trailingslashit( sanitize_file_name( $format ) );
+			// Filesystem::sanitize_dir_segment, NOT sanitize_file_name —
+			// recent WP rewrites 'tsv'/'csv'/'txt' to 'unnamed-file.{ext}'
+			// and forks the feed directory (#68989). Must stay in lockstep
+			// with Filesystem::feed_sub_path().
+			$feed_dir .= trailingslashit( Filesystem::sanitize_dir_segment( $provider ) )
+				. trailingslashit( Filesystem::sanitize_dir_segment( $format ) );
 		}
 
 		if ( ! is_dir( $feed_dir ) ) {
@@ -1323,6 +1335,48 @@ class FeedGenerator {
 		}
 
 		return $feed_dir . sanitize_file_name( $feed_name ) . '.' . $format;
+	}
+
+	/**
+	 * Delete this feed's stale copy from the `unnamed-file.{ext}/` directory
+	 * fork (#68989), including its leftover working file, and prune the
+	 * forked directory once it is empty. No-op when no fork exists.
+	 *
+	 * @since 8.0.14
+	 *
+	 * @param string $file_path Correct (promoted) feed file path.
+	 * @param string $format    Feed format / extension.
+	 * @return void
+	 */
+	private function cleanup_forked_feed_copy( string $file_path, string $format ): void {
+		$ext     = strtolower( (string) $format );
+		$correct = '/' . $ext . '/';
+		$forked  = '/unnamed-file.' . $ext . '/';
+
+		if ( false === strpos( $file_path, $correct ) ) {
+			return;
+		}
+
+		// Replace only the LAST occurrence — the type directory next to the
+		// file name — so a provider or feed name containing "/{ext}/" can
+		// never be rewritten.
+		$pos         = strrpos( $file_path, $correct );
+		$forked_path = substr_replace( $file_path, $forked, $pos, strlen( $correct ) );
+
+		foreach ( array( $forked_path, $forked_path . self::WORKING_SUFFIX ) as $stale ) {
+			if ( file_exists( $stale ) && function_exists( 'wp_delete_file' ) ) {
+				wp_delete_file( $stale );
+			}
+		}
+
+		$forked_dir = dirname( $forked_path );
+		if ( is_dir( $forked_dir ) ) {
+			$remaining = glob( trailingslashit( $forked_dir ) . '*' );
+			if ( is_array( $remaining ) && 0 === count( $remaining ) ) {
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPressVIPMinimum.Functions.RestrictedFunctions.directory_rmdir -- Removing our own now-empty forked feed directory; WP_Filesystem offers no benefit for a local rmdir.
+				rmdir( $forked_dir );
+			}
+		}
 	}
 
 	/**

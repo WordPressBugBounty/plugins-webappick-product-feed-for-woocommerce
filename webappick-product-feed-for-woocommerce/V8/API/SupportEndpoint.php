@@ -135,19 +135,24 @@ class SupportEndpoint extends RestController {
 		// Keep parity with the UI's 2000-character limit.
 		$message = mb_substr( $message, 0, 2000 );
 
-		// The user's message first, then the diagnostics support needs to act
-		// without a follow-up: the system status, and — when the user picked a
-		// feed (optional) — that feed's log.
+		// The user's message plus a SHORT inline status block (support scans
+		// versions from the ticket preview without opening attachments). The
+		// heavy diagnostics ride as files instead of raw text in the body:
+		// system-status.txt — the FULL System status page (every section)
+		// system-status.log — the logs (selected feed's log, else the
+		// System status → Logs tab bundle)
+		// feed-config.txt   — the selected feed's configuration (redacted)
+		// plus the generated feed file(s) for the selected feed (BUG-0064)
+		// and any files the user attached manually in the form.
 		$body  = "From: {$name} <{$email}>\n";
 		$body .= 'Site: ' . home_url() . "\n\n";
 		$body .= $message . "\n\n";
-		$body .= "--- System status ---\n" . $this->system_report() . "\n\n";
-		$body .= "--- Feed log ---\n" . $this->feed_log( $feed );
+		$body .= "--- System status (summary) ---\n" . $this->system_report() . "\n\n";
 
-		// BUG-0064: attach the ACTUAL generated feed file for the selected feed
-		// (none when the optional feed picker is left unset), plus any files the
-		// user attached manually in the form. wp_mail takes real file paths.
-		$attachments = $this->feed_files( $feed );
+		$bundle      = $this->diagnostic_bundle( $feed );
+		$attachments = array_merge( $bundle['paths'], $this->feed_files( $feed ) );
+
+		$body .= 'Attached: ' . implode( ', ', array_map( 'basename', $attachments ) ) . "\n";
 
 		$manual      = $this->manual_attachments( $request );
 		$attachments = array_merge( $attachments, $manual );
@@ -164,11 +169,15 @@ class SupportEndpoint extends RestController {
 			$attachments
 		);
 
-		// Clean up the temp copies of the manual uploads, if any.
-		foreach ( $manual as $path ) {
+		// Clean up the temp copies of the manual uploads and the diagnostic
+		// bundle (its unique temp directory included).
+		foreach ( array_merge( $manual, $bundle['paths'] ) as $path ) {
 			if ( file_exists( $path ) ) {
 				wp_delete_file( $path );
 			}
+		}
+		if ( '' !== $bundle['dir'] && is_dir( $bundle['dir'] ) ) {
+			@rmdir( $bundle['dir'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPressVIPMinimum.Functions.RestrictedFunctions.directory_rmdir, WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- Best-effort removal of this request's own emptied temp bundle directory; a leftover empty dir must not fail the ticket.
 		}
 
 		if ( ! $sent ) {
@@ -261,6 +270,131 @@ class SupportEndpoint extends RestController {
 		);
 
 		return implode( "\n", $lines );
+	}
+
+	/**
+	 * Write the diagnostic attachment files for a support ticket.
+	 *
+	 * Creates a unique temp directory holding (exact names, per the support
+	 * workflow):
+	 *   - system-status.txt — the FULL System status page text
+	 *   - system-status.log — the selected feed's log, or (no feed picked)
+	 *     the System status → Logs tab bundle
+	 *   - feed-config.txt   — the selected feed's stored configuration as
+	 *     pretty JSON, credentials redacted ('all' dumps every feed)
+	 *
+	 * The caller attaches the paths to wp_mail() and deletes them (and the
+	 * directory) after sending. File-write failures degrade gracefully — a
+	 * missing attachment must never block the ticket.
+	 *
+	 * @since 8.0.14
+	 *
+	 * @param string $feed '', 'all', or a feed id.
+	 * @return array{dir:string, paths:string[]}
+	 */
+	private function diagnostic_bundle( string $feed ): array {
+		$dir = trailingslashit( get_temp_dir() ) . 'ctxfeed-support-' . wp_generate_password( 8, false ) . '/';
+		if ( ! wp_mkdir_p( $dir ) ) {
+			return array(
+				'dir'   => '',
+				'paths' => array(),
+			);
+		}
+
+		$status = new StatusEndpoint();
+		$files  = array(
+			'system-status.txt' => $status->full_status_text(),
+			'system-status.log' => '' === $feed ? $status->logs_text() : $this->feed_log( $feed ),
+		);
+
+		$config_text = $this->feed_config_text( $feed );
+		if ( '' !== $config_text ) {
+			$files['feed-config.txt'] = $config_text;
+		}
+
+		$paths = array();
+		foreach ( $files as $filename => $content ) {
+			$path = $dir . $filename;
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_file_put_contents -- Writes this request's own temp attachment files; deleted right after wp_mail().
+			if ( false !== file_put_contents( $path, (string) $content ) ) {
+				$paths[] = $path;
+			}
+		}
+
+		return array(
+			'dir'   => $dir,
+			'paths' => $paths,
+		);
+	}
+
+	/**
+	 * The selected feed's stored configuration as pretty JSON, credentials
+	 * redacted. Empty string when no feed is selected (no file is written).
+	 *
+	 * @since 8.0.14
+	 *
+	 * @param string $feed '', 'all', or a feed id.
+	 * @return string
+	 */
+	private function feed_config_text( string $feed ): string {
+		if ( '' === $feed ) {
+			return '';
+		}
+
+		$slugs = array();
+		if ( 'all' === $feed ) {
+			global $wpdb;
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Feed configs live in wp_options under wf_feed_ (shared with V5); get_option cannot enumerate by prefix. Admin-only, on demand.
+			$names = $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'wf\_feed\_%'" );
+			foreach ( (array) $names as $option_name ) {
+				$slugs[] = str_replace( 'wf_feed_', '', (string) $option_name );
+			}
+		} else {
+			$slug = $this->feed_slug( $feed );
+			if ( '' !== $slug ) {
+				$slugs[] = $slug;
+			}
+		}
+
+		$out = '';
+		foreach ( $slugs as $slug ) {
+			$data = get_option( 'wf_feed_' . $slug );
+			if ( is_string( $data ) && function_exists( 'maybe_unserialize' ) ) {
+				$data = maybe_unserialize( $data );
+			}
+			if ( ! is_array( $data ) ) {
+				continue;
+			}
+
+			$out .= "===== Feed: {$slug} =====\n";
+			$out .= (string) wp_json_encode( $this->redact_credentials( $data ), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
+			$out .= "\n\n";
+		}
+
+		return trim( $out );
+	}
+
+	/**
+	 * Recursively blank credential-carrying keys before a config leaves the
+	 * site (FTP/SFTP passwords live inside feedrules).
+	 *
+	 * @since 8.0.14
+	 *
+	 * @param array $data Config array.
+	 * @return array
+	 */
+	private function redact_credentials( array $data ): array {
+		foreach ( $data as $key => $value ) {
+			if ( is_array( $value ) ) {
+				$data[ $key ] = $this->redact_credentials( $value );
+				continue;
+			}
+			if ( is_string( $key ) && preg_match( '/password|secret|api_key|apikey/i', $key ) && '' !== (string) $value ) {
+				$data[ $key ] = '(redacted)';
+			}
+		}
+
+		return $data;
 	}
 
 	/**
@@ -374,8 +508,6 @@ class SupportEndpoint extends RestController {
 		if ( empty( $upload['basedir'] ) ) {
 			return array();
 		}
-		$base = trailingslashit( $upload['basedir'] ) . 'woo-feed/';
-
 		$slugs = array();
 		if ( 'all' === $feed ) {
 			global $wpdb;
@@ -396,17 +528,24 @@ class SupportEndpoint extends RestController {
 		$total     = 0;
 		$max_total = 15 * 1024 * 1024; // 15 MB across all attached feed files.
 
+		$filesystem = new \CTXFeed\V8\Utility\Filesystem();
+
 		foreach ( $slugs as $slug ) {
 			$config   = get_option( 'wf_feed_' . $slug );
 			$rules    = ( is_array( $config ) && isset( $config['feedrules'] ) && is_array( $config['feedrules'] ) ) ? $config['feedrules'] : array();
-			$provider = isset( $rules['provider'] ) ? sanitize_file_name( (string) $rules['provider'] ) : '';
-			$ext      = isset( $rules['feedType'] ) ? strtolower( sanitize_file_name( (string) $rules['feedType'] ) ) : 'xml';
+			$provider = isset( $rules['provider'] ) ? (string) $rules['provider'] : '';
+			$ext      = isset( $rules['feedType'] ) ? strtolower( (string) $rules['feedType'] ) : 'xml';
 
 			if ( '' === $provider ) {
 				continue;
 			}
 
-			$path = $base . $provider . '/' . $ext . '/' . sanitize_file_name( $slug ) . '.' . $ext;
+			// Filesystem::get_feed_path is the single path authority — this
+			// used to MIRROR it with its own sanitize_file_name calls, and
+			// recent WP's 'tsv'→'unnamed-file.tsv' rewriting (#68989) made
+			// the mirror point at the forked directory, silently dropping
+			// the feed file from support tickets.
+			$path = $filesystem->get_feed_path( $slug, $ext, $provider );
 			if ( ! file_exists( $path ) ) {
 				continue;
 			}

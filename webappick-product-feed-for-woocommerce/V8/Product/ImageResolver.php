@@ -353,18 +353,21 @@ class ImageResolver {
 
 		$gallery_ids = $product->get_gallery_image_ids();
 
-		// Variations have no native WC gallery. V5 6.6.x: variation
-		// gallery plugins supply attachment IDs via this filter
-		// (ctx-compatibility VariationGalleryCompatibility); without
-		// one, fall back to the parent product's gallery so images_N
-		// aren't silently empty for variations (CTX-933).
+		// Variations: WooCommerce's native variation gallery resolves through
+		// get_gallery_image_ids() above (WC 11+); variation-gallery PLUGINS
+		// supply attachment IDs via this filter (ctx-compatibility
+		// VariationGalleryCompatibility). A variation with neither ships NO
+		// gallery images — owner decision 2026-09-05 (#68988): the feed
+		// carries only the variation's OWN images, and a store that wants the
+		// parent's gallery instead opts in per attribute with the
+		// "parent if empty" output command (code 20). The automatic
+		// parent-gallery substitution this replaced (CTX-933, V5 parity from
+		// the era before WC had native variation galleries) made that choice
+		// impossible to opt out of. The image attributes are likewise
+		// excluded from AttributeResolver's generic variation fallback so
+		// the parent gallery cannot come back through that path either.
 		if ( empty( $gallery_ids ) && $product->is_type( 'variation' ) ) {
 			$gallery_ids = (array) apply_filters( 'woo_feed_filter_variation_gallery_attachment_ids', array(), $product );
-
-			if ( empty( $gallery_ids ) ) {
-				$parent      = ProductMemo::get( (int) $product->get_parent_id() );
-				$gallery_ids = $parent instanceof \WC_Product ? $parent->get_gallery_image_ids() : array();
-			}
 		}
 
 		$urls = array();

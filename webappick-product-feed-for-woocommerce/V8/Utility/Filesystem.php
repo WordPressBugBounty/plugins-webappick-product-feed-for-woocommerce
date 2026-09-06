@@ -127,8 +127,34 @@ class Filesystem {
 			return '';
 		}
 
-		return trailingslashit( sanitize_file_name( $provider ) )
-			. trailingslashit( sanitize_file_name( $extension ) );
+		return trailingslashit( self::sanitize_dir_segment( $provider ) )
+			. trailingslashit( self::sanitize_dir_segment( $extension ) );
+	}
+
+	/**
+	 * Sanitize a DIRECTORY path segment (provider / feed-type folder name).
+	 *
+	 * NOT sanitize_file_name(): recent WordPress rewrites a dot-less string
+	 * that matches a known file extension — sanitize_file_name('tsv') →
+	 * 'unnamed-file.tsv' (it probes wp_check_filetype), same for csv/txt.
+	 * That silently FORKED every delimited feed's directory to
+	 * `woo-feed/{provider}/unnamed-file.tsv/` while Merchant Center kept
+	 * polling the original `{provider}/tsv/` URL, which then never updated
+	 * again (#68989, drbikes.co.uk — 500K-product store). Directory
+	 * segments only need traversal safety, not filename semantics: allow
+	 * slug characters, collapse everything else (which also kills '..',
+	 * '/', '\\' and dot-prefixes).
+	 *
+	 * @since 8.0.14
+	 *
+	 * @param string $segment Raw path segment.
+	 * @return string Safe directory name.
+	 */
+	public static function sanitize_dir_segment( string $segment ): string {
+		$segment = strtolower( trim( $segment ) );
+		$segment = (string) preg_replace( '/[^a-z0-9_-]+/', '-', $segment );
+
+		return trim( $segment, '-' );
 	}
 
 	/**

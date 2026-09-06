@@ -327,10 +327,27 @@ class StatusEndpoint extends RestController {
 			$items[] = $this->item( 'Total Products', 'success', (string) $total );
 		}
 
-		// Registered product types.
-		if ( function_exists( 'wc_get_product_types' ) ) {
-			$types   = array_keys( (array) wc_get_product_types() );
-			$items[] = $this->item( 'Product Types', 'success', $types ? implode( ', ', $types ) : 'N/A' );
+		// Per-type product counts — every type ACTUALLY IN USE on this site
+		// (the product_type taxonomy terms carried by products), not just the
+		// types CTX Feed queries: custom types like auction or bundle show up
+		// even when their plugin no longer registers them, which is exactly
+		// the situation support needs to see (an "empty feed" is often a
+		// catalog full of a type the feed's query doesn't include). Variations
+		// are their own post type and get their own row.
+		foreach ( $this->product_type_counts() as $type => $count ) {
+			$items[] = $this->item(
+				ucwords( str_replace( array( '-', '_' ), ' ', $type ) ) . ' Products',
+				'success',
+				number_format_i18n( $count )
+			);
+		}
+
+		if ( function_exists( 'wp_count_posts' ) ) {
+			$variation_counts = wp_count_posts( 'product_variation' );
+			$variations       = isset( $variation_counts->publish ) ? (int) $variation_counts->publish : 0;
+			if ( $variations > 0 ) {
+				$items[] = $this->item( 'Variation Products', 'success', number_format_i18n( $variations ) );
+			}
 		}
 
 		// Feed generation settings.
@@ -692,6 +709,51 @@ class StatusEndpoint extends RestController {
 	// =================================================================
 
 	/**
+	 * The COMPLETE System status page as plain text — every section and row,
+	 * exactly what the page's "Copy All" button produces.
+	 *
+	 * Public seam for the support-ticket bundle (SupportEndpoint attaches it
+	 * as system-status.txt so tickets carry the full picture instead of the
+	 * six-line inline summary).
+	 *
+	 * @since 8.0.14
+	 *
+	 * @return string
+	 */
+	public function full_status_text(): string {
+		try {
+			return $this->build_status_text(
+				array(
+					'ctx_feed'   => $this->build_ctx_feed_section(),
+					'wordpress'  => $this->build_wordpress_section(),
+					'server'     => $this->build_server_section(),
+					'database'   => $this->build_database_section(),
+					'plugins'    => $this->build_plugins_section(),
+					'theme'      => $this->build_theme_section(),
+					'filesystem' => $this->build_filesystem_section(),
+				)
+			);
+		} catch ( \Throwable $e ) {
+			// The support mail must still send when a section builder trips
+			// on an exotic host — a partial bundle beats a failed ticket.
+			return '(status report unavailable: ' . $e->getMessage() . ')';
+		}
+	}
+
+	/**
+	 * The System status → Logs tab content (recent log files concatenated,
+	 * newest first, display-capped) — public seam for the support bundle's
+	 * system-status.log when no specific feed is selected.
+	 *
+	 * @since 8.0.14
+	 *
+	 * @return string
+	 */
+	public function logs_text(): string {
+		return $this->read_logs_from_filesystem();
+	}
+
+	/**
 	 * Build a plain-text representation of every status section.
 	 *
 	 * Mirrors the visual order of the React `StatusDisclosures` component:
@@ -736,6 +798,60 @@ class StatusEndpoint extends RestController {
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Published-product count per product type IN USE on this site.
+	 *
+	 * Types come from the product_type taxonomy TERMS carried by products —
+	 * so custom types (auction, bundle, subscription, …) appear even when
+	 * the plugin that registered them is deactivated, unlike
+	 * wc_get_product_types() which only lists live registrations. Each
+	 * count is a WC_Product_Query paginated total (no raw product SQL, per
+	 * repo rule): a handful of tiny COUNT queries on an admin-only
+	 * diagnostics page.
+	 *
+	 * @since 8.0.14
+	 *
+	 * @return array<string,int> Type slug => published count, largest first.
+	 */
+	private function product_type_counts(): array {
+		if ( ! function_exists( 'get_terms' ) || ! function_exists( 'wc_get_products' ) ) {
+			return array();
+		}
+
+		$terms = get_terms(
+			array(
+				'taxonomy'   => 'product_type',
+				'hide_empty' => true,
+				'fields'     => 'names',
+			)
+		);
+		if ( ! is_array( $terms ) ) {
+			return array();
+		}
+
+		$counts = array();
+		foreach ( $terms as $type ) {
+			$result = wc_get_products(
+				array(
+					'type'     => (string) $type,
+					'status'   => 'publish',
+					'limit'    => 1,
+					'paginate' => true,
+					'return'   => 'ids',
+				)
+			);
+
+			$total = is_object( $result ) && isset( $result->total ) ? (int) $result->total : 0;
+			if ( $total > 0 ) {
+				$counts[ (string) $type ] = $total;
+			}
+		}
+
+		arsort( $counts );
+
+		return $counts;
 	}
 
 	/**

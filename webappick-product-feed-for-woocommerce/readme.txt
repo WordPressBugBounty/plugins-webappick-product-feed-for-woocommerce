@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.13
+Stable tag: 8.0.14
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,13 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.14 =
+* Fix: CSV, TSV and TXT feeds stopped updating at their original URLs on current WordPress. A recent WordPress change renamed the feed's file-type folder (google/tsv/ became google/unnamed-file.tsv/), so the file your merchant platform polls was never refreshed again — while a copy kept updating at a forked address. Feeds now write to their original folders again, the plugin cleans up the forked copies automatically after the next generation, and support-ticket attachments (which hit the same fault) find the feed file again. No reconfiguration needed in Merchant Center — the existing URL simply starts updating.
+* Performance: category-filtered feeds no longer scan the whole catalog. A feed whose category filter is in include mode now narrows the product list at the database level first — a 5-product category feed on a 500,000-product store finds its products in one small query instead of walking every product. Exclude-mode and advanced filters still evaluate per product, exactly as before.
+* Change: a variation's additional images now come only from that variation's own gallery — WooCommerce's built-in variation gallery and all supported gallery plugins (Woo Variation Gallery, RT Variation Gallery, Woodmart, WooCommerce Additional Variation Images). A variation with 2 images ships 2 image fields and leaves the rest empty; the parent product's gallery is no longer substituted automatically. To fall back to the parent's images, use the "parent if empty" output command on the image attribute.
+* Added: the System status page now lists every product type in use on your site with its product count — Simple, Variable, Variations, and custom types like Auction or Bundle — even when the plugin that registered a type is deactivated. The same breakdown reaches support tickets automatically.
+* Improved: support tickets now attach diagnostics as files instead of pasting raw text — system-status.txt (the full System status page), system-status.log (the relevant generation log), and feed-config.txt (the selected feed's configuration, credentials redacted) alongside the generated feed file.
 
 = Version 8.0.13 =
 * Fix: a large feed could finish as a 1-byte file. When a slow finalization step was retried while the original was still running, the duplicate overwrote the freshly published feed with an empty one; a duplicated finalization is now recognised and skipped, and the published feed is left untouched.
