@@ -10,7 +10,7 @@
  * Plugin Name:       CTX Feed
  * Plugin URI:        https://webappick.com/
  * Description:       Easily generate woocommerce product feed for any marketing channel like Google, Meta, Tiktok, X, SnapChat, ChatGPT, Perplexity & more. Support 220+ Channels.
- * Version:           8.0.14
+ * Version:           8.0.15
  * Author:            WebAppick
  * Author URI:        https://webappick.com/
  * License:           GPL v2

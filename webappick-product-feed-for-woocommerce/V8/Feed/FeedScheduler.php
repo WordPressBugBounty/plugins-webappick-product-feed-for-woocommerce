@@ -1441,6 +1441,25 @@ class FeedScheduler {
 			return;
 		}
 
+		// Stale-chain guard (mirror of handle_finalization's 8.0.13 guard):
+		// for any batch past offset 0, a MISSING working file means the run
+		// this action belonged to is already over — finalized (the promote
+		// renamed the file away) or cancelled (discard deleted it). Running
+		// it anyway is what a duplicated chain does: open_append() would
+		// RECREATE an empty working file (fopen 'a' creates), its rows could
+		// later be promoted over the good feed, and its progress write flips
+		// a completed run back to "generating", feeding the dead-chain
+		// watchdog a ghost to revive (#68990 log: "products 1608–1607 died
+		// 5 times" on a feed that had published fine). Drop it without
+		// touching progress, the lock, or the revive budget. Offset 0 is
+		// exempt — it legitimately CREATES the working file — and
+		// has_working_file() fails OPEN, so a torn-down container behaves
+		// exactly as before.
+		if ( $offset > 0 && ! $this->generator->has_working_file( $feed_name ) ) {
+			Logger::debug( "Stale batch dropped (run already finalized/cancelled): {$feed_name} offset {$offset}" );
+			return;
+		}
+
 		// Refresh the generation lock TTL so it doesn't expire mid-generation
 		// on large catalogs with many batches (e.g., 100K products / 100 batch = 1000 batches).
 		if ( $this->batch_calculator ) {
@@ -1733,15 +1752,24 @@ class FeedScheduler {
 		$attempts = (int) get_transient( 'ctxfeed_chain_revives_' . $feed_name );
 		if ( $attempts >= self::MAX_CHAIN_REVIVES ) {
 			if ( $this->feed_logger ) {
-				$this->feed_logger->error(
-					$feed_name,
-					sprintf(
+				// Two different give-ups: mid-catalog means a product window
+				// keeps killing PHP; current >= total means every product was
+				// written and only the final write step keeps dying — blaming
+				// "products 1608–1607" there sent customers hunting a crash
+				// that never existed (#68990).
+				$message = ( $total > 0 && $current >= $total )
+					? sprintf(
+						'Generation failed — all %d products were processed but the final write step died %d times in a row. Check that the feed directory is writable and see the server error log.',
+						$total,
+						$attempts
+					)
+					: sprintf(
 						'Generation failed — the batch at products %d–%d died %d times in a row without an error to catch. One of these products is likely crashing PHP; check the server error log for this window.',
 						$current + 1,
 						min( $total, $current + BatchCalculator::BATCH_FLOOR ),
 						$attempts
-					)
-				);
+					);
+				$this->feed_logger->error( $feed_name, $message );
 				$this->feed_logger->flush( $feed_name );
 			}
 			$manager->update_progress( $feed_name, array( 'status' => 'failed' ) );
@@ -1946,6 +1974,12 @@ class FeedScheduler {
 					'hook'     => $hook,
 					'group'    => self::GROUP,
 					'status'   => \ActionScheduler_Store::STATUS_PENDING,
+					// An action CLAIMED by the WP-Cron queue runner still reads
+					// as status=pending until it executes. Processing it here
+					// too ran the whole chain TWICE in parallel (~3s apart —
+					// #68990's interleaved log). Only unclaimed actions are
+					// ours to drive; the claim holder will run the rest.
+					'claimed'  => false,
 					'per_page' => 50,
 					'orderby'  => 'date',
 					'order'    => 'ASC',

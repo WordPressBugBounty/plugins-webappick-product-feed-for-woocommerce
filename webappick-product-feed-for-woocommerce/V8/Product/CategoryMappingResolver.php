@@ -35,8 +35,12 @@
  *      bing, bing_local_inventory, snapchat) → use `gcl-cmapping`.
  *      Otherwise use `cmapping`.
  *   4. Take the product's `product_cat` term IDs; pick the deepest
- *      via `max($term_ids)` (V5 line 67 — fragile but consistent).
- *   5. Return `cmapping[$deepest_term_id]` or '' if not set/empty.
+ *      MAPPED term by real hierarchy depth (get_ancestors count; depth
+ *      tie -> higher id). V5 used `max($term_ids)` — wrong whenever an
+ *      old low-id category was re-parented under a newer high-id one
+ *      (#68990); the `ctxfeed_cmapping_v5_max_id` filter restores it.
+ *   5. Return the picked term's mapping value, or '' when no assigned
+ *      term carries a non-empty mapping.
  *   6. For variations, the caller passes the parent product (V5
  *      `AttributeValueByType.php:281-284` enforces this; we do the
  *      same in `AttributeResolver`).
@@ -162,9 +166,6 @@ class CategoryMappingResolver {
 			return '';
 		}
 
-		// Collect term IDs, then pick the "deepest" via max() — V5 line 67.
-		// This is V5's heuristic (newer terms tend to have larger IDs); not
-		// a true depth check, but customers depend on the exact behavior.
 		$term_ids = array();
 		foreach ( $categories as $category ) {
 			if ( isset( $category->term_id ) ) {
@@ -176,14 +177,61 @@ class CategoryMappingResolver {
 			return '';
 		}
 
-		$deepest_term = max( $term_ids );
+		/**
+		 * Restore V5's literal `max($term_ids)` term pick.
+		 *
+		 * V5 picked the "deepest" category as the HIGHEST TERM ID — true
+		 * only when children were created after their parents. On stores
+		 * that re-parented old categories under newer ones, max() lands on
+		 * the (often unmapped, or generically mapped) PARENT: mapped leaf
+		 * categories shipped an empty or parent-level value (#68990,
+		 * 809/1154 products). 8.0.15 picks the deepest MAPPED term by real
+		 * hierarchy instead. This filter is the escape hatch for a site
+		 * that depended on the exact V5 pick.
+		 *
+		 * @since 8.0.15
+		 *
+		 * @param bool $use_v5 Default false.
+		 */
+		if ( apply_filters( 'ctxfeed_cmapping_v5_max_id', false ) ) {
+			$picked = max( $term_ids );
 
-		if ( ! isset( $mapping_assoc[ $deepest_term ] ) ) {
+			if ( ! isset( $mapping_assoc[ $picked ] ) ) {
+				return '';
+			}
+
+			$value = $mapping_assoc[ $picked ];
+
+			return '' === $value || null === $value ? '' : (string) $value;
+		}
+
+		// Pick the deepest MAPPED term by real hierarchy: only terms that
+		// carry a non-empty mapping value are candidates, depth comes from
+		// get_ancestors() (cached), and a depth tie keeps max-id (the old
+		// bias) so the pick stays deterministic. A product in
+		// "Men (mapped) > T-Shirts (mapped)" gets the T-Shirts value, not
+		// Men's, regardless of which term id is larger.
+		$picked       = 0;
+		$picked_depth = -1;
+		foreach ( $term_ids as $term_id ) {
+			if ( ! isset( $mapping_assoc[ $term_id ] )
+				|| '' === $mapping_assoc[ $term_id ]
+				|| null === $mapping_assoc[ $term_id ] ) {
+				continue;
+			}
+
+			$depth = count( get_ancestors( $term_id, 'product_cat', 'taxonomy' ) );
+
+			if ( $depth > $picked_depth || ( $depth === $picked_depth && $term_id > $picked ) ) {
+				$picked       = $term_id;
+				$picked_depth = $depth;
+			}
+		}
+
+		if ( -1 === $picked_depth ) {
 			return '';
 		}
 
-		$value = $mapping_assoc[ $deepest_term ];
-
-		return '' === $value || null === $value ? '' : (string) $value;
+		return (string) $mapping_assoc[ $picked ];
 	}
 }

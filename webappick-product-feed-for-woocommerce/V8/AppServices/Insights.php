@@ -221,6 +221,15 @@ class Insights {
 		// plugin deactivate popup.
 		if ( ! $this->__is_local_server() ) {
 			add_action( 'plugin_action_links_' . $this->client->getBasename(), array( $this, 'plugin_action_links' ) );
+
+			// The Pro plugin ships no SDK of its own, so its Deactivate link is
+			// tagged from here too — the ONE modal serves both rows and the JS
+			// reports which plugin was clicked (which_plugin) for attribution.
+			$pro_basename = $this->pro_basename();
+			if ( '' !== $pro_basename && $pro_basename !== $this->client->getBasename() ) {
+				add_action( 'plugin_action_links_' . $pro_basename, array( $this, 'plugin_action_links' ) );
+			}
+
 			add_action( 'admin_footer', array( $this, 'deactivate_scripts' ) );
 		}
 
@@ -816,6 +825,42 @@ class Insights {
 	}
 
 	/**
+	 * The Pro plugin's basename, or '' when it cannot be resolved.
+	 *
+	 * @since 8.0.15
+	 *
+	 * @return string
+	 */
+	private function pro_basename() {
+		if ( class_exists( '\CTXFeed\V8\Status\LegacyPro' ) ) {
+			return (string) \CTXFeed\V8\Status\LegacyPro::basename();
+		}
+
+		return '';
+	}
+
+	/**
+	 * The plugin name to attribute a deactivation-survey submission to.
+	 *
+	 * Only the free and Pro rows are tagged with the modal, so any clicked
+	 * basename other than the free plugin's is the Pro row; anything else
+	 * (missing/forged value) falls back to the free plugin's name.
+	 *
+	 * @since 8.0.15
+	 *
+	 * @param string $which_basename Basename of the plugin row that opened the modal.
+	 *
+	 * @return string
+	 */
+	public function resolve_submission_plugin_name( $which_basename ) {
+		if ( ! empty( $which_basename ) && $which_basename !== $this->client->getBasename() && $which_basename === $this->pro_basename() ) {
+			return $this->client->getName() . ' Pro';
+		}
+
+		return $this->client->getName();
+	}
+
+	/**
 	 * Deactivation reasons
 	 *
 	 * @return array
@@ -907,7 +952,7 @@ class Insights {
 			'hash'          => $this->client->getHash(),
 			'reason_id'     => isset( $_REQUEST['reason_id'] ) && ! empty( $_REQUEST['reason_id'] ) ? sanitize_text_field( $_REQUEST['reason_id'] ) : '',
 			'reason_info'   => isset( $_REQUEST['reason_info'] ) ? trim( sanitize_textarea_field( $_REQUEST['reason_info'] ) ) : '',
-			'plugin'        => $this->client->getName(),
+			'plugin'        => $this->resolve_submission_plugin_name( isset( $_REQUEST['which_plugin'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['which_plugin'] ) ) : '' ),
 			'site'          => $this->__get_site_name(),
 			'url'           => esc_url( home_url() ),
 			'admin_email'   => get_option( 'admin_email' ),
@@ -1257,6 +1302,7 @@ class Insights {
 						$modal = $('#' + slug + '-ctxf-dr');
 					if (!$modal.length) { return; }
 					var deactivateLink = '',
+						whichPlugin = '',
 						$panels    = $modal.find('.ctxf-panel'),
 						firstPanel = <?php echo $showSupportTicket ? "'help'" : "'reason'"; ?>;
 
@@ -1266,6 +1312,11 @@ class Insights {
 					}
 					function openModal(link) {
 						deactivateLink = link;
+						// The deactivate URL carries plugin={basename}; report it so
+						// the survey submission is attributed to the row clicked
+						// (free vs Pro — both rows share this one modal).
+						var match = /[?&]plugin=([^&]+)/.exec(link || '');
+						whichPlugin = match ? decodeURIComponent(match[1]) : '';
 						$modal.addClass('is-open').attr('aria-hidden', 'false');
 						showPanel(firstPanel);
 					}
@@ -1286,7 +1337,7 @@ class Insights {
 						return $.ajax({
 							url: ajaxurl,
 							type: 'POST',
-							data: $.extend({}, { action: slug + '_submit-uninstall-reason', _wpnonce: nonce }, data),
+							data: $.extend({}, { action: slug + '_submit-uninstall-reason', _wpnonce: nonce, which_plugin: whichPlugin }, data),
 							complete: function (event, xhr, options) {
 								if ('string' === typeof cb) {
 									window.location.href = cb;

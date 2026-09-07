@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.14
+Stable tag: 8.0.15
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,12 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.15 =
+* Fix: category mappings resolve the most specific mapped category again. On stores whose older categories were later re-organised under new parent categories, mapped subcategories shipped an empty value — or the parent's generic value — because the "deepest category" was guessed from the newest category ID instead of the real hierarchy. The product's deepest mapped category now always wins (the ctxfeed_cmapping_v5_max_id filter restores the previous pick if a feed depended on it).
+* Fix: a feed could be reported "failed — one of these products is likely crashing PHP" minutes after it had published successfully. With the admin page open, the in-browser batch runner could execute the same batches WP-Cron had already claimed, so the whole run raced itself; a leftover batch then flagged the finished run as still generating and the watchdog eventually declared it dead. The runner now leaves claimed batches to WP-Cron, a leftover batch from an already-finished run is discarded on sight (this also closes a rare path where a partial file could overwrite the good feed), and the "gave up" message now names what actually kept failing instead of blaming a product.
+* Fix: the deactivation feedback dialog now also appears when deactivating CTX Feed Pro, and the survey records which of the two plugins was deactivated.
+* Added: a "Check for updates" button on the Version Control page's Pro card — it asks webappick.com immediately instead of waiting out the 12-hour update cache after a new Pro release.
 
 = Version 8.0.14 =
 * Fix: CSV, TSV and TXT feeds stopped updating at their original URLs on current WordPress. A recent WordPress change renamed the feed's file-type folder (google/tsv/ became google/unnamed-file.tsv/), so the file your merchant platform polls was never refreshed again — while a copy kept updating at a forked address. Feeds now write to their original folders again, the plugin cleans up the forked copies automatically after the next generation, and support-ticket attachments (which hit the same fault) find the feed file again. No reconfiguration needed in Merchant Center — the existing URL simply starts updating.
