@@ -509,6 +509,14 @@ class DynamicAttributeResolver {
 	 * @return string Resolved attribute value.
 	 */
 	private function resolve_attribute_value( \WC_Product $product, string $attr, Config $config ): string {
+		// SEO attributes need the Legacy Bridge filter the SEO shims answer —
+		// V5 dynamic attributes resolved through the ProductInfo getters that
+		// fired it, so this is V5-parity restoration (same gap as #69018 in
+		// Attribute Mapping; a plain resolve() returns bare meta instead).
+		if ( AttributeResolver::is_seo_attribute( $attr ) ) {
+			return $this->attribute_resolver->resolve_seo_bridged( $product, $attr, $config );
+		}
+
 		$mapping = array(
 			'type'    => 'attribute',
 			'wc_attr' => $attr,

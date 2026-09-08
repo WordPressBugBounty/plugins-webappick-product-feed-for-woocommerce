@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.15
+Stable tag: 8.0.16
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,15 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.16 =
+* Fix: SEO titles and descriptions now work inside Attribute Mapping. Combining a Rank Math, Yoast or All in One SEO field with other attributes in an Attribute Mapping printed the field's internal name (e.g. "rank_math_title") into the feed instead of the actual SEO value; the same fix applies to Dynamic Attributes.
+* Fix: prices ignore the store's display separators in every formatting stage. On stores with European number settings (comma decimals), a €9.80 product could ship as "980.00" — the dot was mistaken for a thousands separator and stripped. Feeds now always parse and format numbers machine-style unless separators are configured explicitly in the feed.
+* Fix: Free Text values keep safe HTML. Line breaks, links and other harmless markup entered in a Free Text field survived saving only partially; scripts and other unsafe markup are still removed.
+* Added: a clear warning when a feed generates with 0 products. Filters combine with AND — a product must match ALL of them — so an include-category filter plus an include-product-IDs filter that don't overlap silently produced a valid empty feed. Instead of "generated successfully", you now get a warning naming the filters so you can fix the settings yourself.
+* Added: a "Default Language ID" attribute (WPML sites). It exports the default-language catalog ID for translated products — what Meta and Google language feeds need so items match your primary catalog. The old engine's "Parent Id" quietly did this; the new attribute does it under an honest name, and "Parent Id" keeps meaning the variation's parent product.
+* Improved: View and Download always fetch the current feed file. Hosts that serve uploads with long browser-cache headers made "View Feed" show a stale copy for months while the file on the server was fine; the buttons now bypass the browser cache (the feed URL you submit to merchants is unchanged).
+* Performance: exclude-mode category filters now cut at the database level, the same way include-mode filters do since 8.0.14 — feeds excluding large categories no longer scan the excluded products at all.
 
 = Version 8.0.15 =
 * Fix: category mappings resolve the most specific mapped category again. On stores whose older categories were later re-organised under new parent categories, mapped subcategories shipped an empty value — or the parent's generic value — because the "deepest category" was guessed from the newest category ID instead of the real hierarchy. The product's deepest mapped category now always wins (the ctxfeed_cmapping_v5_max_id filter restores the previous pick if a feed depended on it).

@@ -1799,8 +1799,13 @@ class FeedEndpoint extends RestController {
 			$prefixes[]   = Sanitizer::preserve_whitespace( $row['prefix'] ?? '' );
 			$types[]      = isset( $row['type'] ) ? sanitize_text_field( $row['type'] ) : 'attribute';
 			$attributes[] = isset( $row['attribute'] ) ? sanitize_text_field( $row['attribute'] ) : '';
-			$defaults[]   = isset( $row['default'] ) ? sanitize_text_field( $row['default'] ) : '';
-			$suffixes[]   = Sanitizer::preserve_whitespace( $row['suffix'] ?? '' );
+			// Free Text / default values may contain HTML (#68913):
+			// sanitize_text_field stripped every tag on save, so markup a
+			// customer typed never reached generation. rich_text keeps the
+			// wp_kses_post-safe tag set and strips XSS vectors; templates
+			// escape/CDATA the value again at render.
+			$defaults[] = isset( $row['default'] ) ? Sanitizer::rich_text( $row['default'] ) : '';
+			$suffixes[] = Sanitizer::preserve_whitespace( $row['suffix'] ?? '' );
 			// V5-parity multiselect: each row stores an ARRAY of output-type
 			// codes (['2','12']). Accept the array, a comma-joined string, or
 			// a bare code and whitelist to the known 1–24 set. NOT

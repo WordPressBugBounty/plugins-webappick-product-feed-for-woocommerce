@@ -858,6 +858,11 @@ class FeedGenerator {
 				'last_batch_skipped'  => $error_count,
 				'last_batch_excluded' => $excluded_total,
 				'skipped_total'       => (int) ( $progress['skipped_total'] ?? 0 ) + $error_count,
+				// Cumulative products actually WRITTEN to the file. The
+				// completed record keeps it (current is forced to total at
+				// finalize), so the UI can warn when a run ends with 0
+				// products — the silently-empty-filter class (#69014).
+				'written_total'       => (int) ( $progress['written_total'] ?? 0 ) + $count,
 				// End-of-batch stamp: the NEXT batch reports the scheduler
 				// gap (its start minus this) as gap_ms in the [PERF] trace.
 				'batch_ended_at'      => microtime( true ),

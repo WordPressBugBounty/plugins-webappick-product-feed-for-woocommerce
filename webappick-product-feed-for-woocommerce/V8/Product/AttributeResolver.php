@@ -213,6 +213,95 @@ class AttributeResolver {
 	}
 
 	/**
+	 * SEO-plugin attribute keys offered by the value picker (AttributeRegistry
+	 * + SeoCompatibilityProvider dropdowns). In feed ROWS these resolve to raw
+	 * meta and are then completed by the Legacy Bridge
+	 * `woo_feed_filter_product_{attr}` filter that the compatibility/Shims/
+	 * SEO classes answer. Mapping/dynamic-attribute paths bypass the bridge,
+	 * so they must route through resolve_seo_bridged() (#69018 — Attribute
+	 * Mapping printed the literal key name instead).
+	 *
+	 * @since 8.0.16
+	 * @var array<string,bool>
+	 */
+	private const SEO_ATTRIBUTES = array(
+		'yoast_wpseo_title'       => true,
+		'yoast_wpseo_metadesc'    => true,
+		'yoast_canonical_url'     => true,
+		'yoast_primary_category'  => true,
+		'yoast_gtin8'             => true,
+		'yoast_gtin12'            => true,
+		'yoast_gtin13'            => true,
+		'yoast_gtin14'            => true,
+		'yoast_isbn'              => true,
+		'yoast_mpn'               => true,
+		'rank_math_title'         => true,
+		'rank_math_description'   => true,
+		'rank_math_canonical_url' => true,
+		'rank_math_gtin'          => true,
+		'_aioseop_title'          => true,
+		'_aioseop_description'    => true,
+		'_aioseop_canonical_url'  => true,
+	);
+
+	/**
+	 * Whether an attribute key is one of the SEO-plugin picker attributes.
+	 *
+	 * @since 8.0.16
+	 *
+	 * @param string $attr Attribute key.
+	 * @return bool
+	 */
+	public static function is_seo_attribute( string $attr ): bool {
+		return isset( self::SEO_ATTRIBUTES[ $attr ] );
+	}
+
+	/**
+	 * Resolve an SEO attribute exactly the way a feed ROW does: raw resolver
+	 * value, then the Legacy Bridge `woo_feed_filter_product_{attr}` filter
+	 * (same 4-arg signature as ProductRepository::resolve_with_filters,
+	 * variation parent included) so the SEO shims compute the real value.
+	 *
+	 * Used by AttributeMappingResolver and DynamicAttributeResolver, whose
+	 * plain resolve() calls bypass the bridge. Deliberately NOT wired into
+	 * the row path — rows already fire the bridge once, and firing it twice
+	 * is the double-apply class of bug the price family documents.
+	 *
+	 * @since 8.0.16
+	 *
+	 * @param \WC_Product $product WooCommerce product.
+	 * @param string      $attr    SEO attribute key.
+	 * @param Config      $config  Feed configuration.
+	 * @return string
+	 */
+	public function resolve_seo_bridged( \WC_Product $product, string $attr, Config $config ): string {
+		$value = $this->resolve(
+			$product,
+			array(
+				'type'    => 'attribute',
+				'wc_attr' => $attr,
+				'default' => '',
+			),
+			$config
+		);
+
+		$legacy_filter = "woo_feed_filter_product_{$attr}";
+
+		if ( has_filter( $legacy_filter ) ) {
+			$parent_product = null;
+			if ( $product->is_type( 'variation' ) ) {
+				$parent_id      = $product->get_parent_id();
+				$parent_product = $parent_id ? ProductMemo::get( (int) $parent_id ) : null;
+			}
+
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Built above as "woo_feed_filter_product_{$attr}", always carrying the registered woo_feed prefix; the sniff cannot resolve the variable.
+			$value = apply_filters( $legacy_filter, $value, $product, $config, $parent_product );
+		}
+
+		return is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/**
 	 * Resolve a single attribute value for a product based on mapping config.
 	 *
 	 * Routes to the appropriate sub-resolver based on mapping type,
@@ -747,6 +836,16 @@ class AttributeResolver {
 			// product for a variation, empty for anything with no parent.
 			case 'parent_id':
 				return $product->is_type( 'variation' ) ? (string) $product->get_parent_id() : '';
+
+			// The product's DEFAULT-LANGUAGE counterpart id. This is V5's
+			// `parent_id` attribute semantics restored under an honest name
+			// (#69001 — Meta language-override feeds key on the primary
+			// catalog's ids): the Pro WPML shim answers the V5 filter with
+			// wpml_object_id(default language); Polylang/none leave the
+			// filter unfiltered, so the product's OWN id returns — never
+			// empty.
+			case 'default_language_id':
+				return (string) apply_filters( 'woo_feed_original_post_id', $product->get_id(), $product, $config );
 
 			case 'quantity':
 				return $this->resolve_quantity( $product, $config );

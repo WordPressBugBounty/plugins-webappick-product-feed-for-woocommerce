@@ -138,12 +138,19 @@ class NumberTransform implements TransformInterface {
 		$decimals = ( '' === $decimals_raw || null === $decimals_raw || ! is_numeric( $decimals_raw ) )
 			? (int) wc_get_price_decimals()
 			: (int) $decimals_raw;
+		// MACHINE defaults, never WooCommerce's DISPLAY separators — the same
+		// contract as PriceResolver::format_price() (#68983). Falling back to
+		// display separators here UNDID that fix one pipeline stage later: a
+		// locale store (thousand '.', decimal ',') re-formatted the
+		// resolver's correct "13800.00" into channel-invalid "13.800,00"
+		// (#68913). An EMPTY thousand separator is honored literally — ''
+		// means NONE.
 		$dec_sep  = ( '' === $dec_sep_raw || null === $dec_sep_raw )
-			? wc_get_price_decimal_separator()
+			? '.'
 			: wp_specialchars_decode( wp_unslash( $dec_sep_raw ) );
-		$thou_sep = ( '' === $thou_sep_raw || null === $thou_sep_raw )
-			? wc_get_price_thousand_separator()
-			: wp_specialchars_decode( wp_unslash( $thou_sep_raw ) );
+		$thou_sep = ( null === $thou_sep_raw || false === $thou_sep_raw || '' === $thou_sep_raw )
+			? ''
+			: wp_specialchars_decode( wp_unslash( (string) $thou_sep_raw ) );
 
 		return array( $decimals, $dec_sep, $thou_sep );
 	}

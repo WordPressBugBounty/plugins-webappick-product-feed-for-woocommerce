@@ -144,7 +144,7 @@ class Bootstrap {
 	private function define_constants(): void {
 
 		if ( ! defined( 'CTXFEED_V8_VERSION' ) ) {
-			define( 'CTXFEED_V8_VERSION', '8.0.15' );
+			define( 'CTXFEED_V8_VERSION', '8.0.16' );
 		}
 
 		if ( ! defined( 'CTXFEED_V8_PATH' ) ) {

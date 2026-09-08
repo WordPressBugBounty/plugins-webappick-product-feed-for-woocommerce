@@ -38,6 +38,7 @@ class FeedManager {
 		'last_batch_skipped',
 		'last_batch_excluded',
 		'skipped_total',
+		'written_total',
 	);
 
 	/**

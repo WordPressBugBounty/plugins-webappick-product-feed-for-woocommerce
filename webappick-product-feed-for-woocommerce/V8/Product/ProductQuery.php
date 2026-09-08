@@ -174,18 +174,57 @@ class ProductQuery {
 		$product_types = $config->get( 'product_types', array( 'simple', 'variable', 'grouped', 'external' ) );
 		$args['type']  = $product_types;
 
-		// Category filter is applied per-product in CategoryFilter — it has
-		// full include/exclude mode support via filter_mode. Keeping the
-		// category filter out of the query avoids double-filtering and lets
-		// exclude-mode work correctly (WC_Product_Query's `category` arg is
-		// include-only).
+		// The per-product CategoryFilter remains the AUTHORITY on category
+		// membership. The query level only pre-cuts what it can prove:
+		// include mode via prune_to_included_categories() (8.0.14) and
+		// exclude mode via the NOT IN tax_query below (8.0.16) — both
+		// superset-safe, both fail-open to the loop filter.
 
 		// Allow V8 and compat plugins to modify query args.
 		// @hook ctxfeed_product_query_args.
 		$args = apply_filters( 'ctxfeed_product_query_args', $args, $config );
 
-		$query       = new \WC_Product_Query( $args );
-		$product_ids = $query->get_products();
+		// Exclude-mode category push-down (#68989, V5 parity): cut excluded
+		// categories INSIDE the query via a NOT IN tax_query, so a broad
+		// exclusion never warms and iterates the whole catalog. Resolved
+		// AFTER the args filter fires so multilingual shims have already
+		// pinned the query language (term resolution runs in the feed's
+		// language). Safety inversion of the include push-down: only
+		// POSITIVELY resolved term_taxonomy_ids may exclude — a term that
+		// fails to resolve is simply not cut here and the authoritative
+		// per-product CategoryFilter removes it in the loop (slower, never
+		// wrong). include_children is OFF to mirror has_term()'s
+		// direct-assignment semantics — the tax_query default would also
+		// exclude child-category products the loop would KEEP.
+		$exclude_tt_ids = $this->excluded_category_tt_ids( $config );
+		$inject_exclude = null;
+		if ( ! empty( $exclude_tt_ids ) ) {
+			$inject_exclude = static function ( $wp_query_args ) use ( $exclude_tt_ids ) {
+				if ( ! isset( $wp_query_args['tax_query'] ) || ! is_array( $wp_query_args['tax_query'] ) ) {
+					$wp_query_args['tax_query'] = array(); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- Same query WooCommerce's own data store builds; the NOT IN subquery replaces warming/iterating the full catalog per batch.
+				}
+				$wp_query_args['tax_query'][] = array(
+					'taxonomy'         => 'product_cat',
+					'field'            => 'term_taxonomy_id',
+					'terms'            => $exclude_tt_ids,
+					'operator'         => 'NOT IN',
+					'include_children' => false,
+				);
+				return $wp_query_args;
+			};
+			add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_exclude );
+		}
+
+		try {
+			$query       = new \WC_Product_Query( $args );
+			$product_ids = $query->get_products();
+		} finally {
+			// NEVER leak the closure into unrelated product queries — remove
+			// it even when the query throws.
+			if ( null !== $inject_exclude ) {
+				remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_exclude );
+			}
+		}
 
 		// Include-mode category push-down: shrink the ID set BEFORE variation
 		// expansion and per-product filtering, so a 5-product category feed
@@ -248,8 +287,9 @@ class ProductQuery {
 	 * the filter would definitely reject; on any doubt it returns the ids
 	 * untouched (fail open). The guarantees that make the cut safe:
 	 *
-	 *   - Include mode only. Exclude mode and empty selections pass through
-	 *     (has_term semantics for exclude can't be safely inverted here).
+	 *   - Include mode only; exclude mode has its own QUERY-level cut
+	 *     (see excluded_category_tt_ids(), 8.0.16) and empty selections
+	 *     pass through.
 	 *   - Term resolution mirrors has_term()/is_object_in_term(): a string
 	 *     entry matches by slug OR name, so both are resolved (name__in
 	 *     catches same-name terms a single get_term_by would miss), plus
@@ -348,6 +388,56 @@ class ProductQuery {
 		);
 
 		return $pruned;
+	}
+
+	/**
+	 * The term_taxonomy_ids to cut from the query for an EXCLUDE-mode category
+	 * filter, or an empty array when the push-down must not run.
+	 *
+	 * Fail-open on every edge: wrong mode, no categories, kill switch off,
+	 * resolution failure/exception — all return [] and the query runs
+	 * exactly as before (the per-product CategoryFilter stays authoritative
+	 * either way). Only positively resolved ids may exclude, so a
+	 * resolution miss degrades to "slower", never to a wrongly removed
+	 * product. V5 ran this same NOT IN cut (by slug, children included)
+	 * unconditionally for years; this version is stricter on both counts.
+	 *
+	 * @since 8.0.16
+	 *
+	 * @param Config $config Feed configuration.
+	 * @return int[] term_taxonomy_ids to exclude, or [].
+	 */
+	private function excluded_category_tt_ids( Config $config ): array {
+		$categories = (array) $config->get( 'categories', array() );
+		$mode_all   = (array) $config->get( 'filter_mode', array() );
+		$mode       = isset( $mode_all['categories'] ) ? $mode_all['categories'] : 'include';
+
+		if ( empty( $categories ) || 'exclude' !== $mode ) {
+			return array();
+		}
+
+		/**
+		 * Filter whether the exclude-mode category push-down runs.
+		 *
+		 * Disabling falls back to per-product-only category filtering
+		 * (the pre-8.0.16 behavior: the whole catalog is warmed and
+		 * iterated, excluded products dropped in the loop).
+		 *
+		 * @since 8.0.16
+		 *
+		 * @param bool   $enabled Whether the push-down is enabled.
+		 * @param Config $config  Feed configuration.
+		 */
+		if ( ! apply_filters( 'ctxfeed_category_query_pushdown_exclude', true, $config ) ) {
+			return array();
+		}
+
+		try {
+			return $this->resolve_category_tt_ids( $categories );
+		} catch ( \Throwable $e ) {
+			Logger::warning( 'Exclude-category push-down skipped (term resolution failed): ' . $e->getMessage() );
+			return array();
+		}
 	}
 
 	/**

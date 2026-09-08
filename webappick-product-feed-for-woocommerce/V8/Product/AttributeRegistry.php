@@ -977,7 +977,11 @@ class AttributeRegistry {
 		return array(
 			'optionGroup' => __( 'WPML Attributes', 'woo-feed' ),
 			'options'     => array(
-				'parent_id' => __( 'Parent Product ID', 'woo-feed' ),
+				'parent_id'           => __( 'Parent Product ID', 'woo-feed' ),
+				// V5's parent_id SEMANTICS under an honest name (#69001):
+				// the default-language counterpart's post id — what Meta
+				// language-override feeds must carry as g:id.
+				'default_language_id' => __( 'Default Language ID', 'woo-feed' ),
 			),
 		);
 	}

@@ -187,6 +187,32 @@ class Sanitizer {
 	}
 
 	/**
+	 * Sanitize a value that may legitimately CONTAIN HTML.
+	 *
+	 * For the feed editor's Free Text / default-value column (#68913):
+	 * customers put markup like `<strong>` or `<br>` into static feed
+	 * values, and the old `sanitize_text_field()` stripped every tag on
+	 * SAVE — generation never saw the HTML at all. `wp_kses_post()` keeps
+	 * the post-safe tag set (and whitespace) while stripping scripts,
+	 * event handlers and other XSS vectors; feed templates escape or
+	 * CDATA-wrap the value again at render time.
+	 *
+	 * @since 8.0.16
+	 *
+	 * @param mixed $value Raw submitted value.
+	 * @return string Sanitized value with safe HTML preserved.
+	 */
+	public static function rich_text( $value ): string {
+		if ( is_object( $value ) || is_array( $value ) ) {
+			return '';
+		}
+
+		$value = str_replace( "\0", '', (string) $value );
+
+		return wp_kses_post( $value );
+	}
+
+	/**
 	 * Unserialize without instantiating objects.
 	 *
 	 * PHP Object Injection defence for serialized feed options — V5

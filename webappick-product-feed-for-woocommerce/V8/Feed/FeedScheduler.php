@@ -496,6 +496,7 @@ class FeedScheduler {
 				// previous run's record — without the reset the live log
 				// console would carry last run's skip count forward.
 				'skipped_total'       => 0,
+				'written_total'       => 0,
 				'last_batch_written'  => 0,
 				'last_batch_skipped'  => 0,
 				'last_batch_excluded' => 0,

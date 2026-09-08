@@ -276,15 +276,18 @@ class OutputTypeTransform implements TransformInterface {
 			? ( function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2 )
 			: (int) $decimals_raw;
 
+		// MACHINE defaults, never WooCommerce's DISPLAY separators — the same
+		// contract as PriceResolver::format_price() and NumberTransform
+		// (#68983, #68913). An EMPTY thousand separator means NONE; only a
+		// null/absent key falls back (to none as well — feeds are parsed by
+		// machines).
 		$dec_sep = (string) $config->get( 'decimal_separator', '' );
 		if ( '' === $dec_sep ) {
-			$dec_sep = function_exists( 'wc_get_price_decimal_separator' ) ? (string) wc_get_price_decimal_separator() : '.';
+			$dec_sep = '.';
 		}
 
-		$thou_sep = (string) $config->get( 'thousand_separator', '' );
-		if ( '' === $thou_sep ) {
-			$thou_sep = function_exists( 'wc_get_price_thousand_separator' ) ? (string) wc_get_price_thousand_separator() : ',';
-		}
+		$thou_sep_raw = $config->get( 'thousand_separator', '' );
+		$thou_sep     = ( null === $thou_sep_raw || false === $thou_sep_raw ) ? '' : (string) $thou_sep_raw;
 
 		// V5 wp_specialchars_decode the separator strings to allow `&nbsp;`
 		// etc. saved from the form. Do the same for compat.

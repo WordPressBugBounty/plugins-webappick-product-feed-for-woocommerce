@@ -277,9 +277,16 @@ class AttributeMappingResolver {
 				continue;
 			}
 
-			// Determine if this item is a known product attribute or custom text.
-			if ( $this->is_known_attribute( $source_item ) ) {
-				// Resolve as product attribute via AttributeResolver.
+			// SEO-plugin attributes (Title [RankMath SEO] etc.) are absent from
+			// the known_attrs whitelist, so they used to be emitted as literal
+			// text ("rank_math_title") — the BUG-0047 class again, #69018. They
+			// also need the Legacy Bridge filter the SEO shims answer, which a
+			// plain resolve() bypasses — hence the dedicated bridged route.
+			if ( AttributeResolver::is_seo_attribute( $source_item ) ) {
+				$value        = $this->attribute_resolver->resolve_seo_bridged( $product, $source_item, $config );
+				$is_attribute = true;
+			} elseif ( $this->is_known_attribute( $source_item ) ) {
+				// Known product attribute — resolve via AttributeResolver.
 				$source_mapping = array(
 					'type'    => 'attribute',
 					'wc_attr' => $source_item,
