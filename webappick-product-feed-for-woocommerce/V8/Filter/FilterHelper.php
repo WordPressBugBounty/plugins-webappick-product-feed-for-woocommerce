@@ -59,4 +59,40 @@ class FilterHelper {
 			true
 		);
 	}
+
+	/**
+	 * Normalize a feedrules list value to a clean array of non-empty strings.
+	 *
+	 * V5-era feedrules persist an empty selection in several shapes: a true
+	 * empty array, an empty string (`(array) ''` becomes `[ '' ]`), or an
+	 * array holding empty-string entries. A raw `empty()` check treats the
+	 * string shapes as an ACTIVE filter whose list matches nothing — an
+	 * include-mode filter then silently zeroes the whole feed (#68878).
+	 * Every list filter must decide emptiness on THIS cleaned list.
+	 *
+	 * Non-scalar entries are dropped (a nested array can't name a term or
+	 * an ID); scalar entries are kept as trimmed strings.
+	 *
+	 * @since 8.0.17
+	 *
+	 * @param mixed $value Raw feedrules list value.
+	 * @return string[] Cleaned, re-indexed list.
+	 */
+	public static function clean_list( $value ): array {
+		$out = array();
+
+		foreach ( (array) $value as $entry ) {
+			if ( ! is_scalar( $entry ) ) {
+				continue;
+			}
+
+			$entry = trim( (string) $entry );
+
+			if ( '' !== $entry ) {
+				$out[] = $entry;
+			}
+		}
+
+		return $out;
+	}
 }

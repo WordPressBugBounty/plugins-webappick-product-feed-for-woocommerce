@@ -233,7 +233,7 @@ class ProductEndpoint extends RestController {
 							// 'smart' searches title + SKU + ID in one go.
 							// 'paste_ids' accepts a comma-separated list of IDs.
 							// Legacy values accepted for backward compat.
-							return in_array( $value, array( 'smart', 'paste_ids', 'title', 'id', 'sku' ), true );
+							return in_array( $value, array( 'smart', 'paste_ids', 'paste_tokens', 'title', 'id', 'sku' ), true );
 						},
 					),
 					'include'     => array(
@@ -590,6 +590,75 @@ class ProductEndpoint extends RestController {
 					}
 					$args['post__in'] = $ids;
 					$args['orderby']  = 'post__in';
+					break;
+
+				// Pasted ID/SKU list (#69026). Rule chain (owner-specified):
+				// any non-numeric token → the WHOLE list resolves by exact
+				// SKU; all-numeric → each token tries post ID first, falling
+				// back to exact SKU when no product owns that ID. Tokens
+				// matching neither are simply absent from the response — the
+				// picker diffs and reports them, so numeric SKUs (EAN/GTIN)
+				// resolve correctly instead of silently selecting whatever
+				// product happens to own that post ID.
+				case 'paste_tokens':
+					$tokens = array_slice(
+						array_values(
+							array_unique(
+								array_filter(
+									array_map( 'trim', explode( ',', $search ) ),
+									'strlen'
+								)
+							)
+						),
+						0,
+						200
+					);
+					if ( empty( $tokens ) ) {
+						return $this->success(
+							array(
+								'products' => array(),
+								'total'    => 0,
+							)
+						);
+					}
+
+					$all_numeric = ! array_filter(
+						$tokens,
+						static function ( $t ) {
+							return ! ctype_digit( $t );
+						}
+					);
+
+					$ids = array();
+					foreach ( $tokens as $token ) {
+						$pid = 0;
+						if ( $all_numeric
+							&& in_array( get_post_type( (int) $token ), array( 'product', 'product_variation' ), true ) ) {
+							$pid = (int) $token;
+						}
+						if ( ! $pid && function_exists( 'wc_get_product_id_by_sku' ) ) {
+							$pid = (int) wc_get_product_id_by_sku( $token );
+						}
+						if ( $pid > 0 ) {
+							$ids[] = $pid;
+						}
+					}
+					$ids = array_values( array_unique( $ids ) );
+
+					if ( empty( $ids ) ) {
+						return $this->success(
+							array(
+								'products' => array(),
+								'total'    => 0,
+							)
+						);
+					}
+					$args['post__in']       = $ids;
+					$args['orderby']        = 'post__in';
+					$args['posts_per_page'] = count( $ids );
+					// Per-variation SKUs are common — a SKU (or variation-ID)
+					// hit must not be dropped by the product-only base type.
+					$args['post_type'] = array( 'product', 'product_variation' );
 					break;
 
 				// Legacy single-mode searches kept for any deep-linked UI state.

@@ -297,6 +297,29 @@ class ProductRepository {
 			}
 		}
 
+		// 3.5. V5's SECOND legacy hook family — the `woo_feed_get_*` filters
+		// (V5 AttributeValueByType::apply_filters_to_attribute_value(), fired
+		// for EVERY mapping row). Customer snippets in the wild target these
+		// (e.g. `woo_feed_get_short_description_attribute`, #68973), and
+		// V5's own per-channel overrides used the provider variants.
+		//
+		// ORDERING NOTE (deviation vs V5, deliberate): V5 fired the family at
+		// the END of process_output() — after output_types, commands and
+		// prefix/suffix. In V8 those stages run downstream in the
+		// TransformPipeline without product context, so the family fires
+		// HERE on the resolved (pre-transform) value — the same hoisting
+		// documented for the parent command trio in apply_parent_command().
+		// A filter that REPLACES the value (the dominant real-world use)
+		// sees no difference; prefix/suffix now apply ON TOP of a replaced
+		// value instead of being silently dropped with it.
+		$value = $this->apply_legacy_get_filters(
+			$value,
+			$product,
+			$config,
+			$wc_attr,
+			isset( $mapping['merchant_attr'] ) ? (string) $mapping['merchant_attr'] : ''
+		);
+
 		// 4. V5 parent-aware output_type codes (18/19/20/23/24).
 		// These need product context + a way to re-resolve attributes,
 		// so they live here rather than in OutputTypeTransform (which
@@ -310,6 +333,59 @@ class ProductRepository {
 		// product-context constraint as step 4; the string commands in the
 		// chain run downstream in CommandTransform. XFRM-FRD-9.5.
 		$value = $this->apply_parent_command( $value, $product, $mapping, $config );
+
+		return $value;
+	}
+
+	/**
+	 * Fire V5's `woo_feed_get_*` legacy filter family on a resolved value.
+	 *
+	 * Four hooks in V5's exact order and 5-arg signature
+	 * `($value, $product, $config, $product_attribute, $merchant_attribute)`:
+	 *
+	 *   1. `woo_feed_get_attribute`                        — generic, every row.
+	 *   2. `woo_feed_get_{$wc_attr}_attribute`             — per source attribute.
+	 *   3. `woo_feed_get_{$provider}_attribute`            — per channel.
+	 *   4. `woo_feed_get_{$provider}_{$merchant}_attribute` — channel + column;
+	 *      the merchant name is cleaned of spaces and the `g:` prefix before
+	 *      building the hook name AND as the passed arg (V5 parity —
+	 *      AttributeValueByType.php:459-481; V5's "template" IS the provider,
+	 *      Config::get_feed_template() just returned it).
+	 *
+	 * Every hook is has_filter-guarded, so the typical site (nothing
+	 * registered) pays four array lookups per row and no apply_filters call.
+	 *
+	 * @since 8.0.17
+	 *
+	 * @param mixed       $value         Resolved attribute value.
+	 * @param \WC_Product $product       Product being exported.
+	 * @param Config      $config        Feed configuration.
+	 * @param string      $wc_attr       Source (product) attribute name.
+	 * @param string      $merchant_attr Merchant attribute (column) name.
+	 *
+	 * @return mixed Filtered value.
+	 */
+	private function apply_legacy_get_filters( $value, \WC_Product $product, Config $config, string $wc_attr, string $merchant_attr ) {
+		$provider       = $config->get_provider();
+		$merchant_clean = str_replace( array( ' ', 'g:' ), '', $merchant_attr );
+
+		// Hooks 1-3 pass the ORIGINAL merchant name; hook 4 passes the
+		// cleaned one — V5 reassigned the variable right before hook 4.
+		$hooks = array(
+			array( 'woo_feed_get_attribute', $merchant_attr ),
+			array( "woo_feed_get_{$wc_attr}_attribute", $merchant_attr ),
+			array( "woo_feed_get_{$provider}_attribute", $merchant_attr ),
+			array( "woo_feed_get_{$provider}_{$merchant_clean}_attribute", $merchant_clean ),
+		);
+
+		foreach ( $hooks as $entry ) {
+			list( $hook, $merchant_arg ) = $entry;
+
+			if ( has_filter( $hook ) ) {
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Hook names are built above from the fixed woo_feed_get_ prefix plus attribute/provider slugs; the sniff cannot resolve the variable.
+				$value = apply_filters( $hook, $value, $product, $config, $wc_attr, $merchant_arg );
+			}
+		}
 
 		return $value;
 	}

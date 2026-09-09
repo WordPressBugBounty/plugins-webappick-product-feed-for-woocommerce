@@ -43,7 +43,10 @@ class CategoryFilter implements FilterInterface {
 	 * @return bool True if product passes, false to exclude.
 	 */
 	public function passes( \WC_Product $product, Config $config ): bool {
-		$categories = (array) $config->get( 'categories', array() );
+		// Clean the list BEFORE the emptiness check: an empty selection can be
+		// persisted as '' or [ '' ], and treating those as an active include
+		// filter matches nothing and zeroes the feed (#68878).
+		$categories = FilterHelper::clean_list( $config->get( 'categories', array() ) );
 
 		if ( empty( $categories ) ) {
 			return true;

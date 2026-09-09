@@ -284,7 +284,17 @@ class ImageResolver {
 	}
 
 	/**
-	 * Get featured image URL for a product.
+	 * Get all GALLERY images as comma-separated URLs — featured excluded.
+	 *
+	 * V5 parity (#68878): V5's `images()` read
+	 * `ProductHelper::get_product_gallery()`, which returns gallery
+	 * attachments only. 8.0.0–8.0.16 prepended the featured image here,
+	 * which (a) duplicated the main image into `g:additional_image_link`
+	 * (Google's spec wants additional images only) and (b) made the value
+	 * non-empty for every variation with a main image — so the
+	 * "parent if empty" opt-in (code 20 / `[parent_if_empty]`) could never
+	 * fire on an `images`-sourced row. The featured image remains available
+	 * through the `image` / `feature_image` attributes.
 	 *
 	 * @since 8.0.0
 	 * @implements PROD-FRD-8.1
@@ -292,46 +302,10 @@ class ImageResolver {
 	 * @param \WC_Product $product WooCommerce product.
 	 * @param string      $size    Image size.
 	 *
-	 * @return string Featured image URL or empty string.
-	 */
-	private function get_featured_image( \WC_Product $product, string $size ): string {
-		$image_id = $product->get_image_id();
-
-		if ( empty( $image_id ) ) {
-			return '';
-		}
-
-		// Route through the URL normaliser so `images` (comma-joined
-		// output) and single-image getters emit identically-shaped URLs.
-		return $this->format_attachment_url( (int) $image_id, $size );
-	}
-
-	/**
-	 * Get all images (featured + gallery) as comma-separated URLs.
-	 *
-	 * @since 8.0.0
-	 * @implements PROD-FRD-8.1
-	 *
-	 * @param \WC_Product $product WooCommerce product.
-	 * @param string      $size    Image size.
-	 *
-	 * @return string Comma-separated image URLs or empty string.
+	 * @return string Comma-separated gallery URLs or empty string.
 	 */
 	private function get_all_images( \WC_Product $product, string $size ): string {
-		$urls = array();
-
-		// Featured image first.
-		$featured = $this->get_featured_image( $product, $size );
-
-		if ( ! empty( $featured ) ) {
-			$urls[] = $featured;
-		}
-
-		// Gallery images.
-		$gallery = $this->get_gallery_urls( $product, $size );
-		$urls    = array_merge( $urls, $gallery );
-
-		return implode( ', ', $urls );
+		return implode( ', ', $this->get_gallery_urls( $product, $size ) );
 	}
 
 	/**

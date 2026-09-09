@@ -8,7 +8,8 @@
  * V5's chatgpt template, ported verbatim). This transform owns the
  * value formats:
  * - money "<number> <ISO-4217>" on price/sale_price
- * - underscore availability enums (in_stock / out_of_stock / preorder)
+ * - availability normalized to the spec enum (in_stock / out_of_stock /
+ *   pre_order / backorder — OpenAI rejects rows with other values, #69076)
  * - eligibility flags normalized to lowercase true/false
  *
  * @package    CTXFeed
@@ -59,7 +60,15 @@ class ChatGptTransform implements TransformInterface {
 	}
 
 	/**
-	 * Normalize availability to OpenAI's underscore enums.
+	 * Normalize availability to OpenAI's spec enum.
+	 *
+	 * The spec set is `in_stock` / `out_of_stock` / `pre_order` /
+	 * `backorder` / `unknown`, and OpenAI REJECTS rows carrying anything
+	 * else (#69076). Two earlier spellings were wrong: backordered items
+	 * were mapped to `preorder` (OpenAI has a distinct `backorder` enum —
+	 * a backordered item is not a pre-order), and pre-orders were emitted
+	 * as `preorder` (Google's spelling; OpenAI hyphenates with an
+	 * underscore, so the row was rejected).
 	 *
 	 * @since 8.0.0
 	 *
@@ -78,9 +87,10 @@ class ChatGptTransform implements TransformInterface {
 			'in_stock'     => 'in_stock',
 			'outofstock'   => 'out_of_stock',
 			'out_of_stock' => 'out_of_stock',
-			'onbackorder'  => 'preorder',
-			'backorder'    => 'preorder',
-			'preorder'     => 'preorder',
+			'onbackorder'  => 'backorder',
+			'backorder'    => 'backorder',
+			'preorder'     => 'pre_order',
+			'pre_order'    => 'pre_order',
 		);
 
 		if ( isset( $map[ $availability ] ) ) {

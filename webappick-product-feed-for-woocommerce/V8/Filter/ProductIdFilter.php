@@ -43,7 +43,15 @@ class ProductIdFilter implements FilterInterface {
 	 * @return bool True if product passes, false to exclude.
 	 */
 	public function passes( \WC_Product $product, Config $config ): bool {
-		$ids = array_map( 'intval', (array) $config->get( 'product_ids', array() ) );
+		// Clean the raw list BEFORE the emptiness check ('' / [ '' ] shapes,
+		// #68878), then drop entries that don't name a real post ID — an ''
+		// entry used to intval to 0, arming the filter with an unmatchable
+		// list that zeroed the feed in include mode.
+		$ids = array_values(
+			array_filter(
+				array_map( 'intval', FilterHelper::clean_list( $config->get( 'product_ids', array() ) ) )
+			)
+		);
 
 		if ( empty( $ids ) ) {
 			return true;

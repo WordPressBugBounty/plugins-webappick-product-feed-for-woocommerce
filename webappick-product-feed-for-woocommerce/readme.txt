@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.16
+Stable tag: 8.0.17
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,16 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.17 =
+* Added: paste a list of IDs or SKUs straight into the product picker. Copy a comma-separated list from a spreadsheet into the include/exclude product search and every entry is looked up at once — all-numeric lists are matched as product IDs first with SKU fallback, alphanumeric lists as SKUs (variation SKUs included), and anything unmatched is listed so nothing silently drops.
+* Fix: private variations no longer export from publish-only feeds. The status filter applied only to parent products, so a private variation under a published parent still shipped — and Google advertised variants a customer can't actually select on the product page.
+* Fix: an "empty" include filter saved as an empty string no longer silently zeroes the feed. Older configurations sometimes stored an empty category/tag/product-ID selection as an empty string instead of a true empty list; those feeds generated 0 products with no clue why. All list filters now treat both shapes as "no filter".
+* Change: the "All Images" attribute is gallery-only again, like the old engine. Since 8.0.0 it also included the main image, which duplicated the main image into g:additional_image_link (Google asks for additional images only) and — because the value was never empty — quietly disabled the "parent if empty" command on variation image rows. The main image remains available through the Main Image and Featured Image attributes.
+* Fix: new-feed templates use the store currency in price values. The Idealo, Miinto.de and Etsy templates hardcoded a USD suffix — a new feed on a EUR store shipped "12.50 USD" until hand-edited.
+* Improved: brand columns in new-feed templates read the WooCommerce Brands taxonomy (the top-level Parent Brand), falling back to the site name — instead of a value parsed from the domain, which shipped "Com" as the brand on .com.au stores. Affects newly created feeds only.
+* Fix: ChatGPT (OpenAI) feeds ship the exact availability values OpenAI accepts. Backordered products now export "backorder" (they were mislabeled "preorder"), and pre-orders export OpenAI's "pre_order" spelling — OpenAI rejects rows carrying unrecognized values.
+* Fix: custom code using the old engine's woo_feed_get_..._attribute filters works again. The new engine only bridged the woo_feed_filter_product_* family, so snippets built on the second V5 filter family (for example woo_feed_get_short_description_attribute) silently stopped after the upgrade. All four variants now fire with their original order and signatures.
 
 = Version 8.0.16 =
 * Fix: SEO titles and descriptions now work inside Attribute Mapping. Combining a Rank Math, Yoast or All in One SEO field with other attributes in an Attribute Mapping printed the field's internal name (e.g. "rank_math_title") into the feed instead of the actual SEO value; the same fix applies to Dynamic Attributes.

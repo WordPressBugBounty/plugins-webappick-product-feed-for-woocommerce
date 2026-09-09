@@ -42,8 +42,11 @@ class TagFilter implements FilterInterface {
 	 * @return bool True if product passes, false to exclude.
 	 */
 	public function passes( \WC_Product $product, Config $config ): bool {
-		$include_tags = $config->get( 'include_tags', array() );
-		$exclude_tags = $config->get( 'exclude_tags', array() );
+		// Clean both lists BEFORE the emptiness check: an empty selection can
+		// be persisted as '' or [ '' ], and a [ '' ] include list would arm
+		// the filter with a list that matches nothing (#68878).
+		$include_tags = FilterHelper::clean_list( $config->get( 'include_tags', array() ) );
+		$exclude_tags = FilterHelper::clean_list( $config->get( 'exclude_tags', array() ) );
 
 		// No tags configured — pass all. @implements FLTR-FRD-6.1.
 		if ( empty( $include_tags ) && empty( $exclude_tags ) ) {

@@ -101,19 +101,26 @@ class TemplateDefaults {
 			return self::$brand;
 		}
 
-		$brand = '';
-		$url   = filter_var( site_url(), FILTER_SANITIZE_URL );
+		// Prefer the human site NAME over the domain parse below: the parse
+		// takes the second-to-last host segment, so every two-level-TLD store
+		// shipped its TLD as the brand — freshboost.com.au exported
+		// brand "Com" to Google (#68893's mystery value was exactly this).
+		$brand = trim( (string) get_bloginfo( 'name' ) );
 
-		if ( false !== $url ) {
-			$url = wp_parse_url( $url );
+		if ( '' === $brand ) {
+			$url = filter_var( site_url(), FILTER_SANITIZE_URL );
 
-			if ( array_key_exists( 'host', $url ) ) {
-				if ( strpos( $url['host'], '.' ) !== false ) {
-					$arr   = explode( '.', $url['host'] );
-					$brand = $arr[ count( $arr ) - 2 ];
-					$brand = ucfirst( $brand );
-				} else {
-					$brand = ucfirst( $url['host'] );
+			if ( false !== $url ) {
+				$url = wp_parse_url( $url );
+
+				if ( is_array( $url ) && array_key_exists( 'host', $url ) ) {
+					if ( strpos( $url['host'], '.' ) !== false ) {
+						$arr   = explode( '.', $url['host'] );
+						$brand = $arr[ count( $arr ) - 2 ];
+						$brand = ucfirst( $brand );
+					} else {
+						$brand = ucfirst( $url['host'] );
+					}
 				}
 			}
 		}
@@ -178,11 +185,11 @@ class TemplateDefaults {
 				? $config[ $merchant ]
 				: array();
 			$existing['feed_config_custom2'] = $custom2_default;
-			return $existing;
+			return self::with_brand_source( $existing );
 		}
 
 		if ( isset( $config[ $merchant ] ) ) {
-			return $config[ $merchant ];
+			return self::with_brand_source( $config[ $merchant ] );
 		}
 
 		// V5 parity: a few channels reuse the Google attribute template wholesale
@@ -200,11 +207,61 @@ class TemplateDefaults {
 			'pinterest' => 'google',
 		);
 		if ( isset( $template_aliases[ $merchant ], $config[ $template_aliases[ $merchant ] ] ) ) {
-			return $config[ $template_aliases[ $merchant ] ];
+			return self::with_brand_source( $config[ $template_aliases[ $merchant ] ] );
 		}
 
 		// Fall back to default template config.
-		return $config['default'] ?? array();
+		return self::with_brand_source( $config['default'] ?? array() );
+	}
+
+	/**
+	 * Rewrite brand-ish columns whose default is the static store brand to
+	 * SOURCE the WooCommerce core Brands taxonomy instead — value
+	 * `wc_brand_parent` (Parent Brand), with the static brand kept as the
+	 * empty-value fallback the resolver applies.
+	 *
+	 * Stores using the `product_brand` taxonomy get real per-product brands
+	 * on NEW feeds; stores without it resolve empty → the default applies →
+	 * output identical to before (an empty g:brand would risk merchant
+	 * disapprovals, so the fallback is load-bearing). Existing feeds are
+	 * untouched — template defaults only shape newly created feeds.
+	 *
+	 * Guarded by the merchant-attribute NAME (must contain brand /
+	 * manufacturer) so shop-name-style columns that reuse the store brand
+	 * as their default stay static text.
+	 *
+	 * @since 8.0.17
+	 *
+	 * @param array $config One merchant's template-default config.
+	 * @return array
+	 */
+	private static function with_brand_source( array $config ): array {
+		foreach ( array( 'mattributes', 'attributes', 'type', 'default' ) as $key ) {
+			if ( ! isset( $config[ $key ] ) || ! is_array( $config[ $key ] ) ) {
+				return $config;
+			}
+		}
+
+		foreach ( $config['mattributes'] as $i => $mattr ) {
+			if ( ( $config['default'][ $i ] ?? '' ) !== self::$brand ) {
+				continue;
+			}
+
+			// A row already sourcing a real attribute keeps its mapping.
+			if ( '' !== (string) ( $config['attributes'][ $i ] ?? '' ) ) {
+				continue;
+			}
+
+			$name = strtolower( (string) $mattr );
+			if ( false === strpos( $name, 'brand' ) && false === strpos( $name, 'manufacturer' ) ) {
+				continue;
+			}
+
+			$config['attributes'][ $i ] = 'wc_brand_parent';
+			$config['type'][ $i ]       = 'attribute';
+		}
+
+		return $config;
 	}
 
 	/**
@@ -3666,7 +3723,7 @@ class TemplateDefaults {
 					'',
 				),
 				'default'     => array( '', '', '', '', '', '1-3 working days', '', '', self::$brand, '', '', '', '', '', '', '' ),
-				'suffix'      => array( '', '', '', ' USD', '', '', '', '', '', '', '', '', '', '', '', '' ),
+				'suffix'      => array( '', '', '', ' ' . self::$currency, '', '', '', '', '', '', '', '', '', '', '', '' ),
 				'output_type' => array( '1', '1', '11', '6', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1' ),
 				'limit'       => array( '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '' ),
 			),
@@ -3887,7 +3944,7 @@ class TemplateDefaults {
 					'price',
 				),
 				'default'     => array( '', '', '', '', '', '', '', '', '', self::$brand, '', '', '', '', '', '' ),
-				'suffix'      => array( '', '', '', '', '', '', '', '', '', '', '', '', '', ' USD', ' USD', ' USD' ),
+				'suffix'      => array( '', '', '', '', '', '', '', '', '', '', '', '', '', ' ' . self::$currency, ' ' . self::$currency, ' ' . self::$currency ),
 				'output_type' => array(
 					'1',
 					'1',
@@ -9471,7 +9528,7 @@ class TemplateDefaults {
 					'image_2',
 					'image_3',
 				),
-				'default'     => array( '', '', '', '', 'USD', '', '', '', 'Localhost', '', '', '' ),
+				'default'     => array( '', '', '', '', self::$currency, '', '', '', 'Localhost', '', '', '' ),
 				'suffix'      => array( '', '', '', '', '', '', '', '', '', '', '', '' ),
 				'output_type' => array( '1', '1', '11', '1', '1', '1', '1', '1', '1', '1', '1', '1' ),
 				'limit'       => array( '', '', '', '', '', '', '', '', '', '', '', '' ),
