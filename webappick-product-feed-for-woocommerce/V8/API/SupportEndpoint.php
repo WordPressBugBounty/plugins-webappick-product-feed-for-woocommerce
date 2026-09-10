@@ -135,6 +135,12 @@ class SupportEndpoint extends RestController {
 		// Keep parity with the UI's 2000-character limit.
 		$message = mb_substr( $message, 0, 2000 );
 
+		// Remove PREVIOUS tickets' temp diagnostics (bundle dirs + staged
+		// manual uploads share the ctxfeed-support- prefix). Cleanup is
+		// deferred to here — not done right after wp_mail() — so queueing
+		// mailers can still read the files at actual send time (#69086).
+		$this->sweep_stale_temp();
+
 		// The user's message plus a SHORT inline status block (support scans
 		// versions from the ticket preview without opening attachments). The
 		// heavy diagnostics ride as files instead of raw text in the body:
@@ -154,6 +160,23 @@ class SupportEndpoint extends RestController {
 
 		$body .= 'Attached: ' . implode( ', ', array_map( 'basename', $attachments ) ) . "\n";
 
+		// Inline copy of the feed configuration — the single most important
+		// diagnostic. Some hosts' mailers lose attachments entirely
+		// (queueing SMTP plugins send AFTER temp files used to be deleted;
+		// others strip attachments outright) — a ticket then arrived with
+		// only the "Attached:" line and nothing to diagnose from (#69086).
+		// The config must survive in the body itself; capped so an 'all'
+		// dump can't balloon the email.
+		$config_text = $this->feed_config_text( $feed );
+		if ( '' !== $config_text ) {
+			$body .= "\n--- Feed configuration (inline copy of feed-config.txt) ---\n";
+			$body .= mb_substr( $config_text, 0, 15000 );
+			if ( mb_strlen( $config_text ) > 15000 ) {
+				$body .= "\n[truncated - full copy in the feed-config.txt attachment]";
+			}
+			$body .= "\n";
+		}
+
 		$manual      = $this->manual_attachments( $request );
 		$attachments = array_merge( $attachments, $manual );
 
@@ -169,16 +192,14 @@ class SupportEndpoint extends RestController {
 			$attachments
 		);
 
-		// Clean up the temp copies of the manual uploads and the diagnostic
-		// bundle (its unique temp directory included).
-		foreach ( array_merge( $manual, $bundle['paths'] ) as $path ) {
-			if ( file_exists( $path ) ) {
-				wp_delete_file( $path );
-			}
-		}
-		if ( '' !== $bundle['dir'] && is_dir( $bundle['dir'] ) ) {
-			@rmdir( $bundle['dir'] ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPressVIPMinimum.Functions.RestrictedFunctions.directory_rmdir, WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- Best-effort removal of this request's own emptied temp bundle directory; a leftover empty dir must not fail the ticket.
-		}
+		// The temp copies are deliberately NOT deleted here (#69086): on
+		// sites with a QUEUEING mailer (WP Mail SMTP queue, FluentSMTP
+		// email log/queue, SES offloaders), wp_mail() returns after merely
+		// queueing — the real send happens minutes later on cron, and
+		// deleting the files now meant the queued send attached nothing.
+		// Leftovers are removed by sweep_stale_temp() (see send_ticket's
+		// opening sweep): anything under the ctxfeed-support- temp prefix
+		// older than an hour goes on the next ticket send.
 
 		if ( ! $sent ) {
 			return $this->error(
@@ -273,6 +294,52 @@ class SupportEndpoint extends RestController {
 	}
 
 	/**
+	 * Delete stale ctxfeed-support-* temp entries (bundle directories and
+	 * staged manual-upload files) older than the given age.
+	 *
+	 * Cleanup is deferred (#69086): deleting right after wp_mail() broke
+	 * attachments on every site whose mailer QUEUES sends — wp_mail()
+	 * returns on enqueue, the real send reads the files later. An hour is
+	 * comfortably past any sane mail-queue latency, and the OS temp dir is
+	 * the fallback janitor for a site that never sends another ticket.
+	 *
+	 * @since 8.0.18
+	 *
+	 * @param int $max_age Seconds an entry may live. Default one hour.
+	 * @return int Entries removed.
+	 */
+	private function sweep_stale_temp( int $max_age = HOUR_IN_SECONDS ): int {
+		$entries = glob( trailingslashit( get_temp_dir() ) . 'ctxfeed-support-*' );
+		if ( ! is_array( $entries ) ) {
+			return 0;
+		}
+
+		$removed = 0;
+		$cutoff  = time() - $max_age;
+
+		foreach ( $entries as $entry ) {
+			$mtime = @filemtime( $entry ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- A raced-away temp entry must not error the ticket; false falls through to the skip below.
+			if ( false === $mtime || $mtime > $cutoff ) {
+				continue;
+			}
+
+			if ( is_dir( $entry ) ) {
+				foreach ( (array) glob( trailingslashit( $entry ) . '*' ) as $inner ) {
+					wp_delete_file( $inner );
+				}
+				@rmdir( $entry ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPressVIPMinimum.Functions.RestrictedFunctions.directory_rmdir, WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- Best-effort removal of an emptied stale temp dir; a leftover must not fail the ticket.
+				++$removed;
+				continue;
+			}
+
+			wp_delete_file( $entry );
+			++$removed;
+		}
+
+		return $removed;
+	}
+
+	/**
 	 * Write the diagnostic attachment files for a support ticket.
 	 *
 	 * Creates a unique temp directory holding (exact names, per the support
@@ -283,9 +350,11 @@ class SupportEndpoint extends RestController {
 	 *   - feed-config.txt   — the selected feed's stored configuration as
 	 *     pretty JSON, credentials redacted ('all' dumps every feed)
 	 *
-	 * The caller attaches the paths to wp_mail() and deletes them (and the
-	 * directory) after sending. File-write failures degrade gracefully — a
-	 * missing attachment must never block the ticket.
+	 * The caller attaches the paths to wp_mail(); cleanup is DEFERRED to
+	 * sweep_stale_temp() on a later ticket send, never immediate (#69086 —
+	 * queueing mailers read the files after wp_mail() returns). File-write
+	 * failures degrade gracefully — a missing attachment must never block
+	 * the ticket.
 	 *
 	 * @since 8.0.14
 	 *
@@ -315,7 +384,7 @@ class SupportEndpoint extends RestController {
 		$paths = array();
 		foreach ( $files as $filename => $content ) {
 			$path = $dir . $filename;
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_file_put_contents -- Writes this request's own temp attachment files; deleted right after wp_mail().
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_file_put_contents, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_file_put_contents -- Writes this request's own temp attachment files; removed later by sweep_stale_temp() (#69086 — queueing mailers read them after wp_mail returns).
 			if ( false !== file_put_contents( $path, (string) $content ) ) {
 				$paths[] = $path;
 			}
@@ -567,8 +636,8 @@ class SupportEndpoint extends RestController {
 	 *
 	 * Accepts one file (legacy `attachment`) or several (`attachment[]`). Each
 	 * valid upload is moved to a temp file that preserves its original name
-	 * (wp_mail names an attachment from its path basename); the caller deletes
-	 * them after sending. Individual files are skipped when errored, empty, or
+	 * (wp_mail names an attachment from its path basename); cleanup is
+	 * deferred to sweep_stale_temp() (#69086). Individual files are skipped when errored, empty, or
 	 * over 10 MB; the set is bounded by a max count and a total-size budget so
 	 * the email can't balloon.
 	 *

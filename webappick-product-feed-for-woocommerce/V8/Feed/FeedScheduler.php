@@ -66,6 +66,14 @@ class FeedScheduler {
 	const RECURRING_ACTION = 'ctxfeed_recurring_generation';
 
 	/**
+	 * Daily self-heal heartbeat (CBT-569): re-registers any enabled feed
+	 * whose recurring action was silently dropped.
+	 *
+	 * @since 8.0.18
+	 */
+	const RECONCILE_ACTION = 'ctxfeed_schedule_reconcile';
+
+	/**
 	 * Progress silence (seconds) after which a generating feed with NO live
 	 * batch/finalize action counts as a dead chain (a batch killed with
 	 * SIGKILL runs no shutdown handler, so the 8.0.7 retry never fires).
@@ -1085,6 +1093,135 @@ class FeedScheduler {
 	}
 
 	/**
+	 * Keep the daily self-heal heartbeat registered (idempotent).
+	 *
+	 * Runs on `init` (Action Scheduler is loaded by then); one lookup per
+	 * request, one recurring action per site.
+	 *
+	 * @since 8.0.18
+	 * @return void
+	 */
+	public function ensure_reconcile_heartbeat(): void {
+		if ( ! function_exists( 'as_next_scheduled_action' ) || ! function_exists( 'as_schedule_recurring_action' ) ) {
+			return;
+		}
+
+		if ( false !== as_next_scheduled_action( self::RECONCILE_ACTION, array(), self::GROUP ) ) {
+			return;
+		}
+
+		as_schedule_recurring_action( time() + DAY_IN_SECONDS, DAY_IN_SECONDS, self::RECONCILE_ACTION, array(), self::GROUP );
+	}
+
+	/**
+	 * Daily heartbeat callback — force a heal pass.
+	 *
+	 * @since 8.0.18
+	 * @return void
+	 */
+	public function handle_reconcile(): void {
+		$this->heal_recurring_schedules( true );
+	}
+
+	/**
+	 * Re-register every enabled feed whose recurring action has silently
+	 * disappeared (CBT-569).
+	 *
+	 * A feed with auto-update ON and a valid interval but NO pending/running
+	 * recurring action is a feed that has silently stopped — the exact
+	 * customer symptom (2 of 3 identically-configured feeds stale for 5+
+	 * days, no error anywhere). Each heal is logged so the system trace
+	 * records that the schedule WAS lost, not just quietly restored.
+	 *
+	 * Throttled to once per hour (transient) so callers can invoke it
+	 * opportunistically — the Manage Feeds list does — without cost;
+	 * the daily heartbeat passes $force.
+	 *
+	 * @since 8.0.18
+	 *
+	 * @param bool $force Skip the hourly throttle.
+	 * @return string[] Feed slugs whose registration was re-created.
+	 */
+	public function heal_recurring_schedules( bool $force = false ): array {
+		if ( ! function_exists( 'as_next_scheduled_action' ) ) {
+			return array();
+		}
+
+		if ( ! $force && false !== get_transient( 'ctxfeed_schedule_heal_at' ) ) {
+			return array();
+		}
+		set_transient( 'ctxfeed_schedule_heal_at', time(), HOUR_IN_SECONDS );
+
+		$manager = $this->manager ? $this->manager : new FeedManager();
+		$healed  = array();
+
+		foreach ( $manager->get_all_feed_names() as $feed_name ) {
+			$feed_data = maybe_unserialize( get_option( 'wf_feed_' . $feed_name ) );
+			if ( ! is_array( $feed_data ) ) {
+				continue;
+			}
+
+			// Only enabled feeds with a real interval can be "silently
+			// stopped"; everything else is legitimately unscheduled.
+			if ( 1 !== (int) ( $feed_data['status'] ?? 0 ) || $this->resolve_interval( $feed_data ) <= 0 ) {
+				continue;
+			}
+
+			if ( false !== as_next_scheduled_action( self::RECURRING_ACTION, array( 'feed_name' => $feed_name ), self::GROUP ) ) {
+				continue;
+			}
+
+			if ( 'scheduled' === $this->ensure_recurring_schedule( $feed_name, $feed_data ) ) {
+				$healed[] = $feed_name;
+				Logger::info( sprintf( 'Self-heal: recurring schedule for feed "%s" was missing and has been re-registered (auto-update ON, interval configured).', $feed_name ) );
+			}
+		}
+
+		return $healed;
+	}
+
+	/**
+	 * The feed's next auto-update run as a UNIX timestamp, or null.
+	 *
+	 * Truth from Action Scheduler — NOT from stored settings, which is
+	 * exactly the distinction the Manage Feeds UI was missing (CBT-569).
+	 *
+	 * @since 8.0.18
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return int|null
+	 */
+	public function next_scheduled_run( string $feed_name ): ?int {
+		if ( ! function_exists( 'as_next_scheduled_action' ) ) {
+			return null;
+		}
+
+		return self::normalize_next_run(
+			as_next_scheduled_action( self::RECURRING_ACTION, array( 'feed_name' => $feed_name ), self::GROUP )
+		);
+	}
+
+	/**
+	 * Map as_next_scheduled_action()'s tri-state to a timestamp-or-null.
+	 *
+	 * `true` means the action is running RIGHT NOW — surfaced as "now"
+	 * rather than dropped, so a long-running feed doesn't flash as
+	 * unscheduled mid-run.
+	 *
+	 * @since 8.0.18
+	 *
+	 * @param int|bool $raw as_next_scheduled_action() return value.
+	 * @return int|null
+	 */
+	public static function normalize_next_run( $raw ): ?int {
+		if ( true === $raw ) {
+			return time();
+		}
+
+		return ( is_int( $raw ) && $raw > 0 ) ? $raw : null;
+	}
+
+	/**
 	 * Boot: Register Action Scheduler callbacks.
 	 *
 	 * Registers handlers for three action types:
@@ -1104,6 +1241,14 @@ class FeedScheduler {
 		add_action( self::GENERATE_ACTION, array( $this, 'handle_batch' ), 10, 5 );
 		add_action( self::FINALIZE_ACTION, array( $this, 'handle_finalization' ), 10, 2 );
 		add_action( self::RECURRING_ACTION, array( $this, 'handle_recurring' ), 10, 1 );
+
+		// Self-heal for silently-dropped recurring registrations (CBT-569): a
+		// daily heartbeat action plus its own idempotent registration. Before
+		// this, a lost registration was only repaired by a feed save, a
+		// completed run, or a plugin update — a feed could sit dead for days
+		// with the UI still showing its configured schedule.
+		add_action( self::RECONCILE_ACTION, array( $this, 'handle_reconcile' ) );
+		add_action( 'init', array( $this, 'ensure_reconcile_heartbeat' ), 30 );
 
 		// Re-home V5 WP-Cron feed schedules onto Action Scheduler after a plugin
 		// UPDATE (fired once by CTXFeed_Installer::check_version on the upgrade

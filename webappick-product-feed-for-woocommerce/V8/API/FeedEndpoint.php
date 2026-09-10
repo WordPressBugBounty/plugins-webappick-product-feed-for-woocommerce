@@ -235,6 +235,17 @@ class FeedEndpoint extends RestController {
 
 		$channel_filter = $request->get_param( 'channel' );
 
+		// Opportunistic self-heal (CBT-569, hourly-throttled): re-register
+		// any enabled feed whose recurring action silently disappeared, so
+		// simply OPENING Manage Feeds repairs a stalled schedule — and the
+		// next_run values below then reflect live Action Scheduler truth.
+		$scheduler = null;
+		$container = \CTXFeed\V8\Core\Container::get_instance();
+		if ( $container->has( 'feed.scheduler' ) ) {
+			$scheduler = $container->resolve( 'feed.scheduler' );
+			$scheduler->heal_recurring_schedules();
+		}
+
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Feed configs live in wp_options under the wf_feed_ prefix (shared with V5 — no migration). get_option() cannot enumerate by prefix and these rows are deliberately non-autoloaded, so a direct prepared query is the only way to list them. Admin REST route only; never on the feed-generation path.
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
@@ -269,6 +280,17 @@ class FeedEndpoint extends RestController {
 				continue;
 			}
 
+			// Next auto-run instant from Action Scheduler itself — null for
+			// auto-off feeds, and (post-heal above) null for an enabled feed
+			// only when re-registration genuinely failed, which the UI
+			// surfaces instead of showing the configured interval as if it
+			// were live (CBT-569).
+			$next_run = null;
+			if ( $scheduler && $this->is_auto_update_on( $config ) ) {
+				$next_ts  = $scheduler->next_scheduled_run( $feed_name );
+				$next_run = ( null === $next_ts ) ? null : gmdate( 'c', $next_ts );
+			}
+
 			$feeds[] = array(
 				'id'          => $row['option_id'],
 				'option_name' => $option_name,
@@ -285,6 +307,7 @@ class FeedEndpoint extends RestController {
 				// A run started elsewhere (cron, another tab, another admin):
 				// the list picks it up and shows the live console for it.
 				'generating'  => $this->is_generating( $feed_name ),
+				'next_run'    => $next_run,
 			);
 		}
 

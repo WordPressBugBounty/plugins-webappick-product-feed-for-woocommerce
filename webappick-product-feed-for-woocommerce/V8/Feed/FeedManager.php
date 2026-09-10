@@ -103,13 +103,26 @@ class FeedManager {
 	 * @return string[] Array of feed slug strings.
 	 */
 	public function get_all_feed_names(): array {
-		$all_options = wp_load_alloptions();
+		global $wpdb;
+
+		// Query the options table directly, NOT wp_load_alloptions(): feed
+		// rows are deliberately non-autoloaded (large serialized configs),
+		// so the alloptions cache doesn't contain them on such sites — and
+		// every enumeration-based maintenance pass (upgrade reconcile,
+		// disabled-queue purge, the CBT-569 schedule self-heal) silently
+		// skipped every feed. Same access pattern as FeedEndpoint::get_feeds.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- get_option() cannot enumerate by prefix and the rows are non-autoloaded; admin/maintenance paths only, never per-product.
+		$names = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+				'wf_feed_%'
+			)
+		);
 
 		$feed_keys = array_filter(
-			array_keys( $all_options ),
+			(array) $names,
 			function ( $key ) {
-				return 0 === strpos( $key, 'wf_feed_' )
-					&& 0 !== strpos( $key, 'wf_feed_version' );
+				return 0 !== strpos( $key, 'wf_feed_version' );
 			}
 		);
 

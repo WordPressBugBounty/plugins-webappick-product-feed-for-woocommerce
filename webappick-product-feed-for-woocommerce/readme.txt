@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 4.4
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.17
+Stable tag: 8.0.18
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -468,6 +468,11 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.18 =
+* Fix: feeds with Auto Update enabled can no longer stop silently. A feed's recurring schedule could be lost without any error — the feed simply stopped regenerating for days while the Manage Feeds page kept showing its configured interval. Schedules now repair themselves: a daily check re-registers any enabled feed whose schedule went missing, opening the Manage Feeds page does the same instantly, and the page now shows the feed's real next run straight from the scheduler — with a clear "Not scheduled" badge in the rare case re-registration fails.
+* Fix: maintenance routines now see every feed. On hosts where feed settings are stored without autoloading, the after-update schedule repair and the disabled-feed queue cleanup silently found zero feeds — which also explains how a lost schedule could survive several plugin updates unrepaired.
+* Improved: support tickets keep their diagnostic attachments on every host. Mail plugins that queue sending (or strip attachments outright) used to deliver tickets carrying only an "Attached:" line with no files; the attachment files now remain available for queued sending, and the feed configuration additionally travels inside the message body so the key diagnostic always arrives.
 
 = Version 8.0.17 =
 * Added: paste a list of IDs or SKUs straight into the product picker. Copy a comma-separated list from a spreadsheet into the include/exclude product search and every entry is looked up at once — all-numeric lists are matched as product IDs first with SKU fallback, alphanumeric lists as SKUs (variation SKUs included), and anything unmatched is listed so nothing silently drops.
