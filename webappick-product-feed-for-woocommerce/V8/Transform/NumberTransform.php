@@ -135,8 +135,11 @@ class NumberTransform implements TransformInterface {
 		$dec_sep_raw  = $config->get( 'decimal_separator', '' );
 		$thou_sep_raw = $config->get( 'thousand_separator', '' );
 
+		// Default is a HARDCODED 2 (V5 parity; owner decision 2026-09-11):
+		// raw two-decimal prices unless the user sets Filter-tab decimals —
+		// the store's display setting must never leak into feeds.
 		$decimals = ( '' === $decimals_raw || null === $decimals_raw || ! is_numeric( $decimals_raw ) )
-			? (int) wc_get_price_decimals()
+			? 2
 			: (int) $decimals_raw;
 		// MACHINE defaults, never WooCommerce's DISPLAY separators — the same
 		// contract as PriceResolver::format_price() (#68983). Falling back to

@@ -108,7 +108,136 @@ class AdvanceFilter implements FilterInterface {
 		$conditions = (array) $config->get( 'condition', array() );
 		$compares   = (array) $config->get( 'filterCompare', array() );
 		$concats    = (array) $config->get( 'concatType', array() );
-		$global     = $this->resolve_global_default( $config );
+
+		// CBT-574: V8-saved configs carry the user's visual grouping in
+		// `_filter_groups`. The flat V5 chain cannot express
+		// (A AND B) OR (C AND D) — with that shape it excluded EVERY
+		// product (the AND rows fail-fast one branch, the lone OR row's
+		// must-pass accumulator kills the other). When the metadata is
+		// present and consistent with the row count, evaluate group-aware;
+		// V5-era configs (no metadata) and any V5-downgrade round-trip that
+		// desynced it keep the exact legacy flat semantics.
+		$groups = $this->consistent_groups( $config, count( $attrs ) );
+		if ( null !== $groups ) {
+			return $this->passes_grouped( $product, $config, $attrs, $conditions, $compares, $concats, $groups );
+		}
+
+		return $this->passes_flat( $product, $config, $attrs, $conditions, $compares, $concats );
+	}
+
+	/**
+	 * `_filter_groups` metadata when usable: sizes sum to the row count and
+	 * every entry is well-formed. Null → use the legacy flat path.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param Config $config    Feed configuration.
+	 * @param int    $row_count Flat rule-row count.
+	 *
+	 * @return array<int,array{size:int,base_operator:string}>|null
+	 */
+	private function consistent_groups( Config $config, int $row_count ): ?array {
+		$raw = $config->get( '_filter_groups', array() );
+		if ( ! is_array( $raw ) || empty( $raw ) ) {
+			return null;
+		}
+
+		$groups = array();
+		$sum    = 0;
+		foreach ( $raw as $entry ) {
+			$size = isset( $entry['size'] ) ? (int) $entry['size'] : 0;
+			if ( $size < 1 ) {
+				return null;
+			}
+			$op       = isset( $entry['base_operator'] ) ? strtoupper( (string) $entry['base_operator'] ) : 'AND';
+			$groups[] = array(
+				'size'          => $size,
+				'base_operator' => in_array( $op, array( 'AND', 'OR' ), true ) ? $op : 'AND',
+			);
+			$sum     += $size;
+		}
+
+		return $sum === $row_count ? $groups : null;
+	}
+
+	/**
+	 * Group-aware evaluation (CBT-574).
+	 *
+	 * Within a group the rows fold LEFT-TO-RIGHT: the first row seeds the
+	 * verdict (its stored concatType is ignored — the UI renders it as the
+	 * connector-less "IF" row, and for non-first groups the flattener
+	 * overwrites it with the between-group operator), each following row
+	 * combines with its own AND/OR. Group verdicts then fold left-to-right
+	 * with each group's base_operator — matching exactly what the linear
+	 * UI reads as.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param \WC_Product $product    WooCommerce product.
+	 * @param Config      $config     Feed configuration.
+	 * @param array       $attrs      Flat fattribute rows.
+	 * @param array       $conditions Flat condition rows.
+	 * @param array       $compares   Flat filterCompare rows.
+	 * @param array       $concats    Flat concatType rows.
+	 * @param array       $groups     Validated `_filter_groups` entries.
+	 *
+	 * @return bool
+	 */
+	private function passes_grouped( \WC_Product $product, Config $config, array $attrs, array $conditions, array $compares, array $concats, array $groups ): bool {
+		$offset = 0;
+		$result = null;
+
+		foreach ( $groups as $group ) {
+			$group_result = null;
+
+			for ( $i = $offset; $i < $offset + $group['size']; $i++ ) {
+				$value   = $this->resolve_value( $product, (string) $attrs[ $i ], $config );
+				$compare = isset( $compares[ $i ] ) ? stripslashes( (string) $compares[ $i ] ) : '';
+				$passed  = $this->evaluate( $value, isset( $conditions[ $i ] ) ? (string) $conditions[ $i ] : '', $compare );
+
+				if ( null === $group_result ) {
+					$group_result = $passed;
+					continue;
+				}
+
+				$row_concat   = ( ! empty( $concats[ $i ] ) && 'OR' === strtoupper( (string) $concats[ $i ] ) ) ? 'OR' : 'AND';
+				$group_result = 'OR' === $row_concat
+					? ( $group_result || $passed )
+					: ( $group_result && $passed );
+			}
+			$offset += $group['size'];
+
+			if ( null === $result ) {
+				$result = (bool) $group_result;
+				continue;
+			}
+
+			$result = 'OR' === $group['base_operator']
+				? ( $result || $group_result )
+				: ( $result && $group_result );
+		}
+
+		return (bool) $result;
+	}
+
+	/**
+	 * V5-verbatim flat evaluation — the pre-CBT-574 behavior, kept
+	 * byte-for-byte for configs without usable `_filter_groups` metadata
+	 * (every V5-era feed, and V5-downgrade round-trips).
+	 *
+	 * @since 8.0.19 (extracted unchanged from passes())
+	 *
+	 * @param \WC_Product $product    WooCommerce product.
+	 * @param Config      $config     Feed configuration.
+	 * @param array       $attrs      fattribute rows.
+	 * @param array       $conditions condition rows.
+	 * @param array       $compares   filterCompare rows.
+	 * @param array       $concats    concatType rows.
+	 *
+	 * @return bool
+	 */
+	private function passes_flat( \WC_Product $product, Config $config, array $attrs, array $conditions, array $compares, array $concats ): bool {
+		$global = $this->resolve_global_default( $config );
 
 		// V5-verbatim accumulator: count OR rows + how many of them passed.
 		// AND rows short-circuit on failure inside the loop.

@@ -50,12 +50,47 @@ class MetaResolver {
 			return '';
 		}
 
-		// Array → first element cast to string.
+		// Array → the first non-empty SCALAR, descending nested structures.
+		// Meta shaped like a page-builder repeater ([['url' => …], …]) used
+		// to hit `(string) $value[0]` and ship the literal text "Array" into
+		// the feed (CBT-571 — a silenced PHP array-to-string cast); assoc
+		// arrays without a 0 key silently resolved to '' for the same reason.
 		if ( is_array( $value ) ) {
-			return isset( $value[0] ) ? (string) $value[0] : '';
+			return self::first_scalar_string( $value );
 		}
 
 		// Scalar → cast to string.
 		return (string) $value;
+	}
+
+	/**
+	 * First non-empty scalar inside a (possibly nested) meta array, as a
+	 * string. '' when the structure holds no usable scalar — never a PHP
+	 * cast artifact.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param array $value Meta value array.
+	 *
+	 * @return string
+	 */
+	private static function first_scalar_string( array $value ): string {
+		foreach ( $value as $item ) {
+			if ( is_scalar( $item ) ) {
+				$item_string = (string) $item;
+				if ( '' !== trim( $item_string ) ) {
+					return $item_string;
+				}
+				continue;
+			}
+			if ( is_array( $item ) ) {
+				$found = self::first_scalar_string( $item );
+				if ( '' !== $found ) {
+					return $found;
+				}
+			}
+		}
+
+		return '';
 	}
 }

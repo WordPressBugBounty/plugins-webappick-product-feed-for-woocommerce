@@ -460,8 +460,11 @@ class PriceResolver {
 
 			$this->format_memo_config = $config;
 			$this->format_memo        = array(
+				// Hardcoded 2, not wc_get_price_decimals() — V5 parity
+				// (owner decision 2026-09-11): raw two-decimal prices
+				// unless the user sets Filter-tab decimals.
 				( '' === $decimals_raw || null === $decimals_raw )
-					? wc_get_price_decimals()
+					? 2
 					: (int) $decimals_raw,
 				( '' === $dec_sep_raw || null === $dec_sep_raw )
 					? '.'

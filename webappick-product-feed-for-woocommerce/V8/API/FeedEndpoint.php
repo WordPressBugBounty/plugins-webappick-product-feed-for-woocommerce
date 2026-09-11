@@ -141,6 +141,25 @@ class FeedEndpoint extends RestController {
 			) 
 		);
 
+		// Per-product feed debugger — walks one product through the feed's
+		// real pipeline stage by stage (query, filters, resolve, transform,
+		// mapping) and reports each verdict. Backs ctxfeed/debug-feed-product.
+		register_rest_route(
+			$this->namespace,
+			'/feeds/(?P<id>[a-zA-Z0-9_-]+)/debug-product',
+			array(
+				'methods'             => \WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'debug_feed_product' ),
+				'permission_callback' => array( $this, 'permission_check' ),
+				'args'                => array(
+					'product_id' => array(
+						'required'          => true,
+						'sanitize_callback' => 'absint',
+					),
+				),
+			)
+		);
+
 		register_rest_route(
 			$this->namespace,
 			'/feeds/(?P<id>[a-zA-Z0-9_-]+)/duplicate',
@@ -438,6 +457,20 @@ class FeedEndpoint extends RestController {
 			return $this->error( __( 'Feed country is required. It sets the market whose tax rate and shipping zones the feed uses — tax-inclusive prices resolve to zero tax without it.', 'woo-feed' ), 400 );
 		}
 
+		// Every mapping row must be complete before it can persist —
+		// half-empty rows rendered invalid XML (BUG-0083).
+		if ( is_array( $rules ) ) {
+			$ctx_rows_error = $this->incomplete_rows_message( $rules );
+			if ( '' !== $ctx_rows_error ) {
+				return $this->error( $ctx_rows_error, 400 );
+			}
+		}
+
+		$ctx_interval_error = $this->minute_interval_gate_error( $form );
+		if ( '' !== $ctx_interval_error ) {
+			return $this->error( $ctx_interval_error, 403 );
+		}
+
 		// Convert React row-based rules to parallel-array format.
 		$feedrules = $this->build_feedrules_from_form(
 			$form,
@@ -580,6 +613,20 @@ class FeedEndpoint extends RestController {
 		// feed must set it before the config can be re-saved.
 		if ( empty( $form['country'] ) ) {
 			return $this->error( __( 'Feed country is required. It sets the market whose tax rate and shipping zones the feed uses — tax-inclusive prices resolve to zero tax without it.', 'woo-feed' ), 400 );
+		}
+
+		// Same per-row completeness rule as create (BUG-0083) — the MCP
+		// update-feed ability lands here too.
+		if ( is_array( $rules ) ) {
+			$ctx_rows_error = $this->incomplete_rows_message( $rules );
+			if ( '' !== $ctx_rows_error ) {
+				return $this->error( $ctx_rows_error, 400 );
+			}
+		}
+
+		$ctx_interval_error = $this->minute_interval_gate_error( is_array( $form ) ? $form : array() );
+		if ( '' !== $ctx_interval_error ) {
+			return $this->error( $ctx_interval_error, 403 );
 		}
 
 		$feed_slug = str_replace( 'wf_feed_', '', $option_name );
@@ -1895,6 +1942,11 @@ class FeedEndpoint extends RestController {
 			// sanitize would strip them.
 			'extraHeader'       => wp_unslash( (string) ( $form['extraHeader'] ?? '' ) ),
 			'cron'              => sanitize_text_field( $form['intervalTime'] ?? '' ),
+			// Minute intervals (Pro): the m5/m15/m30/m45 picker codes persist
+			// as SECONDS in update_interval — resolve_interval()'s highest-
+			// precedence source. Hour codes write '' so a feed switched back
+			// to hours is not stuck on the stale minute value.
+			'update_interval'   => self::minute_interval_seconds( (string) ( $form['intervalTime'] ?? '' ) ),
 			'mattributes'       => $mattributes,
 			'prefix'            => $prefixes,
 			'type'              => $types,
@@ -2364,6 +2416,227 @@ class FeedEndpoint extends RestController {
 	}
 
 	/**
+	 * Allowed minute-interval picker codes → seconds (Pro).
+	 *
+	 * Whitelisted so a hand-crafted request can't schedule arbitrary
+	 * sub-minute churn; anything not in the map (including all hour codes)
+	 * returns '' — which resolve_interval() ignores.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param string $code intervalTime form code ('m15', '24', …).
+	 * @return int|string Seconds for a known minute code, '' otherwise.
+	 */
+	private static function minute_interval_seconds( string $code ) {
+		$map = array(
+			'm5'  => 5 * MINUTE_IN_SECONDS,
+			'm15' => 15 * MINUTE_IN_SECONDS,
+			'm30' => 30 * MINUTE_IN_SECONDS,
+			'm45' => 45 * MINUTE_IN_SECONDS,
+		);
+
+		return $map[ $code ] ?? '';
+	}
+
+	/**
+	 * Reject minute-interval codes when the Pro gate is closed.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param array $form makeFeedForm from the request.
+	 * @return string '' when allowed, else the error message.
+	 */
+	private function minute_interval_gate_error( array $form ): string {
+		$code = (string) ( $form['intervalTime'] ?? '' );
+		if ( '' === (string) self::minute_interval_seconds( $code ) ) {
+			return '';
+		}
+		if ( \CTXFeed\V8\Core\FeatureGate::has( 'short_update_intervals' ) ) {
+			return '';
+		}
+
+		return __( 'Minute-level update intervals are a Pro feature. Choose an hourly interval, or upgrade to CTX Feed Pro.', 'woo-feed' );
+	}
+
+	/**
+	 * Per-row completeness check for the mapping table (BUG-0083 / #make-feed
+	 * required fields, owner decision 2026-09-10).
+	 *
+	 * Every row must name a channel attribute (`mattribute`) AND carry a
+	 * value source: the mapped product attribute for `type=attribute` rows,
+	 * or a non-empty literal for `type=pattern` (Text) rows. Half-empty rows
+	 * previously saved silently and rendered invalid no-tag-name XML
+	 * elements. Runs on BOTH save paths (create + full update), which the
+	 * MCP create-feed/update-feed abilities also go through.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param array $rules feedRules row array from the request.
+	 * @return string '' when complete, else a message naming the rows.
+	 */
+	private function incomplete_rows_message( array $rules ): string {
+		$problems = array();
+		$position = 0;
+
+		foreach ( $rules as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+			++$position;
+
+			$row_problems = array();
+			if ( '' === trim( (string) ( $row['mattribute'] ?? '' ) ) ) {
+				$row_problems[] = __( 'channel attribute', 'woo-feed' );
+			}
+
+			$type = (string) ( $row['type'] ?? 'attribute' );
+			if ( 'attribute' === $type ) {
+				if ( '' === trim( (string) ( $row['attribute'] ?? '' ) ) ) {
+					$row_problems[] = __( 'value attribute', 'woo-feed' );
+				}
+			} elseif ( '' === trim( (string) ( $row['default'] ?? '' ) ) ) {
+				$row_problems[] = __( 'text value', 'woo-feed' );
+			}
+
+			if ( ! empty( $row_problems ) ) {
+				$problems[] = sprintf(
+					/* translators: 1: row number, 2: missing field list. */
+					__( 'row %1$d is missing: %2$s', 'woo-feed' ),
+					$position,
+					implode( ', ', $row_problems )
+				);
+			}
+		}
+
+		if ( empty( $problems ) ) {
+			return '';
+		}
+
+		return sprintf(
+			/* translators: %s: per-row problem list. */
+			__( 'Mapping incomplete — %s. Every row needs a channel attribute and a value (or remove the row).', 'woo-feed' ),
+			implode( '; ', $problems )
+		);
+	}
+
+	/**
+	 * Debug one product against one feed — stage-by-stage pipeline verdicts.
+	 *
+	 * The support answer to "why is product X wrong / missing in feed Y":
+	 * runs the REAL generation machinery for a single product and reports
+	 * (1) whether the feed's product query selects the id, (2) whether the
+	 * filter stage keeps it and WHICH filter dropped it, and (3) the
+	 * resolved, transformed and merchant-mapped row — even for excluded
+	 * products, so wrong values and exclusions are diagnosable in one call.
+	 * Read-only: nothing is written, scheduled, or cached. Exposed as the
+	 * ctxfeed/debug-feed-product MCP read ability.
+	 *
+	 * The query stage runs the feed's full id query — acceptable for a
+	 * support/debug action, never on the generation path.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param \WP_REST_Request $request REST request object.
+	 * @return \WP_REST_Response
+	 */
+	public function debug_feed_product( \WP_REST_Request $request ): \WP_REST_Response {
+		$feed = $this->find_feed( $request->get_param( 'id' ) );
+		if ( ! $feed ) {
+			return $this->error( __( 'Feed not found.', 'woo-feed' ), 404 );
+		}
+
+		$product_id = (int) $request->get_param( 'product_id' );
+		$product    = wc_get_product( $product_id );
+		if ( ! $product instanceof \WC_Product ) {
+			return $this->error( __( 'Product not found.', 'woo-feed' ), 404 );
+		}
+
+		$container = Container::get_instance();
+
+		// phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Single-line @var type hint for static analysis.
+		/** @var \CTXFeed\V8\Feed\FeedManager $manager */
+		$manager = $container->resolve( 'feed.manager' );
+		$config  = $manager->get_config( $feed['slug'] );
+		if ( ! $config ) {
+			return $this->error( __( 'Feed configuration could not be loaded.', 'woo-feed' ), 500 );
+		}
+
+		// Same mapping augmentation generation applies (identifier_exists etc.)
+		// so the debugged row matches what the real feed would ship.
+		$config = \CTXFeed\V8\Channel\AutoAttributes::apply( $config );
+
+		$snapshot = array(
+			'id'                 => $product->get_id(),
+			'type'               => $product->get_type(),
+			'status'             => $product->get_status(),
+			'catalog_visibility' => $product->get_catalog_visibility(),
+			'stock_status'       => $product->get_stock_status(),
+			'price'              => (string) $product->get_price(),
+			'sku'                => (string) $product->get_sku(),
+			'parent_id'          => $product->get_parent_id(),
+		);
+
+		// Stage 1 — product query selection (post_status/type/include-exclude
+		// lists and query-level push-downs).
+		$query_ids         = $container->resolve( 'product.query' )->get_ids( $config );
+		$selected_by_query = in_array( $product_id, array_map( 'intval', $query_ids ), true );
+
+		// Stage 2 — filter verdict, capturing WHICH filter excluded via the
+		// same action the batch loop tallies. Run even for unselected
+		// products: both verdicts together explain the exclusion.
+		\CTXFeed\V8\Product\ProductMemo::clear();
+		\CTXFeed\V8\Product\ProductMemo::remember_current( $product );
+
+		$excluded_by     = array();
+		$ctx_debug_tally = static function ( $filter_name ) use ( &$excluded_by ) {
+			$excluded_by[] = (string) $filter_name;
+		};
+		add_action( 'ctxfeed_filter_excluded', $ctx_debug_tally, 10, 1 );
+		try {
+			$passed_filters = (bool) $container->resolve( 'filter.manager' )->should_include( $product, $config );
+		} finally {
+			remove_action( 'ctxfeed_filter_excluded', $ctx_debug_tally, 10 );
+		}
+
+		// Stage 3 — resolve → transform → merchant mapping. Always attempted
+		// (an excluded product's wrong values are still worth seeing); a throw
+		// here is itself the diagnosis for per-product skip errors.
+		$resolved = null;
+		$output   = null;
+		$error    = null;
+		try {
+			$resolved    = $container->resolve( 'product.repository' )->resolve_single( $product, $config );
+			$transformed = $container->resolve( 'transform.pipeline' )->apply( $resolved, $config );
+			$provider    = $config->get_provider();
+			$format      = strtolower( (string) $config->get( 'feedType', 'xml' ) );
+			$output      = $container->resolve( 'channel.attribute_mapper' )->map_product_data( $transformed, $provider, $format );
+		} catch ( \Throwable $e ) {
+			$error = array(
+				'type'    => get_class( $e ),
+				'message' => $e->getMessage(),
+			);
+		}
+
+		return $this->success(
+			array(
+				'feed'              => array(
+					'slug'      => $feed['slug'],
+					'provider'  => $feed['provider'],
+					'file_type' => $feed['file_type'],
+				),
+				'product'           => $snapshot,
+				'selected_by_query' => $selected_by_query,
+				'passed_filters'    => $passed_filters,
+				'excluded_by'       => array_values( array_unique( $excluded_by ) ),
+				'would_be_in_feed'  => $selected_by_query && $passed_filters && null === $error,
+				'resolved'          => $resolved,
+				'output'            => $output,
+				'error'             => $error,
+			)
+		);
+	}
+
+	/**
 	 * Find a feed by option_id (numeric) or option_name/slug.
 	 *
 	 * @since 8.0.0
@@ -2572,6 +2845,12 @@ class FeedEndpoint extends RestController {
 	private function display_interval( array $config ): string {
 		if ( ! $this->is_auto_update_on( $config ) ) {
 			return '—';
+		}
+
+		$seconds = \CTXFeed\V8\Feed\FeedScheduler::effective_interval_seconds( $config );
+		if ( $seconds < ( defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600 ) ) {
+			/* translators: %d: number of minutes */
+			return sprintf( __( 'Every %d Minutes', 'woo-feed' ), (int) round( $seconds / 60 ) );
 		}
 
 		return $this->format_interval( (string) \CTXFeed\V8\Feed\FeedScheduler::effective_interval_hours( $config ) );

@@ -1272,12 +1272,14 @@ class AttributeResolver {
 					return $this->dynamic_attr->resolve( $product, $attr, $config, $merchant_attr );
 				}
 
-				// ACF fields (the `acf_fields_` dropdown prefix) resolve through
-				// the custom-field resolver — which strips the prefix and calls
-				// get_field() — regardless of the mapping type the UI saved
-				// ('attribute' or 'custom_field'). Without this they fell through
-				// to bare get_post_meta( 'acf_fields_…' ) and shipped empty.
-				if ( 0 === strpos( $attr, 'acf_fields_' ) ) {
+				// Custom-field plugin prefixes (acf_fields_ / toolset_fields_)
+				// resolve through the custom-field resolver —
+				// which strips the prefix and calls the owning plugin's API —
+				// regardless of the mapping type the UI saved ('attribute' or
+				// 'custom_field'). Without this they fell through to bare
+				// get_post_meta( '{prefix}…' ) and shipped empty.
+				if ( 0 === strpos( $attr, 'acf_fields_' )
+					|| 0 === strpos( $attr, 'toolset_fields_' ) ) {
 					return $this->custom_field->resolve( $product, $attr, $config );
 				}
 

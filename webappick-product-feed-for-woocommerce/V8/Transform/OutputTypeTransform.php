@@ -272,8 +272,14 @@ class OutputTypeTransform implements TransformInterface {
 	 */
 	private function resolve_number_format( Config $config ): array {
 		$decimals_raw = $config->get( 'decimals', '' );
-		$decimals     = ( '' === $decimals_raw || ! is_numeric( $decimals_raw ) )
-			? ( function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2 )
+		// Default is a HARDCODED 2, not wc_get_price_decimals(): V5's Format
+		// Price was number_format($v, 2, '.', '') verbatim, and the owner
+		// decision (2026-09-11) is that prices ship RAW two-decimal
+		// ("1313133.33" / "12.33") unless the user sets a custom number
+		// format in the Filter tab — the store's display-decimals setting
+		// (0, 3, …) must never leak into feeds.
+		$decimals = ( '' === $decimals_raw || ! is_numeric( $decimals_raw ) )
+			? 2
 			: (int) $decimals_raw;
 
 		// MACHINE defaults, never WooCommerce's DISPLAY separators — the same

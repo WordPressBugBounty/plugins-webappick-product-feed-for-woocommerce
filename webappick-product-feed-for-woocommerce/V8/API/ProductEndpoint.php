@@ -271,6 +271,17 @@ class ProductEndpoint extends RestController {
 			) 
 		);
 
+		// Store profile — aggregate store-shape summary (no PII).
+		register_rest_route(
+			$this->namespace,
+			'/products/store-profile',
+			array(
+				'methods'             => \WP_REST_Server::READABLE,
+				'callback'            => array( $this, 'get_store_profile' ),
+				'permission_callback' => array( $this, 'permission_check' ),
+			)
+		);
+
 		// Product taxonomies — list WooCommerce product taxonomies with terms.
 		register_rest_route(
 			$this->namespace,
@@ -1137,6 +1148,133 @@ class ProductEndpoint extends RestController {
 	}
 
 	/**
+	 * Aggregate store-shape profile for feed configuration.
+	 *
+	 * Counts and ranges an AI (or the admin UI) needs to pick sensible
+	 * channels, filters and mappings without paging through products:
+	 * status/type/stock counts, price range, currency and units, and the
+	 * product taxonomies in play. Deliberately contains NO order, customer
+	 * or other PII data — this endpoint is also exposed as the
+	 * ctxfeed/get-store-profile MCP read ability (owner decision 2026-09-10).
+	 *
+	 * All aggregates go through WP/WC built-ins (wp_count_posts, get_terms,
+	 * WC_Product_Query totals) — no raw product SQL.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param \WP_REST_Request $request REST request object.
+	 * @return \WP_REST_Response
+	 */
+	public function get_store_profile( \WP_REST_Request $request ): \WP_REST_Response { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.Found, VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable -- $request is required by the REST callback signature.
+		$product_counts   = (array) wp_count_posts( 'product' );
+		$variation_counts = (array) wp_count_posts( 'product_variation' );
+
+		$type_counts = array();
+		$type_terms  = get_terms(
+			array(
+				'taxonomy'   => 'product_type',
+				'hide_empty' => true,
+			)
+		);
+		if ( is_array( $type_terms ) ) {
+			foreach ( $type_terms as $term ) {
+				$type_counts[ $term->slug ] = (int) $term->count;
+			}
+		}
+
+		$stock_counts = array();
+		foreach ( array( 'instock', 'outofstock', 'onbackorder' ) as $stock_status ) {
+			$result                        = wc_get_products(
+				array(
+					'status'       => 'publish',
+					'stock_status' => $stock_status,
+					'limit'        => 1,
+					'paginate'     => true,
+					'return'       => 'ids',
+				)
+			);
+			$stock_counts[ $stock_status ] = is_object( $result ) ? (int) $result->total : 0;
+		}
+
+		$price_range = array(
+			'min' => null,
+			'max' => null,
+		);
+		foreach ( array(
+			'min' => 'ASC',
+			'max' => 'DESC',
+		) as $bound => $order ) {
+			// WC_Product_Query has no price ordering; order on WooCommerce's
+			// canonical `_price` lookup meta instead (WP_Query API, no raw SQL).
+			// phpcs:disable WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- One LIMIT-1 keyed meta ordering per bound on an admin/MCP diagnostic endpoint, never on the feed path.
+			$extreme = new \WP_Query(
+				array(
+					'post_type'      => 'product',
+					'post_status'    => 'publish',
+					'posts_per_page' => 1,
+					'fields'         => 'ids',
+					'no_found_rows'  => true,
+					'orderby'        => 'meta_value_num',
+					'meta_key'       => '_price',
+					'order'          => $order,
+					'meta_query'     => array(
+						array(
+							'key'     => '_price',
+							'value'   => '',
+							'compare' => '!=',
+						),
+					),
+				)
+			);
+			// phpcs:enable WordPress.DB.SlowDBQuery.slow_db_query_meta_key, WordPress.DB.SlowDBQuery.slow_db_query_meta_query
+			if ( ! empty( $extreme->posts ) ) {
+				$extreme_product = wc_get_product( (int) $extreme->posts[0] );
+				if ( $extreme_product instanceof \WC_Product && '' !== (string) $extreme_product->get_price() ) {
+					$price_range[ $bound ] = (float) $extreme_product->get_price();
+				}
+			}
+		}
+
+		$taxonomy_counts = array();
+		foreach ( get_object_taxonomies( 'product', 'objects' ) as $slug => $taxonomy ) {
+			$count                    = wp_count_terms( array( 'taxonomy' => $slug ) );
+			$taxonomy_counts[ $slug ] = array(
+				'label' => (string) $taxonomy->label,
+				'terms' => is_wp_error( $count ) ? 0 : (int) $count,
+			);
+		}
+
+		return $this->success(
+			array(
+				'products'   => array(
+					'by_status'  => array(
+						'publish' => (int) ( $product_counts['publish'] ?? 0 ),
+						'draft'   => (int) ( $product_counts['draft'] ?? 0 ),
+						'pending' => (int) ( $product_counts['pending'] ?? 0 ),
+						'private' => (int) ( $product_counts['private'] ?? 0 ),
+					),
+					'by_type'    => $type_counts,
+					'by_stock'   => $stock_counts,
+					'variations' => (int) ( $variation_counts['publish'] ?? 0 ),
+					'on_sale'    => count( wc_get_product_ids_on_sale() ),
+					'featured'   => count( wc_get_featured_product_ids() ),
+				),
+				'pricing'    => array(
+					'currency'           => get_woocommerce_currency(),
+					'price_range'        => $price_range,
+					'prices_include_tax' => wc_prices_include_tax(),
+					'tax_enabled'        => wc_tax_enabled(),
+				),
+				'units'      => array(
+					'weight'    => (string) get_option( 'woocommerce_weight_unit' ),
+					'dimension' => (string) get_option( 'woocommerce_dimension_unit' ),
+				),
+				'taxonomies' => $taxonomy_counts,
+			)
+		);
+	}
+
+	/**
 	 * Get WooCommerce product taxonomies with their terms.
 	 *
 	 * Delegates to TaxonomyRegistry for all taxonomy discovery and term
@@ -1153,7 +1291,11 @@ class ProductEndpoint extends RestController {
 		$container         = Container::get_instance();
 		$registry          = $container->resolve( 'product.taxonomy_registry' );
 		$specific_taxonomy = $request->get_param( 'taxonomy' );
-		$hide_empty        = $request->get_param( 'hide_empty' );
+		// Cast, don't trust the route-arg default: requests built outside the
+		// registered REST route (the MCP ability path constructs a bare
+		// WP_REST_Request) carry no arg defaults, and a null here fataled
+		// TaxonomyRegistry's bool-typed parameter.
+		$hide_empty = (bool) $request->get_param( 'hide_empty' );
 
 		// If a specific taxonomy is requested, return just that one.
 		if ( ! empty( $specific_taxonomy ) ) {

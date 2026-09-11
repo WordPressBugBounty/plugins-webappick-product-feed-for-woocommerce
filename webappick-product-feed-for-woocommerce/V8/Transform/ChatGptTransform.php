@@ -55,8 +55,35 @@ class ChatGptTransform implements TransformInterface {
 		$product_data = $this->transform_availability( $product_data );
 		$product_data = $this->transform_flags( $product_data );
 		$product_data = $this->append_currency( $product_data, $config, array( 'price', 'sale_price' ) );
+		$product_data = $this->strip_thousand_separators( $product_data, array( 'price', 'sale_price' ) );
 
 		return $product_data;
+	}
+
+	/**
+	 * Strip thousand-separator commas from money values (CBT-575).
+	 *
+	 * OpenAI rejects "1,099.90 RON" as misformatted (razvan199's first
+	 * report shape). Only grouping commas are removed — a comma followed
+	 * by exactly three digits — so "1,099.90 RON" → "1099.90 RON" while
+	 * decimal commas ("1099,90") are left for the number-format settings
+	 * to own.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param array    $data  Product data.
+	 * @param string[] $attrs Money attribute keys.
+	 * @return array Modified product data.
+	 */
+	private function strip_thousand_separators( array $data, array $attrs ): array {
+		foreach ( $attrs as $attr ) {
+			if ( empty( $data[ $attr ] ) || ! is_scalar( $data[ $attr ] ) ) {
+				continue;
+			}
+			$data[ $attr ] = preg_replace( '/(\d),(?=\d{3}(\D|$))/', '$1', (string) $data[ $attr ] );
+		}
+
+		return $data;
 	}
 
 	/**

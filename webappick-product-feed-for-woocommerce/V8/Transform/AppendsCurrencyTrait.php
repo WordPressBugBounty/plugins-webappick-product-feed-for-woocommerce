@@ -73,19 +73,23 @@ trait AppendsCurrencyTrait {
 				continue;
 			}
 
-			// Value already carries a trailing ISO-4217 code (3 uppercase
-			// letters) that DIFFERS from the feed currency — e.g. a ' USD'
-			// suffix baked into the price row when the feed was created, before
-			// the merchant switched the feed currency to EUR. The price VALUE is
-			// converted upstream by the currency-switcher compat; only the frozen
-			// label is stale. Rewrite the label to the feed currency so existing
-			// feeds render correctly WITHOUT a re-save (V5 parity: the price label
-			// is always the feed currency). A matching code, or a non-currency
-			// suffix like "/kg", is left untouched — this stays idempotent and
-			// never double-formats or clobbers a deliberate unit.
-			if ( 1 === preg_match( '/^(.*\S)\s+([A-Z]{3})$/', $value, $matches )
-				&& 0 !== strcasecmp( $matches[2], $currency ) ) {
-				$data[ $attr ] = $matches[1] . ' ' . $currency;
+			// Value carries a trailing ISO-4217 code (3 uppercase letters)
+			// after a digit — WITH or WITHOUT the space. Two legacy shapes
+			// land here: a ' USD' label frozen into the price row before the
+			// merchant switched the feed currency (rewrite the label — the
+			// VALUE is converted upstream by the currency-switcher compat),
+			// and CBT-575's glued "35.90RON" from configs whose currency
+			// suffix was trimmed by the pre-PROD-FRD-10.12 sanitizer —
+			// OpenAI rejects the missing space, and Google feeds showed the
+			// same shape ("62.25AUD", #69086). Either way the money format
+			// every channel spec mandates is "<number> <CODE>": rejoin with
+			// exactly one space, reconciling a stale label to the feed
+			// currency. Requiring a digit before the code keeps deliberate
+			// non-currency suffixes ("/kg") and plain text untouched;
+			// already-correct values rewrite to themselves (idempotent).
+			if ( 1 === preg_match( '/^(.*\d)\s*([A-Z]{3})$/', $value, $matches ) ) {
+				$code          = ( 0 === strcasecmp( $matches[2], $currency ) ) ? $matches[2] : $currency;
+				$data[ $attr ] = $matches[1] . ' ' . $code;
 			}
 		}
 

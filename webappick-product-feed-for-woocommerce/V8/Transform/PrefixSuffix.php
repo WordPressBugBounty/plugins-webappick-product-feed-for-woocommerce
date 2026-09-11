@@ -75,11 +75,48 @@ class PrefixSuffix implements TransformInterface {
 			}
 
 			if ( isset( $suffixes[ $lookup_attr ] ) && '' !== $suffixes[ $lookup_attr ] ) {
-				$value .= $suffixes[ $lookup_attr ];
+				$value .= $this->currency_spaced_suffix( $suffixes[ $lookup_attr ] );
 			}
 		}
 
 		return $product_data;
+	}
+
+	/**
+	 * Prepend the space every money format mandates when the suffix is a
+	 * bare currency code (CBT-575 — V5 parity restored).
+	 *
+	 * V5's process_prefix_suffix() carried exactly this heal: a suffix
+	 * found in get_woocommerce_currencies() was appended as ' ' . $suffix
+	 * ("Add space before suffix if attribute contain price"), which is why
+	 * V5 shipped "35.90 RON" even from configs whose ' RON' suffix the
+	 * save path had trimmed. The V8 rewrite dropped the branch, and every
+	 * such config started shipping "35.90RON" — rejected by OpenAI and
+	 * wrong on Google too ("62.25AUD", #69086). Decoration runs before ANY
+	 * template renders, so CSV/TSV/TXT/XML all heal, on every channel.
+	 *
+	 * Divergence from V5, on purpose: a suffix that already carries its
+	 * own leading whitespace (' RON', the correct post-PROD-FRD-10.12
+	 * shape) is appended verbatim — V5 would have double-spaced it.
+	 * Without WooCommerce loaded, a bare 3-letter uppercase code is the
+	 * fallback heuristic.
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param string $suffix Configured suffix.
+	 *
+	 * @return string Suffix to append, currency-spaced when applicable.
+	 */
+	private function currency_spaced_suffix( string $suffix ): string {
+		if ( ltrim( $suffix ) !== $suffix ) {
+			return $suffix;
+		}
+
+		$is_currency = function_exists( 'get_woocommerce_currencies' )
+			? array_key_exists( trim( $suffix ), get_woocommerce_currencies() )
+			: 1 === preg_match( '/^[A-Z]{3}$/', trim( $suffix ) );
+
+		return $is_currency ? ' ' . $suffix : $suffix;
 	}
 
 	/**

@@ -64,6 +64,17 @@ class FeatureGate {
 		// The `acf_fields_` prefix + value resolution stay in Free (existing
 		// feeds keep resolving); only listing ACF fields to map is Pro. PROD-FRD-10.1.
 		'acf_attributes',
+		// Toolset Types field enumeration into the picker — same split as
+		// ACF: the toolset_fields_ prefix and value resolution stay in Free
+		// (existing feeds keep resolving); only LISTING the fields to map
+		// is Pro. Toolset-registered product taxonomies need no gate — they
+		// flow through the normal taxonomy dropdown. PROD-FRD-10.1.
+		'toolset_attributes',
+		// Minute-level feed update intervals (5/15/30/45m) in the Make Feed
+		// interval picker — restores the V5 Pro extension that was silently
+		// lost when pro-hooks.php got commented out (V5 Pro ≥7.x shipped
+		// without it). Hour intervals stay free.
+		'short_update_intervals',
 		// Dashboard Pro surfaces (analytics range + Pro-only widgets) —
 		// checked by the Dashboard endpoints, unlocked by Pro.
 		'dashboard_analytics',

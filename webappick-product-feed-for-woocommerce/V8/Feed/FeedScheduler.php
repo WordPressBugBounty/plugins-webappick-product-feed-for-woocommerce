@@ -994,8 +994,9 @@ class FeedScheduler {
 			? $feed_data['feedrules']
 			: array();
 
-		// 1. Per-feed override (V8-native, seconds). Written by nothing today,
-		// but honoured first if a future UI sets it.
+		// 1. Per-feed override (V8-native, seconds). Written by the Make Feed
+		// minute-interval picker (Pro, 8.0.19) — FeedEndpoint persists the
+		// m5/m15/m30/m45 codes here as seconds; hour codes clear it.
 		if ( isset( $rules['update_interval'] ) ) {
 			$per_feed = (int) $rules['update_interval'];
 			if ( $per_feed > 0 ) {
@@ -1039,9 +1040,25 @@ class FeedScheduler {
 	 * @return int Hours (minimum 1).
 	 */
 	public static function effective_interval_hours( array $feed_data ): int {
-		$seconds = ( new self() )->resolve_interval( $feed_data );
+		$seconds = self::effective_interval_seconds( $feed_data );
 
 		return max( 1, (int) round( $seconds / ( defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600 ) ) );
+	}
+
+	/**
+	 * The interval a feed WILL run at, in seconds — for display.
+	 *
+	 * Same precedence as resolve_interval(), so the Manage Feeds table and
+	 * the scheduler can never disagree. Sub-hour values come from the
+	 * minute-interval picker (Pro, `feedrules.update_interval`).
+	 *
+	 * @since 8.0.19
+	 *
+	 * @param array $feed_data Unserialised `wf_feed_{slug}` option.
+	 * @return int Seconds (minimum 60).
+	 */
+	public static function effective_interval_seconds( array $feed_data ): int {
+		return max( 60, ( new self() )->resolve_interval( $feed_data ) );
 	}
 
 	/**

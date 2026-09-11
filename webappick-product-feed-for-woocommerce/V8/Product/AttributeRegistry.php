@@ -197,6 +197,17 @@ class AttributeRegistry {
 			}
 		}
 
+		// Toolset Types fields — same split as ACF: only the picker LISTING
+		// is Pro-gated; the toolset_fields_ prefix + resolution live in Free
+		// (CustomFieldResolver). Toolset-registered product taxonomies flow
+		// through get_taxonomy_dropdown() with no gate. @gate toolset_attributes.
+		if ( FeatureGate::has( 'toolset_attributes' ) ) {
+			$toolset = $this->get_toolset_attributes();
+			if ( ! empty( $toolset['options'] ) ) {
+				$attributes[] = $toolset;
+			}
+		}
+
 		// Custom fields & post metas.
 		$metas = $this->get_post_meta_attributes();
 		if ( ! empty( $metas['options'] ) ) {
@@ -841,6 +852,45 @@ class AttributeRegistry {
 
 		return array(
 			'optionGroup' => __( 'Advanced Custom Fields (ACF)', 'woo-feed' ),
+			'options'     => $options,
+		);
+	}
+
+	/**
+	 * Toolset Types field attributes (`toolset_fields_{slug}`).
+	 *
+	 * Field definitions live in the `wpcf-fields` option (Toolset stores it
+	 * as a serialized string inside the option value on some versions, hence
+	 * the double unserialize guard). Listing is Pro-gated by the caller;
+	 * resolution stays in Free (CustomFieldResolver::resolve_toolset()).
+	 *
+	 * @since 8.0.19
+	 * @return array
+	 */
+	private function get_toolset_attributes(): array {
+		$options = array();
+
+		if ( function_exists( 'types_render_field' ) || defined( 'WPCF_VERSION' ) || defined( 'TYPES_VERSION' ) ) {
+			$fields = get_option( 'wpcf-fields', array() );
+			if ( is_string( $fields ) ) {
+				$fields = maybe_unserialize( $fields );
+			}
+			if ( is_array( $fields ) ) {
+				foreach ( $fields as $slug => $field ) {
+					if ( '' === (string) $slug ) {
+						continue;
+					}
+					$label = is_array( $field ) && ! empty( $field['name'] )
+						? (string) $field['name']
+						: (string) $slug;
+
+					$options[ 'toolset_fields_' . $slug ] = $label;
+				}
+			}
+		}
+
+		return array(
+			'optionGroup' => __( 'Toolset Types Fields', 'woo-feed' ),
 			'options'     => $options,
 		);
 	}
