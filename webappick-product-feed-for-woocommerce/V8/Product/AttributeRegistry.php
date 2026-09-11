@@ -711,7 +711,7 @@ class AttributeRegistry {
 			    meta_key LIKE 'attribute_%'
 			    AND meta_key NOT LIKE 'attribute_pa_%'
 			)";
-		$local_attrs = $wpdb->get_col( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- $sql is a fixed literal built only from $wpdb table properties, so there is nothing to prepare. Admin-only dropdown catalog: there is no WP API for "distinct meta keys in use", and the result is served from a 5-minute transient by ProductEndpoint::get_mapping_attributes(), so this runs at most once per cache window and never on the feed-generation path.
+		$local_attrs = $wpdb->get_col( $sql ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- $sql is a fixed literal built only from $wpdb table properties, so there is nothing to prepare. Admin-only dropdown catalog: there is no WP API for "distinct meta keys in use", and the result is served from a 5-minute transient by ProductEndpoint::get_mapping_attributes(), so this runs at most once per cache window and never on the feed-generation path.
 
 		foreach ( $local_attrs as $attr ) {
 			$clean                                      = str_replace( 'attribute_', '', $attr );
@@ -995,7 +995,7 @@ class AttributeRegistry {
 			$pattern_sql
 		);
 
-		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- $sql is assembled above with sprintf() from values already run through $wpdb->prepare()/esc_sql(). Admin-only dropdown catalog: there is no WP API for "distinct meta keys in use", and the result is served from a 5-minute transient by ProductEndpoint::get_mapping_attributes(), so this runs at most once per cache window and never on the feed-generation path.
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, PluginCheck.Security.DirectDB.UnescapedDBParameter -- $sql is assembled above with sprintf() from values already run through $wpdb->prepare()/esc_sql(). Admin-only dropdown catalog: there is no WP API for "distinct meta keys in use", and the result is served from a 5-minute transient by ProductEndpoint::get_mapping_attributes(), so this runs at most once per cache window and never on the feed-generation path.
 		$data = $wpdb->get_results( $sql );
 
 		if ( ! empty( $data ) ) {

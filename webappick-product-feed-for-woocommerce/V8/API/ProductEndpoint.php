@@ -984,7 +984,7 @@ class ProductEndpoint extends RestController {
 		$statuses = $this->filter_count_statuses();
 		$in       = "'" . implode( "','", array_map( 'esc_sql', $statuses ) ) . "'";
 
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
 		$count = $wpdb->get_var(
 			"SELECT COUNT(DISTINCT p.ID)
 			 FROM {$wpdb->posts} p
@@ -1014,7 +1014,7 @@ class ProductEndpoint extends RestController {
 		$statuses = $this->filter_count_statuses();
 		$in       = "'" . implode( "','", array_map( 'esc_sql', $statuses ) ) . "'";
 
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
 		$count = $wpdb->get_var(
 			"SELECT COUNT(*) FROM {$wpdb->posts} p
 			 WHERE p.post_type = 'product'
@@ -1051,7 +1051,7 @@ class ProductEndpoint extends RestController {
 		$statuses = $this->filter_count_statuses();
 		$in       = "'" . implode( "','", array_map( 'esc_sql', $statuses ) ) . "'";
 
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
 		$count = $wpdb->get_var(
 			"SELECT COUNT(*) FROM {$wpdb->posts}
 			 WHERE post_type = 'product'
@@ -1099,7 +1099,7 @@ class ProductEndpoint extends RestController {
 		$statuses = $this->filter_count_statuses();
 		$in       = "'" . implode( "','", array_map( 'esc_sql', $statuses ) ) . "'";
 
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
 		$count = $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT COUNT(DISTINCT p.ID) FROM {$wpdb->posts} p
@@ -1129,7 +1129,7 @@ class ProductEndpoint extends RestController {
 		$statuses = $this->filter_count_statuses();
 		$in       = "'" . implode( "','", array_map( 'esc_sql', $statuses ) ) . "'";
 
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- Aggregate COUNT diagnostic; $in is a fixed post-status list escaped with esc_sql(), and results are cheap enough not to cache.
 		$count = $wpdb->get_var(
 			"SELECT COUNT(*) FROM {$wpdb->posts} p
 			 WHERE p.post_type = 'product'

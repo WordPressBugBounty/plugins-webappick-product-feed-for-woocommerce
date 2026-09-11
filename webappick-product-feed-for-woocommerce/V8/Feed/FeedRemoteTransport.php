@@ -421,7 +421,7 @@ class FeedRemoteTransport {
 
 			$wrapper_path = "ssh2.sftp://{$sftp}{$path}";
 			$is_dir       = @is_dir( $wrapper_path );
-			$is_writable  = @is_writable( $wrapper_path );
+			$is_writable  = @wp_is_writable( $wrapper_path );
 			$this->log_info( $feed_id, 'Diagnostic: is_dir(remote path) = ' . ( $is_dir ? 'true' : 'false' ) );
 			$this->log_info( $feed_id, 'Diagnostic: is_writable(remote path) = ' . ( $is_writable ? 'true' : 'false' ) );
 

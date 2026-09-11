@@ -695,6 +695,7 @@ class SupportEndpoint extends RestController {
 			}
 
 			$dest = trailingslashit( get_temp_dir() ) . 'ctxfeed-support-' . wp_generate_password( 8, false ) . '-' . $safe_name;
+			// phpcs:ignore Generic.PHP.ForbiddenFunctions.Found, WordPressVIPMinimum.Functions.RestrictedFunctions.move_uploaded_file_move_uploaded_file -- Stages an admin-submitted support-ticket attachment from PHP's upload tmp into get_temp_dir() under a random name; move_uploaded_file() atomically validates the file came from THIS request's upload, size/type are checked above, and the copy is deleted after the ticket sends.
 			if ( ! move_uploaded_file( $tmp, $dest ) ) {
 				continue;
 			}

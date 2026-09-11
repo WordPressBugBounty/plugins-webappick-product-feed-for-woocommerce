@@ -176,7 +176,7 @@ class Sanitizer {
 		// Strip <script>/<style> blocks and any HTML tag (XSS defence).
 		// preg_replace on failure returns null → coerce back to string.
 		$value = preg_replace( '@<(script|style)[^>]*?>.*?</\1>@si', '', $value ) ?? $value;
-		// phpcs:ignore WordPressVIPMinimum.Functions.StripTags.StripTagsOneParameter -- The script/style blocks the sniff worries about are already stripped by the preg_replace on the line above (the same pattern wp_strip_all_tags() uses). wp_strip_all_tags() additionally trim()s, which would defeat this method's entire contract of byte-preserving leading/trailing whitespace.
+		// phpcs:ignore WordPressVIPMinimum.Functions.StripTags.StripTagsOneParameter, WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- The script/style blocks the sniff worries about are already stripped by the preg_replace on the line above (the same pattern wp_strip_all_tags() uses). wp_strip_all_tags() additionally trim()s, which would defeat this method's entire contract of byte-preserving leading/trailing whitespace.
 		$value = strip_tags( $value );
 
 		// Null-byte removal — safe defence, never present in a legit

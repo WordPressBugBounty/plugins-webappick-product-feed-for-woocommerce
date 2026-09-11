@@ -168,7 +168,7 @@ class SFTPConnection {
 	 */
 	public function delete_file( $remote_file ) {
 		$sftp = $this->sftp;
-		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_unlink, WordPress.WP.AlternativeFunctions.file_system_operations_unlink -- Removes the probe file through the ssh2.sftp:// stream wrapper on the merchant's remote server; WP_Filesystem has no SFTP equivalent.
+		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_unlink, WordPress.WP.AlternativeFunctions.file_system_operations_unlink, WordPress.WP.AlternativeFunctions.unlink_unlink -- Removes the probe file through the ssh2.sftp:// stream wrapper on the merchant's remote server; WP_Filesystem has no SFTP equivalent.
 		unlink( "ssh2.sftp://$sftp$remote_file" );
 	}
 }

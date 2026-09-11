@@ -11,6 +11,12 @@
 	 * @version    6.5.48
 	 */
 
+// Exit if accessed directly.
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+
 if ( ! function_exists( 'add_action' ) ) {
 	die();
 }
@@ -137,7 +143,7 @@ if ( ! function_exists( 'add_action' ) ) {
 		<div class="our_plugin_card_one_top">
 		<img class="our_plugin_card_one_top_image" src="<?php echo esc_url( WOO_FEED_PLUGIN_URL ); ?>V8/Admin/images/our_plugins/challan-logo.png" alt="<?php esc_attr_e( 'Add challan logo in our_plugin page', 'woo-feed' ); ?>">
 		<div class="our_plugin_card_one_top_review">
-		<h3>Reviews on <a target="_blank" href="https://wordpress.org/support/plugin/webappick-pdf-invoice-for-woocommerce/reviews/?filter=5">wp.org</a></h3>
+		<h3>Reviews on <a target="_blank" href="https://wordpress.org/support/plugin/webappick-pdf-invoice-for-woocommerce/reviews/">wp.org</a></h3>
 		<div class="rating_section">
 		<span class="dashicons star_one dashicons-star-filled"></span>
 		<span class="dashicons star_one dashicons-star-filled"></span>
@@ -176,7 +182,7 @@ if ( ! function_exists( 'add_action' ) ) {
 		<div class="our_plugin_card_two_top">
 		<img class="our_plugin_card_two_top_image" src="<?php echo esc_url( WOO_FEED_PLUGIN_URL ); ?>V8/Admin/images/our_plugins/disco-icon.png" alt="<?php esc_attr_e( 'Add Disco logo in our_plugin page', 'woo-feed' ); ?>">
 		<div class="our_plugin_card_two_top_review">
-		<h3>Reviews on <a target="_blank" href="https://wordpress.org/support/plugin/disco/reviews/?filter=5">wp.org</a></h3>
+		<h3>Reviews on <a target="_blank" href="https://wordpress.org/support/plugin/disco/reviews/">wp.org</a></h3>
 		<div class="rating_section_two">
 		<span class="dashicons dashicons-star-filled"></span>
 		<span class="dashicons dashicons-star-filled"></span>

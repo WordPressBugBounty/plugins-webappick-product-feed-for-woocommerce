@@ -11,6 +11,12 @@
 	 * @version    1.0.2
 	 */
 
+// Exit if accessed directly.
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+
 if ( ! function_exists( 'add_action' ) ) {
 	die();
 }

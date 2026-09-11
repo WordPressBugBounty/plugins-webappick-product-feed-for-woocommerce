@@ -3,6 +3,24 @@
  * Custom2Structure — Parses the user-supplied `feed_config_custom2` template
  * string into an element array consumed by Custom2Template.
  *
+ * @package    CTXFeed
+ * @subpackage V8/Template
+ * @since      8.0.0
+ * @implements TMPL-FRD-9.1
+ */
+
+namespace CTXFeed\V8\Template;
+
+use CTXFeed\V8\Core\Config;
+
+// Exit if accessed directly.
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/**
+ * Parses the `feed_config_custom2` template string.
+ *
  * Verbatim port of `V5\Structure\Custom2Structure::get_xml_structure()`.
  * The template string uses the V5 mini-DSL:
  *
@@ -46,24 +64,6 @@
  *   formatter[]     → list of [name] formatters between commas
  *   prefix / suffix → text outside the {…} placeholder on the same line
  *   start_code[]    → list of {…} placeholders extracted from the start tag
- *
- * @package    CTXFeed
- * @subpackage V8/Template
- * @since      8.0.0
- * @implements TMPL-FRD-9.1
- */
-
-namespace CTXFeed\V8\Template;
-
-use CTXFeed\V8\Core\Config;
-
-// Exit if accessed directly.
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
-
-/**
- * Parses the `feed_config_custom2` template string.
  *
  * @since 8.0.0
  */

@@ -619,7 +619,7 @@ class Custom2Template implements TemplateInterface {
 		// Sandbox the eval — extract scalars locally, then eval.
 		try {
 			extract( $variables, EXTR_OVERWRITE ); // phpcs:ignore WordPress.PHP.DontExtract -- CT2 templates declare their own variables for the {(return ...)} block; extract() is how V5 exposed them and the names are author-defined.
-			// phpcs:ignore Squiz.PHP.Eval.Discouraged, Generic.PHP.ForbiddenFunctions.FoundWithAlternative -- Owner-approved CT2 {(return ...)} evaluation of admin-authored template code; hardened with try/catch + scalar cast and disableable via ctxfeed_custom2_eval_enabled.
+			// phpcs:ignore Squiz.PHP.Eval.Discouraged, Generic.PHP.ForbiddenFunctions.FoundWithAlternative, Generic.PHP.ForbiddenFunctions.Found -- Owner-approved CT2 {(return ...)} evaluation of admin-authored template code; hardened with try/catch + scalar cast and disableable via ctxfeed_custom2_eval_enabled.
 			$result = eval( $expression );
 		} catch ( \Throwable $e ) {
 			$result = '';

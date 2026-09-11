@@ -260,7 +260,7 @@ if ( ! class_exists( 'CTXFeed_Installer' ) ) {
 					// phpcs:ignore Generic.PHP.NoSilencedErrors, WordPress.PHP.NoSilencedErrors, WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Runs during activation, before WP_Filesystem credentials can be requested; the `@` suppresses the open warning on hosts where the uploads dir is not writable, and the `false !== $handle` check below is the real error handling.
 					$handle = @fopen( trailingslashit( $file['base'] ) . $file['file'], 'w' );
 					if ( false !== $handle ) {
-						// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fwrite -- Writes the index.html / .htaccess guards that keep the feed and log directories from being listed; WP_Filesystem is not available this early in activation.
+						// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fwrite, WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Writes the index.html / .htaccess guards that keep the feed and log directories from being listed; WP_Filesystem is not available this early in activation.
 						fwrite( $handle, $file['content'] );
 						// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the handle opened above; paired with the direct fopen() call.
 						fclose( $handle );

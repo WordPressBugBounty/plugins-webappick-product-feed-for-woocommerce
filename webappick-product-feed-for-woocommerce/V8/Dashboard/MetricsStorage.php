@@ -103,24 +103,24 @@ class MetricsStorage {
 
 		$table = $this->getTableName();
 
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table comes from $wpdb->prefix plus the hard-coded TABLE_NAME constant; table identifiers cannot be bound as prepare() placeholders on the supported WP 6.0 floor (no %i). The one user-supplied value, $limit, is bound with %d.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read of the plugin-owned ctxfeed_metrics table (no WP API); admin-only, LIMIT-bounded, and cached one level up by DashboardService's `ctxfeed_dashboard_overview` transient.
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT m.* FROM {$table} m
+				"SELECT m.* FROM %i m
 			 INNER JOIN (
 			     SELECT feed_name, MAX(recorded_at) as max_date
-			     FROM {$table}
+			     FROM %i
 			     WHERE metric_type = 'generation'
 			     GROUP BY feed_name
 			 ) latest ON m.feed_name = latest.feed_name AND m.recorded_at = latest.max_date
 			 ORDER BY m.recorded_at DESC
 			 LIMIT %d",
+				$table,
+				$table,
 				$limit
 			),
 			ARRAY_A
 		);
-		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**
@@ -138,14 +138,14 @@ class MetricsStorage {
 
 		$table = $this->getTableName();
 
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table comes from $wpdb->prefix plus the hard-coded TABLE_NAME constant; table identifiers cannot be bound as prepare() placeholders on the supported WP 6.0 floor (no %i). Every user-supplied value is bound with %s.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read of the plugin-owned ctxfeed_metrics table (no WP API); admin-only, on-demand and bounded by the caller's date range.
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT * FROM {$table}
+				'SELECT * FROM %i
 			 WHERE feed_name = %s AND channel = %s
 			 AND recorded_at BETWEEN %s AND %s
-			 ORDER BY recorded_at DESC",
+			 ORDER BY recorded_at DESC',
+				$table,
 				$feed_name,
 				$channel,
 				$start . ' 00:00:00',
@@ -153,7 +153,6 @@ class MetricsStorage {
 			),
 			ARRAY_A
 		);
-		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**
@@ -187,15 +186,16 @@ class MetricsStorage {
 		}
 
 		$where_clause = implode( ' AND ', $where );
-		$args[]       = $limit;
-		$args[]       = $offset;
+		array_unshift( $args, $table );
+		$args[] = $limit;
+		$args[] = $offset;
 
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table comes from $wpdb->prefix plus the hard-coded TABLE_NAME constant, and $where_clause is assembled above exclusively from hard-coded fragments and %s placeholders — no user input is interpolated. Table identifiers cannot be bound as prepare() placeholders on the supported WP 6.0 floor (no %i).
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- $where_clause is assembled above exclusively from hard-coded fragments and %s placeholders — no user input is interpolated; the table identifier is bound with %i.
 		// phpcs:disable WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- False positive: the replacements are passed by argument unpacking (...$args), which the sniff cannot count; $args is built alongside $where_clause so the counts always match.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read of the plugin-owned ctxfeed_metrics table (no WP API); admin-only, on-demand activity feed that must not be stale, and bounded by LIMIT/OFFSET.
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT * FROM {$table}
+				"SELECT * FROM %i
 			 WHERE {$where_clause}
 			 ORDER BY recorded_at DESC
 			 LIMIT %d OFFSET %d",
@@ -219,11 +219,10 @@ class MetricsStorage {
 	public function queryTimeseries( string $start_date, string $end_date, string $channel = '', string $granularity = 'daily' ): array {
 		global $wpdb;
 
-		$table      = $this->getTableName();
-		$date_group = 'daily' === $granularity ? 'DATE(recorded_at)' : 'YEARWEEK(recorded_at)';
+		$table = $this->getTableName();
 
 		$where = array( 'recorded_at BETWEEN %s AND %s', "metric_type = 'generation'" );
-		$args  = array( $start_date . ' 00:00:00', $end_date . ' 23:59:59' );
+		$args  = array( $table, $start_date . ' 00:00:00', $end_date . ' 23:59:59' );
 
 		if ( '' !== $channel ) {
 			$where[] = 'channel = %s';
@@ -232,24 +231,39 @@ class MetricsStorage {
 
 		$where_clause = implode( ' AND ', $where );
 
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table comes from $wpdb->prefix plus the hard-coded TABLE_NAME constant, $date_group is one of two hard-coded SQL expressions chosen by the enum-validated $granularity, and $where_clause is assembled above exclusively from hard-coded fragments and %s placeholders — no user input is interpolated.
-		// phpcs:disable WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- False positive: the %s placeholders live inside $where_clause, which the sniff cannot see through, so it reports the query as placeholder-free.
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read of the plugin-owned ctxfeed_metrics table (no WP API); admin-only chart query bounded by the caller's date range and grouped server-side.
-		$rows = $wpdb->get_results(
-			$wpdb->prepare(
-				"SELECT {$date_group} as period, channel,
+		// The period expression is chosen as a whole-query literal per
+		// granularity — never interpolated from a variable — so static
+		// analysis (and wp.org's Plugin Check) can see the query text is
+		// fixed. Both variants are identical apart from the SELECT's first
+		// expression.
+		if ( 'daily' === $granularity ) {
+			$sql = "SELECT DATE(recorded_at) as period, channel,
 			        SUM(products_processed) as total_products,
 			        AVG(health_score) as avg_health,
 			        AVG(generation_time_ms) as avg_time
-			 FROM {$table}
+			 FROM %i
 			 WHERE {$where_clause}
 			 GROUP BY period, channel
-			 ORDER BY period ASC",
-				...$args
-			),
+			 ORDER BY period ASC";
+		} else {
+			$sql = "SELECT YEARWEEK(recorded_at) as period, channel,
+			        SUM(products_processed) as total_products,
+			        AVG(health_score) as avg_health,
+			        AVG(generation_time_ms) as avg_time
+			 FROM %i
+			 WHERE {$where_clause}
+			 GROUP BY period, channel
+			 ORDER BY period ASC";
+		}
+
+		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, PluginCheck.Security.DirectDB.UnescapedDBParameter -- $sql is one of the two literals above with the table bound as %i; $where_clause is assembled exclusively from hard-coded fragments and %s placeholders — no user input is interpolated.
+		// phpcs:disable WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- False positive: the %s placeholders live inside $where_clause, which the sniff cannot see through, so it reports the query as placeholder-free.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read of the plugin-owned ctxfeed_metrics table (no WP API); admin-only chart query bounded by the caller's date range and grouped server-side.
+		$rows = $wpdb->get_results(
+			$wpdb->prepare( $sql, ...$args ),
 			ARRAY_A
 		);
-		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
+		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
 
 		return $this->formatTimeseries( $rows );
 	}
@@ -267,20 +281,22 @@ class MetricsStorage {
 		$table = $this->getTableName();
 
 		if ( 'unhealthy' === $status ) {
-			// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table comes from $wpdb->prefix plus the hard-coded TABLE_NAME constant and is the only interpolation; the query takes no user input at all.
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read of the plugin-owned ctxfeed_metrics table (no WP API); admin-only alerts list, cached one level up by DashboardService's `ctxfeed_alerts` transient.
 			return $wpdb->get_results(
-				"SELECT m.* FROM {$table} m
+				$wpdb->prepare(
+					"SELECT m.* FROM %i m
 				 INNER JOIN (
 				     SELECT feed_name, MAX(recorded_at) as max_date
-				     FROM {$table} WHERE metric_type = 'generation'
+				     FROM %i WHERE metric_type = 'generation'
 				     GROUP BY feed_name
 				 ) latest ON m.feed_name = latest.feed_name AND m.recorded_at = latest.max_date
 				 WHERE m.health_score < 50 OR m.errors > 0
 				 ORDER BY m.errors DESC, m.health_score ASC",
+					$table,
+					$table
+				),
 				ARRAY_A
 			);
-			// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 		}
 
 		return array();
@@ -296,26 +312,31 @@ class MetricsStorage {
 
 		$table = $this->getTableName();
 
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table comes from $wpdb->prefix plus the hard-coded TABLE_NAME constant and is the only interpolation; the query takes no user input at all.
+		// The outer table gets the alias m1 so the correlated subquery can
+		// reference it through a plain identifier — %i binds simple
+		// identifiers, not qualified {table}.column references.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read of the plugin-owned ctxfeed_metrics table (no WP API); admin-only channel roll-up, cached one level up by DashboardService's `ctxfeed_dashboard_overview` transient.
 		return $wpdb->get_results(
-			"SELECT channel,
+			$wpdb->prepare(
+				"SELECT channel,
 			        COUNT(DISTINCT feed_name) as feed_count,
 			        SUM(products_processed) as total_products,
 			        AVG(health_score) as avg_health_score,
 			        MAX(recorded_at) as last_run,
 			        SUM(errors) as total_errors
-			 FROM {$table}
+			 FROM %i m1
 			 WHERE metric_type = 'generation'
 			 AND recorded_at = (
-			     SELECT MAX(m2.recorded_at) FROM {$table} m2
-			     WHERE m2.feed_name = {$table}.feed_name AND m2.metric_type = 'generation'
+			     SELECT MAX(m2.recorded_at) FROM %i m2
+			     WHERE m2.feed_name = m1.feed_name AND m2.metric_type = 'generation'
 			 )
 			 GROUP BY channel
 			 ORDER BY feed_count DESC",
+				$table,
+				$table
+			),
 			ARRAY_A
 		);
-		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**
@@ -327,15 +348,14 @@ class MetricsStorage {
 		$table  = $this->getTableName();
 		$cutoff = gmdate( 'Y-m-d H:i:s', strtotime( '-' . self::RETENTION_DAYS . ' days' ) );
 
-		// phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- $table is $wpdb->prefix plus the hard-coded TABLE_NAME constant; the cutoff, the only computed value, is bound with %s.
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Retention prune of the plugin-owned ctxfeed_metrics table (no WP API); caching does not apply to a DELETE.
 		$wpdb->query(
 			$wpdb->prepare(
-				"DELETE FROM {$table} WHERE recorded_at < %s",
+				'DELETE FROM %i WHERE recorded_at < %s',
+				$table,
 				$cutoff
 			)
 		);
-		// phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared
 	}
 
 	/**

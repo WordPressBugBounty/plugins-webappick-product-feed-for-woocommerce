@@ -383,9 +383,9 @@ class Promotions {
 				isset( $_REQUEST['dismissed'], $_REQUEST['hash'], $_REQUEST['_wpnonce'] ) &&
 				// phpcs:ignore Universal.Operators.StrictComparisons.LooseEqual -- $_REQUEST values are unsanitised superglobal input of unguaranteed type; a strict check would reject legitimate dismissals sent as a non-string value.
 				'true' == $_REQUEST['dismissed'] && ! empty( $_REQUEST['hash'] ) &&
-				wp_verify_nonce( sanitize_text_field( $_REQUEST['_wpnonce'] ), 'wapk-dismiss-promo' )
+				wp_verify_nonce( sanitize_text_field( wp_unslash( $_REQUEST['_wpnonce'] ) ), 'wapk-dismiss-promo' )
 		) {
-			$this->hiddenPromotions = array_merge( $this->hiddenPromotions, array( sanitize_text_field( $_REQUEST['hash'] ) ) );
+			$this->hiddenPromotions = array_merge( $this->hiddenPromotions, array( sanitize_text_field( wp_unslash( $_REQUEST['hash'] ) ) ) );
 			update_user_option( $this->currentUser, $this->client->getSlug() . '_hidden_promos', $this->hiddenPromotions );
 			wp_send_json_success( esc_html__( 'Promo hidden', 'woo-feed' ) );
 		}

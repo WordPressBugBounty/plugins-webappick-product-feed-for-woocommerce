@@ -3,6 +3,27 @@
  * CommandProcessor — shared executor for per-attribute output-formatting
  * commands (the Config-tab "command box" and Custom Template 2 formatters).
  *
+ * @package    CTXFeed
+ * @subpackage V8/Transform
+ * @since      8.0.0
+ * @implements XFRM-FRD-9.1, XFRM-FRD-9.2, XFRM-FRD-9.3, XFRM-FRD-9.4
+ */
+
+namespace CTXFeed\V8\Transform;
+
+use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Core\FeatureGate;
+use CTXFeed\V8\Product\AttributeResolver;
+use CTXFeed\V8\Product\ProductMemo;
+
+// Exit if accessed directly.
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/**
+ * Output-command executor shared by the Config tab and Custom Template 2.
+ *
  * V5 shipped `Output\OutputCommands::process_command()` which executed
  * bracketed command chains stored in the feedrules `limit` array, e.g.:
  *
@@ -51,27 +72,6 @@
  * Pro gating (XFRM-FRD-9.4): the whole executor is behind
  * `FeatureGate::has('output_commands')` — gate closed returns the value
  * untouched.
- *
- * @package    CTXFeed
- * @subpackage V8/Transform
- * @since      8.0.0
- * @implements XFRM-FRD-9.1, XFRM-FRD-9.2, XFRM-FRD-9.3, XFRM-FRD-9.4
- */
-
-namespace CTXFeed\V8\Transform;
-
-use CTXFeed\V8\Core\Config;
-use CTXFeed\V8\Core\FeatureGate;
-use CTXFeed\V8\Product\AttributeResolver;
-use CTXFeed\V8\Product\ProductMemo;
-
-// Exit if accessed directly.
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
-
-/**
- * Output-command executor shared by the Config tab and Custom Template 2.
  *
  * @since 8.0.0
  */

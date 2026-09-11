@@ -2,6 +2,24 @@
 /**
  * CategoryMappingResolver — V5-compat resolver for `wf_cmapping_*` attributes.
  *
+ * @package    CTXFeed
+ * @subpackage V8/Product
+ * @since      8.0.0
+ * @implements PROD-FRD-10.4
+ */
+
+namespace CTXFeed\V8\Product;
+
+use CTXFeed\V8\Core\Config;
+
+// Exit if accessed directly.
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/**
+ * V5-compat category-mapping resolver.
+ *
  * Verbatim port of `V5\Output\CategoryMapping::getCategoryMappingValue()`
  * (V5 line 27). Used when a feed config row references a saved category
  * mapping by attribute key — e.g. attribute=`wf_cmapping_my_google_map`
@@ -44,24 +62,6 @@
  *   6. For variations, the caller passes the parent product (V5
  *      `AttributeValueByType.php:281-284` enforces this; we do the
  *      same in `AttributeResolver`).
- *
- * @package    CTXFeed
- * @subpackage V8/Product
- * @since      8.0.0
- * @implements PROD-FRD-10.4
- */
-
-namespace CTXFeed\V8\Product;
-
-use CTXFeed\V8\Core\Config;
-
-// Exit if accessed directly.
-if ( ! defined( 'ABSPATH' ) ) {
-	exit;
-}
-
-/**
- * V5-compat category-mapping resolver.
  *
  * @since 8.0.0
  */

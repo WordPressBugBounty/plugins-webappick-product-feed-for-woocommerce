@@ -5,6 +5,12 @@
  * @since 4.4.41
  */
 
+// Exit if accessed directly.
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+
 if( ! class_exists("Woo_Feed_Constants") ) {
 	class Woo_Feed_Constants {
 		public $version;
