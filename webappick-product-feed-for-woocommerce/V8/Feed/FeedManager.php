@@ -300,22 +300,29 @@ class FeedManager {
 		$now = current_time( 'Y-m-d H:i:s' );
 
 		$progress = array(
-			'current'        => isset( $data['current'] ) ? (int) $data['current'] : $existing['current'],
-			'total'          => isset( $data['total'] ) ? (int) $data['total'] : $existing['total'],
-			'percent'        => 0,
-			'status'         => isset( $data['status'] ) ? $data['status'] : $existing['status'],
-			'trigger'        => isset( $data['trigger'] ) ? (string) $data['trigger'] : ( $existing['trigger'] ?? '' ),
-			'batch_size'     => isset( $data['batch_size'] ) ? (int) $data['batch_size'] : $existing['batch_size'],
-			'batches_done'   => isset( $data['batches_done'] ) ? (int) $data['batches_done'] : $existing['batches_done'],
-			'batches_total'  => isset( $data['batches_total'] ) ? (int) $data['batches_total'] : $existing['batches_total'],
-			'started_at'     => $existing['started_at'] ? $existing['started_at'] : $now,
-			'updated_at'     => $now,
-			'eta_seconds'    => isset( $data['eta_seconds'] ) ? (int) $data['eta_seconds'] : $existing['eta_seconds'],
-			'avg_batch_time' => isset( $data['avg_batch_time'] ) ? (float) $data['avg_batch_time'] : $existing['avg_batch_time'],
+			'current'         => isset( $data['current'] ) ? (int) $data['current'] : $existing['current'],
+			'total'           => isset( $data['total'] ) ? (int) $data['total'] : $existing['total'],
+			'percent'         => 0,
+			'status'          => isset( $data['status'] ) ? $data['status'] : $existing['status'],
+			'trigger'         => isset( $data['trigger'] ) ? (string) $data['trigger'] : ( $existing['trigger'] ?? '' ),
+			'batch_size'      => isset( $data['batch_size'] ) ? (int) $data['batch_size'] : $existing['batch_size'],
+			'batches_done'    => isset( $data['batches_done'] ) ? (int) $data['batches_done'] : $existing['batches_done'],
+			'batches_total'   => isset( $data['batches_total'] ) ? (int) $data['batches_total'] : $existing['batches_total'],
+			'started_at'      => $existing['started_at'] ? $existing['started_at'] : $now,
+			'updated_at'      => $now,
+			'eta_seconds'     => isset( $data['eta_seconds'] ) ? (int) $data['eta_seconds'] : $existing['eta_seconds'],
+			'avg_batch_time'  => isset( $data['avg_batch_time'] ) ? (float) $data['avg_batch_time'] : $existing['avg_batch_time'],
 			// End-of-batch stamp (microtime float) — the next batch reports
 			// the scheduler gap from it. Must be listed here: the fixed key
 			// list DROPS unknown fields (see the BATCH_COUNTERS note below).
-			'batch_ended_at' => isset( $data['batch_ended_at'] ) ? (float) $data['batch_ended_at'] : (float) ( $existing['batch_ended_at'] ?? 0 ),
+			'batch_ended_at'  => isset( $data['batch_ended_at'] ) ? (float) $data['batch_ended_at'] : (float) ( $existing['batch_ended_at'] ?? 0 ),
+			// CBT-583: human-readable reasons for status 'invalid' — written
+			// when FeedValidator blocks a run, so status polling reflects
+			// reality instead of a stale 'completed'. Must be in this fixed
+			// key list or the merge drops it (see the BATCH_COUNTERS note).
+			'invalid_reasons' => isset( $data['invalid_reasons'] )
+				? array_map( 'strval', (array) $data['invalid_reasons'] )
+				: (array) ( $existing['invalid_reasons'] ?? array() ),
 		);
 
 		// Per-batch counters for the live generation console. These were
@@ -368,36 +375,38 @@ class FeedManager {
 
 		if ( false === $progress ) {
 			return array(
-				'current'        => 0,
-				'total'          => 0,
-				'percent'        => 0,
-				'status'         => 'pending',
-				'trigger'        => '',
-				'batch_size'     => 0,
-				'batches_done'   => 0,
-				'batches_total'  => 0,
-				'started_at'     => '',
-				'updated_at'     => '',
-				'eta_seconds'    => 0,
-				'avg_batch_time' => 0.0,
+				'current'         => 0,
+				'total'           => 0,
+				'percent'         => 0,
+				'status'          => 'pending',
+				'trigger'         => '',
+				'batch_size'      => 0,
+				'batches_done'    => 0,
+				'batches_total'   => 0,
+				'started_at'      => '',
+				'updated_at'      => '',
+				'eta_seconds'     => 0,
+				'avg_batch_time'  => 0.0,
+				'invalid_reasons' => array(),
 			) + array_fill_keys( self::BATCH_COUNTERS, 0 );
 		}
 
 		// Backfill any missing keys for backwards compatibility.
 		return array_merge(
 			array(
-				'current'        => 0,
-				'total'          => 0,
-				'percent'        => 0,
-				'status'         => 'pending',
-				'trigger'        => '',
-				'batch_size'     => 0,
-				'batches_done'   => 0,
-				'batches_total'  => 0,
-				'started_at'     => '',
-				'updated_at'     => '',
-				'eta_seconds'    => 0,
-				'avg_batch_time' => 0.0,
+				'current'         => 0,
+				'total'           => 0,
+				'percent'         => 0,
+				'status'          => 'pending',
+				'trigger'         => '',
+				'batch_size'      => 0,
+				'batches_done'    => 0,
+				'batches_total'   => 0,
+				'started_at'      => '',
+				'updated_at'      => '',
+				'eta_seconds'     => 0,
+				'avg_batch_time'  => 0.0,
+				'invalid_reasons' => array(),
 			) + array_fill_keys( self::BATCH_COUNTERS, 0 ),
 			$progress
 		);

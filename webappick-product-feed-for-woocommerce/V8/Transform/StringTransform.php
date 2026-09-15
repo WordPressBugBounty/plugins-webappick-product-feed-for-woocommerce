@@ -260,17 +260,37 @@ class StringTransform implements TransformInterface {
 				continue;
 			}
 
-			if ( false === strpos( $search, '/' ) ) {
-				// Treat as regex with /mi flags — same as V5.
-				$pattern = '/' . stripslashes( $search ) . '/mi';
-				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- User-supplied pattern from feed config may be malformed; @ mutes the E_WARNING (V5 parity) and the null check below handles the failure.
+			// CBT-585 (BUG-0088): per-rule matching mode.
+			// 'literal' — exact-text str_replace, what a spreadsheet-style
+			// find/replace means; the UI's default for NEW rules
+			// (searching for '$' removes the dollar sign instead
+			// of anchoring to line end).
+			// 'regex'   — the whole search is a pattern body, compiled with
+			// the ~ delimiter (so '/' needs no escaping) + mi.
+			// ''        — V5-VERBATIM legacy: no slash → compile /search/mi,
+			// slash present → literal. Existing configs carry
+			// no mode and MUST keep this behavior byte-for-byte
+			// (stores rely on regex rules taught for years).
+			// In both regex paths a pattern preg_replace REJECTS now falls
+			// back to a literal replace instead of silently doing nothing —
+			// an invalid pattern still expresses clear literal intent.
+			$mode = isset( $rule['mode'] ) ? (string) $rule['mode'] : '';
+
+			if ( 'literal' === $mode ) {
+				$value = str_replace( $search, $replace, $value );
+			} elseif ( 'regex' === $mode ) {
+				$pattern = '~' . str_replace( '~', '\~', $search ) . '~mi';
+				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- User-supplied pattern from feed config may be malformed; @ mutes the E_WARNING and the null check below falls back to a literal replace.
 				$replaced = @preg_replace( $pattern, $replace, $value );
-				// preg_replace returns null on error; keep original value if so.
-				if ( null !== $replaced ) {
-					$value = $replaced;
-				}
+				$value    = null !== $replaced ? $replaced : str_replace( $search, $replace, $value );
+			} elseif ( false === strpos( $search, '/' ) ) {
+				// Legacy: treat as regex with /mi flags — same as V5.
+				$pattern = '/' . stripslashes( $search ) . '/mi';
+				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- User-supplied pattern from feed config may be malformed; @ mutes the E_WARNING (V5 parity) and the null check below falls back to a literal replace.
+				$replaced = @preg_replace( $pattern, $replace, $value );
+				$value    = null !== $replaced ? $replaced : str_replace( $search, $replace, $value );
 			} else {
-				// Search contains a slash — fall back to plain str_replace.
+				// Legacy: search contains a slash — plain str_replace (V5).
 				$value = str_replace( $search, $replace, $value );
 			}
 		}

@@ -466,6 +466,16 @@ class FeedEndpoint extends RestController {
 			}
 		}
 
+		// String Replace rows must use the recognized shape (CBT-585 /
+		// BUG-0087): a wrong-but-plausible key set used to be silently
+		// dropped at save, leaving the merchant believing the rule was live.
+		if ( is_array( $string_replace ) ) {
+			$ctx_sr_error = $this->string_replace_shape_error( $string_replace );
+			if ( '' !== $ctx_sr_error ) {
+				return $this->error( $ctx_sr_error, 400 );
+			}
+		}
+
 		$ctx_interval_error = $this->minute_interval_gate_error( $form );
 		if ( '' !== $ctx_interval_error ) {
 			return $this->error( $ctx_interval_error, 403 );
@@ -522,8 +532,11 @@ class FeedEndpoint extends RestController {
 		// autoGenerate=false and drives generation itself from the feed list
 		// (with a progress bar), so the save must not ALSO start a background
 		// run — a double run double-schedules and clobbers a large feed's batches.
+		$generation_warnings = array();
 		if ( $this->request_wants_auto_generate( $request ) ) {
-			$this->maybe_auto_generate( $slug, 'create' );
+			$generation_warnings = $this->generation_skip_warnings(
+				$this->maybe_auto_generate( $slug, 'create' )
+			);
 		}
 
 		$feed = $this->find_feed( $slug );
@@ -532,7 +545,7 @@ class FeedEndpoint extends RestController {
 			array(
 				'success'  => true,
 				'data'     => $feed,
-				'warnings' => $this->save_warnings(),
+				'warnings' => array_merge( $this->save_warnings(), $generation_warnings ),
 			),
 			201
 		);
@@ -624,6 +637,16 @@ class FeedEndpoint extends RestController {
 			}
 		}
 
+		// String Replace rows must use the recognized shape (CBT-585 /
+		// BUG-0087): a wrong-but-plausible key set used to be silently
+		// dropped at save, leaving the merchant believing the rule was live.
+		if ( is_array( $string_replace ) ) {
+			$ctx_sr_error = $this->string_replace_shape_error( $string_replace );
+			if ( '' !== $ctx_sr_error ) {
+				return $this->error( $ctx_sr_error, 400 );
+			}
+		}
+
 		$ctx_interval_error = $this->minute_interval_gate_error( is_array( $form ) ? $form : array() );
 		if ( '' !== $ctx_interval_error ) {
 			return $this->error( $ctx_interval_error, 403 );
@@ -670,8 +693,11 @@ class FeedEndpoint extends RestController {
 
 		// Rebuild the feed now that its configuration changed (V5 parity) —
 		// unless the caller opts out (autoGenerate=false; see create_feed).
+		$generation_warnings = array();
 		if ( $this->request_wants_auto_generate( $request ) ) {
-			$this->maybe_auto_generate( $feed_slug, 'update' );
+			$generation_warnings = $this->generation_skip_warnings(
+				$this->maybe_auto_generate( $feed_slug, 'update' )
+			);
 		}
 
 		$feed = $this->find_feed( $id );
@@ -680,7 +706,7 @@ class FeedEndpoint extends RestController {
 			array(
 				'success'  => true,
 				'data'     => $feed,
-				'warnings' => $this->save_warnings(),
+				'warnings' => array_merge( $this->save_warnings(), $generation_warnings ),
 			),
 			200
 		);
@@ -799,6 +825,10 @@ class FeedEndpoint extends RestController {
 			$validator  = $container->resolve( 'feed.validator' );
 			$validation = $validator->validate( $config );
 			if ( empty( $validation['valid'] ) ) {
+				// CBT-583: correct the status surface too — without this, a
+				// stale 'completed' from a run before the config broke kept
+				// being reported by get-feed-status after this 422.
+				$this->mark_feed_invalid( $feed_name, array_map( 'strval', (array) $validation['errors'] ) );
 				return new \WP_REST_Response(
 					array(
 						'success' => false,
@@ -1694,9 +1724,10 @@ class FeedEndpoint extends RestController {
 	 *
 	 * @param string $feed_name Feed slug.
 	 * @param string $context   'create' | 'update' | 'duplicate'.
-	 * @return void
+	 * @return string[] Validation reasons that blocked generation (CBT-583);
+	 *                  empty when generation was scheduled or disabled.
 	 */
-	private function maybe_auto_generate( string $feed_name, string $context ): void {
+	private function maybe_auto_generate( string $feed_name, string $context ): array {
 		/**
 		 * Filter whether saving a feed auto-starts a one-time generation.
 		 *
@@ -1707,8 +1738,10 @@ class FeedEndpoint extends RestController {
 		 * @param string $context   create|update|duplicate.
 		 */
 		if ( apply_filters( 'ctxfeed_feed_auto_generate_on_save', true, $feed_name, $context ) ) {
-			$this->schedule_generation_for( $feed_name );
+			return $this->schedule_generation_for( $feed_name );
 		}
+
+		return array();
 	}
 
 	/**
@@ -1717,21 +1750,41 @@ class FeedEndpoint extends RestController {
 	 * Best-effort variant of generate_feed_v8()'s scheduling used inside
 	 * bulk loops — one feed's scheduling failure must not abort the rest.
 	 *
+	 * CBT-583 (BUG-0084/BUG-0089): this path used to skip FeedValidator
+	 * entirely, so an API-created feed with zero mappings (or the CT2
+	 * family's unsettable-via-API markup) auto-generated into a garbage
+	 * file that reported status "completed". It now runs the SAME
+	 * validator gate generate_feed_v8() runs: an invalid config schedules
+	 * nothing, its status is recorded as 'invalid' with the reasons (so
+	 * ctxfeed-get-feed-status reflects reality), and the reasons are
+	 * returned for the create/update response's warnings array.
+	 *
 	 * @since 8.0.0
 	 *
 	 * @param string $feed_name Feed slug identifier.
-	 * @return void
+	 * @return string[] Validation reasons that BLOCKED generation (empty
+	 *                  when generation was scheduled, auto-generate is
+	 *                  unavailable, or a non-validation failure occurred).
 	 */
-	private function schedule_generation_for( string $feed_name ): void {
+	private function schedule_generation_for( string $feed_name ): array {
 		try {
 			$container = \CTXFeed\V8\Core\Container::get_instance();
 			if ( ! $container->has( 'feed.scheduler' ) ) {
-				return;
+				return array();
 			}
 
 			$config = \CTXFeed\V8\Core\Config::from_feed_name( $feed_name );
 			if ( ! $config ) {
-				return;
+				return array();
+			}
+
+			if ( $container->has( 'feed.validator' ) ) {
+				$validation = $container->resolve( 'feed.validator' )->validate( $config );
+				if ( empty( $validation['valid'] ) ) {
+					$reasons = array_map( 'strval', (array) ( $validation['errors'] ?? array() ) );
+					$this->mark_feed_invalid( $feed_name, $reasons );
+					return $reasons;
+				}
 			}
 
 			$container->resolve( 'feed.scheduler' )->schedule_generation( $feed_name, $config );
@@ -1739,6 +1792,66 @@ class FeedEndpoint extends RestController {
 			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Only record of a swallowed scheduling failure inside the bulk loop; the feed still exists and can be regenerated manually.
 			error_log( '[CTXFeed V8] bulk duplicate generation scheduling failed for ' . $feed_name . ': ' . $e->getMessage() );
 		}
+
+		return array();
+	}
+
+	/**
+	 * Record that a feed's configuration failed validation (CBT-583).
+	 *
+	 * Overwrites any prior progress (including a stale 'completed' from a
+	 * run before the config was known to be broken) with status 'invalid'
+	 * and the human-readable reasons, so every status surface tells the
+	 * truth until the config is fixed and a new run starts.
+	 *
+	 * @since 8.0.21
+	 *
+	 * @param string   $feed_name Feed slug identifier.
+	 * @param string[] $reasons   Validator error strings.
+	 * @return void
+	 */
+	private function mark_feed_invalid( string $feed_name, array $reasons ): void {
+		try {
+			$container = \CTXFeed\V8\Core\Container::get_instance();
+			if ( ! $container->has( 'feed.manager' ) ) {
+				return;
+			}
+			$container->resolve( 'feed.manager' )->update_progress(
+				$feed_name,
+				array(
+					'current'         => 0,
+					'total'           => 0,
+					'status'          => 'invalid',
+					'invalid_reasons' => $reasons,
+				)
+			);
+		} catch ( \Throwable $e ) {
+			// Status bookkeeping must never break the save itself.
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Only record of the swallowed bookkeeping failure.
+			error_log( '[CTXFeed V8] could not record invalid feed status for ' . $feed_name . ': ' . $e->getMessage() );
+		}
+	}
+
+	/**
+	 * Compose the response warning for a validation-blocked auto-generation.
+	 *
+	 * @since 8.0.21
+	 *
+	 * @param string[] $reasons Validator error strings (may be empty).
+	 * @return string[] Zero-or-one composed warning strings.
+	 */
+	private function generation_skip_warnings( array $reasons ): array {
+		if ( empty( $reasons ) ) {
+			return array();
+		}
+
+		return array(
+			sprintf(
+				/* translators: %s: semicolon-separated validation problems. */
+				__( 'Saved, but automatic generation was skipped — this feed cannot generate yet: %s', 'woo-feed' ),
+				implode( '; ', $reasons )
+			),
+		);
 	}
 
 	// =====================================================================
@@ -1915,7 +2028,15 @@ class FeedEndpoint extends RestController {
 			// `$config->get_feed_language()`. Empty when no multilingual
 			// plugin is active (the UI renders no Language select then).
 			'feedLanguage'      => sanitize_text_field( $form['feedLanguage'] ?? '' ),
-			'is_variations'     => sanitize_text_field( $form['includeVariations'] ?? '' ),
+			// CBT-584 (BUG-0085): persist the UI's default when the API omits
+			// or blanks the field. The UI form REQUIRES a choice, so '' can
+			// only come from an API/MCP caller — it used to persist verbatim,
+			// generating correctly (ProductQuery normalizes blank to 'y') but
+			// rendering the edit screen's required dropdown as unset. An
+			// explicit choice, including 'n', persists untouched.
+			'is_variations'     => ( '' === sanitize_text_field( $form['includeVariations'] ?? '' ) )
+				? 'y'
+				: sanitize_text_field( $form['includeVariations'] ),
 			// Variation strategy keys (V5: `variable_price` /
 			// `variable_quantity`) — which variation's price/quantity a
 			// VARIABLE (parent) row reports when `is_variations` is 'n' or
@@ -2063,8 +2184,14 @@ class FeedEndpoint extends RestController {
 			if ( '' === $subject ) {
 				continue;
 			}
+			// CBT-585: per-rule matching mode — 'literal' | 'regex', or ''
+			// for the V5-legacy slash-detect behavior existing configs rely
+			// on. Validated upstream by string_replace_shape_error().
+			$mode = isset( $row['mode'] ) ? sanitize_text_field( $row['mode'] ) : '';
+
 			$safe_str_replace[] = array(
 				'subject' => $subject,
+				'mode'    => in_array( $mode, array( 'literal', 'regex' ), true ) ? $mode : '',
 				// search/replace must PRESERVE whitespace and Unicode:
 				// customers commonly want to match/replace patterns like
 				// ", " (comma+space) or "\n" — sanitize_textarea_field
@@ -2456,6 +2583,53 @@ class FeedEndpoint extends RestController {
 		}
 
 		return __( 'Minute-level update intervals are a Pro feature. Choose an hourly interval, or upgrade to CTX Feed Pro.', 'woo-feed' );
+	}
+
+	/**
+	 * Validate String Replace rows against the recognized shape (CBT-585).
+	 *
+	 * Accepted keys per row: subject, search, replace, mode. A row carrying
+	 * ANY other key (find/replaceWith/attribute — the shapes an API caller
+	 * plausibly guesses) used to be dropped or half-read silently; it now
+	 * blocks the save with the accepted keys spelled out. mode, when
+	 * present, must be '', 'literal' or 'regex'.
+	 *
+	 * @since 8.0.21
+	 *
+	 * @param array $rows stringReplace request rows.
+	 * @return string Error message, '' when every row is well-shaped.
+	 */
+	private function string_replace_shape_error( array $rows ): string {
+		$accepted = array( 'subject', 'search', 'replace', 'mode' );
+
+		foreach ( array_values( $rows ) as $i => $row ) {
+			if ( ! is_array( $row ) ) {
+				continue; // Non-array rows are dropped by the sanitizer as before.
+			}
+
+			$unknown = array_diff( array_keys( $row ), $accepted );
+			if ( ! empty( $unknown ) ) {
+				return sprintf(
+					/* translators: 1: row number, 2: unrecognized key list, 3: accepted key list. */
+					__( 'String Replace row %1$d uses unrecognized field(s): %2$s. Each rule accepts only: %3$s.', 'woo-feed' ),
+					$i + 1,
+					implode( ', ', array_map( 'strval', $unknown ) ),
+					implode( ', ', $accepted )
+				);
+			}
+
+			$mode = isset( $row['mode'] ) ? (string) $row['mode'] : '';
+			if ( ! in_array( $mode, array( '', 'literal', 'regex' ), true ) ) {
+				return sprintf(
+					/* translators: 1: row number, 2: the invalid mode value. */
+					__( 'String Replace row %1$d has an invalid mode "%2$s" — use "literal", "regex", or omit it for the legacy behavior.', 'woo-feed' ),
+					$i + 1,
+					$mode
+				);
+			}
+		}
+
+		return '';
 	}
 
 	/**

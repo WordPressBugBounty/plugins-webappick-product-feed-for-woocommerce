@@ -33,6 +33,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Filter\StockFilter;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -74,14 +75,32 @@ class SkroutzVariationsBuilder {
 	private $product_repo;
 
 	/**
+	 * Stock filter applied to each CHILD variation (CBT-582).
+	 *
+	 * The feed-level is_outOfStock / is_backorder filters shape the parent
+	 * product list; without this, an out-of-stock size still nested as a
+	 * <variation> and Skroutz sold it (artistishop.gr received a live order
+	 * for a size with quantity 0). The SAME predicate the parent list uses
+	 * now gates each child, so the filters mean the same thing one level
+	 * deeper — and feeds with the filters off keep every size, unchanged.
+	 *
+	 * @var StockFilter
+	 */
+	private $stock_filter;
+
+	/**
 	 * Constructor.
 	 *
 	 * @since 8.0.0
 	 *
 	 * @param ProductRepository $product_repo Product data resolver.
+	 * @param StockFilter|null  $stock_filter Per-child stock gate (CBT-582);
+	 *                                        a fresh stateless instance when
+	 *                                        omitted.
 	 */
-	public function __construct( ProductRepository $product_repo ) {
+	public function __construct( ProductRepository $product_repo, ?StockFilter $stock_filter = null ) {
 		$this->product_repo = $product_repo;
+		$this->stock_filter = $stock_filter ? $stock_filter : new StockFilter();
 	}
 
 	/**
@@ -222,6 +241,14 @@ class SkroutzVariationsBuilder {
 		foreach ( $child_ids as $child_id ) {
 			$child = wc_get_product( $child_id );
 			if ( ! $child ) {
+				continue;
+			}
+
+			// The feed's own stock filters apply to nested children exactly
+			// as they do to the parent list (CBT-582): is_outOfStock drops
+			// outofstock / qty-0 sizes (backorder pass-through preserved),
+			// is_backorder drops backordered sizes. Both off → no change.
+			if ( ! $this->stock_filter->passes( $child, $config ) ) {
 				continue;
 			}
 

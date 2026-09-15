@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.20
+Stable tag: 8.0.21
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -469,22 +469,20 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.21 =
+* Fix: saving a feed no longer fails when a filter or mapping row carries a non-text value — the pre-save completeness check now treats numbers, on/off toggles and empty values exactly the way the server does, so the save proceeds instead of the page breaking.
+* Fix: Skroutz feeds with nested variations respect the feed's stock filters — variations excluded by the stock settings no longer ship inside <variations>.
+* Fix: feeds created or updated through the REST API or AI assistants are validated before automatic generation. An incomplete feed saves with a clear "generation skipped" message naming what is missing, and the feed reports an invalid status with those reasons instead of a completed generation that never produced a file.
+* Fix: API feed saves that omit the variations setting keep the interface default (variations included) instead of silently switching the feed to parent products only.
+* Fix: String Replace rules are validated on save and each rule now carries an explicit "Plain text" or "Pattern (regex)" mode. Existing rules keep their old auto-detect behavior exactly, and a pattern that fails to compile falls back to a plain-text replace instead of silently doing nothing.
+* Fix: prefix, suffix and String Replace values keep literal angle-bracket text (a <br> tag, a "<3") instead of having it stripped as HTML on save.
+* Improved: Attribute Mapping warns about likely misspelled attribute keys ("did you mean...") and circular references that resolve to empty values, in the mapping editor's live preview and the API responses (Pro).
+
 = Version 8.0.20 =
 * Fix: multilingual stores (WPML) — feed product links now always carry the feed's language URL (Pro). Products without a translation in the feed language previously shipped the default-language link, so Google landed on the default-currency page and reported price mismatches; links now use WPML's own URL converter and existing feeds heal on their next regeneration.
 * Improved: security and review hardening across the plugin — every admin input is unslashed before sanitizing, every PHP file blocks direct access, review links follow WordPress.org guidelines, and the dashboard metrics queries use WordPress 6.2's safe identifier placeholders. The plugin now passes the official WordPress.org Plugin Check.
 * Changed: the minimum supported WordPress version is now 6.2 (released March 2023) — the plugin's code has required newer WordPress APIs for some time, and the declared requirement now says so honestly. Sites on older WordPress keep their current plugin version.
 * Changed: the readme changelog lists recent releases only; the complete version history ships with the plugin in changelog.txt.
-
-= Version 8.0.19 =
-* Added: update feeds every 5, 15, 30, or 45 minutes (Pro) for fast-moving inventory. Choosing 5 or 15 minutes shows a plain-language advisor first — a generation still running when the next one is due is skipped, and round-the-clock rebuilds can slow a store — with 30 minutes or longer recommended for most shops.
-* Added: Toolset Types support — Toolset custom fields get their own picker group (Pro) with properly formatted values (dates, checkboxes, repeating fields) resolving in every plan, and Toolset-registered product taxonomies work throughout.
-* Added: the "between" condition in Dynamic Attributes — set a value when a price or number falls inside a range, with a Min/Max pair in the rule builder.
-* Fix: prices ship the standard "35.90 RON" money format again on every channel and file type. Feeds configured before 8.0.14 could carry a currency suffix without its leading space, gluing the code to the number ("35.90RON") — OpenAI rejected every such row and Google flagged them too. The V5-era safeguard that always inserted the space is restored, so existing feeds heal on their next regeneration with no re-save.
-* Fix: prices default to the clean machine format — exactly two decimals, dot separator, no thousands grouping ("1313133.33") — matching V5. The store's display-decimals setting no longer leaks into feeds; a custom number format set on the feed's Filter tab still wins. ChatGPT/OpenAI feeds additionally strip grouping commas OpenAI rejects.
-* Fix: Advanced Filter groups now evaluate the way they read. A grouped setup like (category A AND price > 20) OR (category B AND price > 20) previously excluded every product — groups only existed visually while the engine ran the old flat chain. Each group now evaluates internally and combines through the AND/OR pills between groups; feeds saved in V5 keep their exact old behavior. The redundant global AND/OR toggle is gone.
-* Fix: custom fields storing multiple values (page-builder repeater fields) resolve to their first real value instead of printing the literal word "Array" into the feed.
-* Fix: attribute mapping rows must be complete before a feed saves — an empty channel attribute or value now blocks the save with the exact rows named and highlighted, instead of silently producing broken feed markup. Rows saved incomplete by older versions are skipped safely at generation.
-* Improved: the FTP/SFTP tab names the exact missing PHP extension (ftp or ssh2) instead of a generic "module not found" message, and the feed editor keeps all its columns on smaller screens by moving the help rail below the content.
 
 The complete changelog for all earlier versions ships with the plugin in changelog.txt.
 

@@ -366,6 +366,25 @@ class AttributeMappingResolver {
 	 * @return bool True if the item is a known product attribute.
 	 */
 	private function is_known_attribute( string $item ): bool {
+		return self::is_known_attribute_key( $item );
+	}
+
+	/**
+	 * Whether a mapping item is a recognized attribute key (CBT-587).
+	 *
+	 * Public and static so the Pro Attribute Mapping endpoints can warn an
+	 * API caller when an item is a NEAR-MISS of a real key ("Title" vs
+	 * "title") instead of silently shipping it as literal text. The match
+	 * itself stays case-SENSITIVE — resolution behavior is untouched,
+	 * because a deliberately-typed literal like "Title" (a label prefix) is
+	 * a legitimate fixed-text part on existing stores.
+	 *
+	 * @since 8.0.21
+	 *
+	 * @param string $item Mapping item (attribute key or custom text).
+	 * @return bool True if the item is a known product attribute.
+	 */
+	public static function is_known_attribute_key( string $item ): bool {
 		// Check against known attribute prefixes.
 		foreach ( self::$known_prefixes as $prefix ) {
 			if ( 0 === strpos( $item, $prefix ) ) {

@@ -208,7 +208,10 @@ class FeedServiceProvider extends ServiceProvider {
 			// and self-gates (provider=skroutz + variation_* mapped), so it costs
 			// nothing for any other feed.
 			$generator->set_variations_builder(
-				new \CTXFeed\V8\Product\SkroutzVariationsBuilder( $product_repo )
+				new \CTXFeed\V8\Product\SkroutzVariationsBuilder(
+					$product_repo,
+					$container->resolve( 'filter.stock' )
+				)
 			);
 
 			// Wire Action Scheduler callbacks with dependencies. @implements FEED-FRD-7.2.

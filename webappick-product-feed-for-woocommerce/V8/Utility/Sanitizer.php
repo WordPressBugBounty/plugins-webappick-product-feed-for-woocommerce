@@ -173,11 +173,19 @@ class Sanitizer {
 		}
 		$value = (string) $value;
 
-		// Strip <script>/<style> blocks and any HTML tag (XSS defence).
+		// Strip <script>/<style> BLOCKS only (defence in depth).
 		// preg_replace on failure returns null → coerce back to string.
+		//
+		// CBT-586 (BUG-0090): the strip_tags() call that used to follow
+		// deleted any angle-bracket text resembling a tag — "<3", "<X100>",
+		// "Battery life <8 hours" — silently corrupting fixed-text literals
+		// while every other bracket/punctuation character passed through.
+		// This method's whole contract is byte-preserving literal text; the
+		// real XSS defence lives at OUTPUT time (the XML template escapes,
+		// CSV encloses every field, React escapes admin previews), so
+		// destructive storage-time rewriting is gone. Script/style blocks
+		// stay stripped: they are never legitimate feed literals.
 		$value = preg_replace( '@<(script|style)[^>]*?>.*?</\1>@si', '', $value ) ?? $value;
-		// phpcs:ignore WordPressVIPMinimum.Functions.StripTags.StripTagsOneParameter, WordPress.WP.AlternativeFunctions.strip_tags_strip_tags -- The script/style blocks the sniff worries about are already stripped by the preg_replace on the line above (the same pattern wp_strip_all_tags() uses). wp_strip_all_tags() additionally trim()s, which would defeat this method's entire contract of byte-preserving leading/trailing whitespace.
-		$value = strip_tags( $value );
 
 		// Null-byte removal — safe defence, never present in a legit
 		// user-typed pattern.
