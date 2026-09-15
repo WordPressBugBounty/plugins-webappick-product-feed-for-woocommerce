@@ -460,6 +460,16 @@ class AttributeResolver {
 					$variation_parts = array();
 					foreach ( array_keys( (array) $product->get_attributes() ) as $attr_slug ) {
 						$attr_value = $product->get_attribute( $attr_slug );
+						if ( '' === $attr_value ) {
+							continue;
+						}
+						// Translation plugins (WPML/WCML) translate CUSTOM
+						// (per-product) attribute values only in WooCommerce's
+						// display layer — a translated variation's stored meta
+						// keeps the original language. Mirror
+						// wc_get_formatted_variation() and run each value
+						// through the display filter (BUG-0101 / CBT-592).
+						$attr_value = (string) apply_filters( 'woocommerce_variation_option_name', $attr_value, null, $attr_slug, $product ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- deliberately firing WooCommerce core's display filter so WCML-style handlers run.
 						if ( '' !== $attr_value ) {
 							$variation_parts[] = $attr_value;
 						}
@@ -1353,6 +1363,17 @@ class AttributeResolver {
 
 		// WC's get_attribute() handles both global (taxonomy) and product-level attributes.
 		$value = $product->get_attribute( $attr_name );
+
+		// Same display-translation seam as the variation-title path (BUG-0101 /
+		// CBT-592): a variation's CUSTOM attribute meta keeps the original
+		// language — WPML/WCML translate it only via WooCommerce's display
+		// filter. This also covers Attribute Mapping and Dynamic Attribute
+		// references, which resolve wf_attr_* through this method. The parent
+		// fallback below stays raw: that value is the parent's product-level
+		// attribute list, not a variation option.
+		if ( '' !== $value && $product->is_type( 'variation' ) ) {
+			$value = (string) apply_filters( 'woocommerce_variation_option_name', $value, null, $attr_name, $product ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- deliberately firing WooCommerce core's display filter so WCML-style handlers run.
+		}
 
 		// Variation fallback: try parent product if variation has empty value.
 		if ( '' === $value && $product->is_type( 'variation' ) ) {

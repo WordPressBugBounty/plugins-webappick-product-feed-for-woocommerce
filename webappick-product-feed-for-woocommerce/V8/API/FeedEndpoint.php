@@ -48,13 +48,20 @@ class FeedEndpoint extends RestController {
 					'methods'             => \WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_feeds' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
 				),
 				array(
 					'methods'             => \WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'create_feed' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					// Top-level body sections declared; the DEEP form shape is
+					// validated by the handler chain (FeedValidator + the
+					// CBT-583/584/585 named 400s) — that chain IS the server
+					// truth, so it is not duplicated here (CBT-588).
+					'args'                => $this->feed_body_args( true ),
 				),
-			) 
+				'schema' => array( $this, 'get_feed_response_schema' ),
+			)
 		);
 
 		// Import feed from .wpf file.
@@ -73,10 +80,34 @@ class FeedEndpoint extends RestController {
 			$this->namespace,
 			'/feeds/bulk',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'bulk_action' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'bulk_action' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					// The enum closes a silent hole: the action switch has no
+					// default case, so an unknown action did NOTHING per feed
+					// and still answered success (CBT-588).
+					'args'                => array(
+						'action' => array(
+							'required'          => true,
+							'type'              => 'string',
+							'enum'              => array( 'delete', 'duplicate', 'auto_update_on', 'auto_update_off' ),
+							'validate_callback' => 'rest_validate_request_arg',
+							'sanitize_callback' => 'sanitize_text_field',
+						),
+						'ids'    => array(
+							'required'          => true,
+							'type'              => 'array',
+							'validate_callback' => 'rest_validate_request_arg',
+							'description'       => __( 'Feed ids/slugs the action applies to.', 'woo-feed' ),
+						),
+						'names'  => array(
+							'type'        => 'array',
+							'description' => __( 'Optional display names aligned with ids (duplicate uses them for the copies).', 'woo-feed' ),
+						),
+					),
+				),
+			)
 		);
 
 		// Feed templates / channel list — registered BEFORE {id} route
@@ -102,6 +133,8 @@ class FeedEndpoint extends RestController {
 				'args'                => array(
 					'template' => array(
 						'required'          => true,
+						'type'              => 'string',
+						'validate_callback' => array( $this, 'validate_non_blank_string' ),
 						'sanitize_callback' => 'sanitize_text_field',
 						'description'       => __( 'Template/merchant key (e.g., google, facebook).', 'woo-feed' ),
 					),
@@ -117,18 +150,24 @@ class FeedEndpoint extends RestController {
 					'methods'             => \WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_feed' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
 				),
 				array(
 					'methods'             => \WP_REST_Server::EDITABLE,
 					'callback'            => array( $this, 'update_feed' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					// makeFeedForm optional: the light mode toggles auto_update
+					// without a form body (CBT-588).
+					'args'                => $this->feed_body_args( false ),
 				),
 				array(
 					'methods'             => \WP_REST_Server::DELETABLE,
 					'callback'            => array( $this, 'delete_feed' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
 				),
-			) 
+				'schema' => array( $this, 'get_feed_response_schema' ),
+			)
 		);
 
 		register_rest_route(
@@ -154,6 +193,9 @@ class FeedEndpoint extends RestController {
 				'args'                => array(
 					'product_id' => array(
 						'required'          => true,
+						'type'              => 'integer',
+						'minimum'           => 1,
+						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'absint',
 					),
 				),
@@ -214,9 +256,13 @@ class FeedEndpoint extends RestController {
 			$this->namespace,
 			'/feeds/(?P<id>[a-zA-Z0-9_-]+)/status',
 			array(
-				'methods'             => \WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_feed_status' ),
-				'permission_callback' => array( $this, 'permission_check' ),
+				array(
+					'methods'             => \WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_feed_status' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_feed_status_response_schema' ),
 			)
 		);
 
@@ -231,6 +277,123 @@ class FeedEndpoint extends RestController {
 				'callback'            => array( $this, 'run_feed_batches' ),
 				'permission_callback' => array( $this, 'permission_check' ),
 			)
+		);
+	}
+
+	/**
+	 * Declared top-level body sections for feed create/update (CBT-588).
+	 *
+	 * Sections beyond makeFeedForm stay type-loose on purpose: the handler
+	 * chain normalizes several legacy shapes per section (V5 parity), and
+	 * the deep validation with named 400s lives there — declaring hard types
+	 * here would reject shapes the engine deliberately accepts.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @param bool $form_required Whether makeFeedForm is required (create).
+	 * @return array
+	 */
+	private function feed_body_args( bool $form_required ): array {
+		$args = array(
+			'makeFeedForm'       => array(
+				'type'        => 'object',
+				'description' => __( 'The feed form. template, fileName and fileType are required inside; the server names anything missing or invalid.', 'woo-feed' ),
+			),
+			'feedRules'          => array(
+				'description' => __( 'Attribute rows (mattribute, type, attribute/pattern, prefix, suffix, output_type, limit).', 'woo-feed' ),
+			),
+			'filterOptions'      => array( 'description' => __( 'Stock/visibility/empty-value filter toggles.', 'woo-feed' ) ),
+			'postStatus'         => array( 'description' => __( 'Included post statuses.', 'woo-feed' ) ),
+			'categories'         => array( 'description' => __( 'Category include/exclude list.', 'woo-feed' ) ),
+			'productIds'         => array( 'description' => __( 'Product include/exclude list.', 'woo-feed' ) ),
+			'filterMode'         => array( 'description' => __( 'include/exclude mode per list filter.', 'woo-feed' ) ),
+			'numberFormat'       => array( 'description' => __( 'decimals, decimal_separator, thousand_separator.', 'woo-feed' ) ),
+			'campaignParameters' => array( 'description' => __( 'UTM parameters.', 'woo-feed' ) ),
+			'stringReplace'      => array(
+				'description' => __( 'String Replace rows: {subject, search, replace, mode} with mode one of "", "literal", "regex" — unknown keys or an invalid mode 400 with the row named.', 'woo-feed' ),
+			),
+			'shippingCountry'    => array( 'description' => __( "'feed', 'all', or a country code.", 'woo-feed' ) ),
+			'taxCountry'         => array( 'description' => __( "'feed' or a country code.", 'woo-feed' ) ),
+			'ftp'                => array( 'description' => __( 'FTP/SFTP upload settings.', 'woo-feed' ) ),
+			'advancedFilter'     => array( 'description' => __( 'Advanced filter rows and _filter_groups.', 'woo-feed' ) ),
+			'autoGenerate'       => array(
+				'description' => __( 'Boolean-ish; false saves without scheduling generation. Default true — an invalid feed then saves with "generation skipped" warnings and records status invalid with reasons.', 'woo-feed' ),
+			),
+		);
+
+		if ( $form_required ) {
+			$args['makeFeedForm']['required']          = true;
+			$args['makeFeedForm']['validate_callback'] = 'rest_validate_request_arg';
+		} else {
+			$args['auto_update'] = array(
+				'description' => __( 'Light mode: toggle auto update without sending the form.', 'woo-feed' ),
+			);
+		}
+
+		return $args;
+	}
+
+	/**
+	 * Response schema for the feed CRUD routes (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_feed_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-feeds',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'        => 'object',
+					'description' => __( 'Create/update responses carry warnings[] (user-facing strings, e.g. "Saved, but automatic generation was skipped …") alongside the saved feed.', 'woo-feed' ),
+					'properties'  => array(
+						'warnings' => array(
+							'type'  => 'array',
+							'items' => array( 'type' => 'string' ),
+						),
+					),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Response schema for GET /feeds/{id}/status (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_feed_status_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-feed-status',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'status'   => array(
+							'type'        => 'string',
+							'description' => __( "Includes 'invalid' — the feed cannot generate; invalid_reasons says why (CBT-583).", 'woo-feed' ),
+						),
+						'progress' => array(
+							'type'       => 'object',
+							'properties' => array(
+								'invalid_reasons' => array(
+									'type'  => 'array',
+									'items' => array( 'type' => 'string' ),
+								),
+							),
+						),
+					),
+				),
+			),
 		);
 	}
 
@@ -2806,6 +2969,17 @@ class FeedEndpoint extends RestController {
 				'resolved'          => $resolved,
 				'output'            => $output,
 				'error'             => $error,
+				/**
+				 * Extra per-feed diagnoses from extensions (warn-only strings).
+				 * Pro appends attribute-mapping cycle warnings here (CBT-588).
+				 *
+				 * @since 8.0.22
+				 *
+				 * @param array                  $warnings Warnings so far.
+				 * @param \CTXFeed\V8\Core\Config $config   The feed's config.
+				 * @param \WC_Product            $product  The product being debugged.
+				 */
+				'warnings'          => array_values( array_unique( array_map( 'strval', (array) apply_filters( 'ctxfeed_debug_product_warnings', array(), $config, $product ) ) ) ),
 			)
 		);
 	}

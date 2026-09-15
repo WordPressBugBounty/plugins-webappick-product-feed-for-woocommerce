@@ -58,18 +58,37 @@ class WpOptionsEndpoint extends RestController {
 					'methods'             => \WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_options' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
 				),
 				array(
 					'methods'             => \WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'add_option' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(
+						'option' => array(
+							'required'          => true,
+							'type'              => 'string',
+							'validate_callback' => array( $this, 'validate_non_blank_string' ),
+							'sanitize_callback' => 'sanitize_text_field',
+							'description'       => __( 'wp_options option_name to expose as a feed value source.', 'woo-feed' ),
+						),
+					),
 				),
 				array(
 					'methods'             => \WP_REST_Server::DELETABLE,
 					'callback'            => array( $this, 'delete_option' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(
+						'option' => array(
+							'required'          => true,
+							'type'              => 'string',
+							'validate_callback' => array( $this, 'validate_non_blank_string' ),
+							'sanitize_callback' => 'sanitize_text_field',
+						),
+					),
 				),
-			) 
+				'schema' => array( $this, 'get_options_response_schema' ),
+			)
 		);
 
 		// Get all available WP options for the dropdown.
@@ -81,6 +100,34 @@ class WpOptionsEndpoint extends RestController {
 				'callback'            => array( $this, 'get_available_options' ),
 				'permission_callback' => array( $this, 'permission_check' ),
 			) 
+		);
+	}
+
+	/**
+	 * Response schema for the tracked-options routes (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_options_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-wp-options',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'options' => array(
+							'type'  => 'array',
+							'items' => array( 'type' => 'string' ),
+						),
+						'message' => array( 'type' => 'string' ),
+					),
+				),
+			),
 		);
 	}
 

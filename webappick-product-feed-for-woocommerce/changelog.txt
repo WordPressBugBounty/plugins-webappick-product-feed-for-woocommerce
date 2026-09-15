@@ -1,6 +1,12 @@
 CTX Feed — changelog archive
 The most recent releases are listed in readme.txt; this file carries the full history.
 
+= Version 8.0.20 =
+* Fix: multilingual stores (WPML) — feed product links now always carry the feed's language URL (Pro). Products without a translation in the feed language previously shipped the default-language link, so Google landed on the default-currency page and reported price mismatches; links now use WPML's own URL converter and existing feeds heal on their next regeneration.
+* Improved: security and review hardening across the plugin — every admin input is unslashed before sanitizing, every PHP file blocks direct access, review links follow WordPress.org guidelines, and the dashboard metrics queries use WordPress 6.2's safe identifier placeholders. The plugin now passes the official WordPress.org Plugin Check.
+* Changed: the minimum supported WordPress version is now 6.2 (released March 2023) — the plugin's code has required newer WordPress APIs for some time, and the declared requirement now says so honestly. Sites on older WordPress keep their current plugin version.
+* Changed: the readme changelog lists recent releases only; the complete version history ships with the plugin in changelog.txt.
+
 = Version 8.0.19 =
 * Added: update feeds every 5, 15, 30, or 45 minutes (Pro) for fast-moving inventory. Choosing 5 or 15 minutes shows a plain-language advisor first — a generation still running when the next one is due is skipped, and round-the-clock rebuilds can slow a store — with 30 minutes or longer recommended for most shops.
 * Added: Toolset Types support — Toolset custom fields get their own picker group (Pro) with properly formatted values (dates, checkboxes, repeating fields) resolving in every plan, and Toolset-registered product taxonomies work throughout.

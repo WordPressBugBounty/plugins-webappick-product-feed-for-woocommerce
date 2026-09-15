@@ -38,32 +38,44 @@ class SupportEndpoint extends RestController {
 			$this->namespace,
 			'/support/contact',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'send_contact' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-				'args'                => array(
-					'name'    => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
-					),
-					'email'   => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_email',
-					),
-					'message' => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_textarea_field',
-					),
-					'feed'    => array(
-						'required'          => false,
-						'default'           => '',
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'send_contact' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(
+						'name'    => array(
+							'required'          => true,
+							'type'              => 'string',
+							'validate_callback' => array( $this, 'validate_non_blank_string' ),
+							'sanitize_callback' => 'sanitize_text_field',
+						),
+						'email'   => array(
+							'required'          => true,
+							'type'              => 'string',
+							'format'            => 'email',
+							'validate_callback' => 'rest_validate_request_arg',
+							'sanitize_callback' => 'sanitize_email',
+						),
+						// maxLength 2000 matches the UI limit; over-long input
+						// now 400s instead of being silently truncated — a cut
+						// support message lost its tail with no warning (CBT-588).
+						'message' => array(
+							'required'          => true,
+							'type'              => 'string',
+							'maxLength'         => 2000,
+							'validate_callback' => array( $this, 'validate_contact_message' ),
+							'sanitize_callback' => 'sanitize_textarea_field',
+						),
+						'feed'    => array(
+							'required'          => false,
+							'default'           => '',
+							'type'              => 'string',
+							'sanitize_callback' => 'sanitize_text_field',
+							'description'       => __( "'', a feed id, or 'all' — selects which feed's diagnostics ride along.", 'woo-feed' ),
+						),
 					),
 				),
+				'schema' => array( $this, 'get_contact_response_schema' ),
 			)
 		);
 
@@ -71,22 +83,97 @@ class SupportEndpoint extends RestController {
 			$this->namespace,
 			'/support/discount',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'send_discount_claim' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-				'args'                => array(
-					'handle' => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
-					),
-					'email'  => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_email',
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'send_discount_claim' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(
+						'handle' => array(
+							'required'          => true,
+							'type'              => 'string',
+							'validate_callback' => array( $this, 'validate_non_blank_string' ),
+							'sanitize_callback' => 'sanitize_text_field',
+							'description'       => __( 'WordPress.org handle or profile URL.', 'woo-feed' ),
+						),
+						'email'  => array(
+							'required'          => true,
+							'type'              => 'string',
+							'format'            => 'email',
+							'validate_callback' => 'rest_validate_request_arg',
+							'sanitize_callback' => 'sanitize_email',
+						),
 					),
 				),
+				'schema' => array( $this, 'get_message_only_response_schema' ),
 			)
+		);
+	}
+
+	/**
+	 * Validate the contact message: non-blank AND within the schema's
+	 * maxLength (the custom callback replaces core's default, so it must
+	 * run the schema check itself — CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @param mixed            $value   Parameter value.
+	 * @param \WP_REST_Request $request REST request object.
+	 * @param string           $param   Parameter name.
+	 * @return true|\WP_Error
+	 */
+	public function validate_contact_message( $value, $request, $param ) {
+		$schema_check = rest_validate_request_arg( $value, $request, $param );
+		if ( true !== $schema_check ) {
+			return $schema_check;
+		}
+
+		return $this->validate_non_blank_string( $value, $request, $param );
+	}
+
+	/**
+	 * Response schema for POST /support/contact (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_contact_response_schema(): array {
+		return $this->message_only_schema( 'ctxfeed-support-contact' );
+	}
+
+	/**
+	 * Response schema for POST /support/discount (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_message_only_response_schema(): array {
+		return $this->message_only_schema( 'ctxfeed-support-discount' );
+	}
+
+	/**
+	 * The {success, data:{message}} envelope schema both support routes share.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @param string $title Schema title.
+	 * @return array
+	 */
+	private function message_only_schema( string $title ): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => $title,
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'message' => array( 'type' => 'string' ),
+					),
+				),
+			),
 		);
 	}
 
@@ -167,9 +254,10 @@ class SupportEndpoint extends RestController {
 		// only the "Attached:" line and nothing to diagnose from (#69086).
 		// The config must survive in the body itself; capped so an 'all'
 		// dump can't balloon the email.
-		$config_text = $this->feed_config_text( $feed );
+		$config_text = $this->feed_config_text( $feed, false );
 		if ( '' !== $config_text ) {
 			$body .= "\n--- Feed configuration (inline copy of feed-config.txt) ---\n";
+			$body .= "(compact JSON - the readable pretty-printed version is in the feed-config.txt attachment)\n";
 			$body .= mb_substr( $config_text, 0, 15000 );
 			if ( mb_strlen( $config_text ) > 15000 ) {
 				$body .= "\n[truncated - full copy in the feed-config.txt attachment]";
@@ -397,15 +485,17 @@ class SupportEndpoint extends RestController {
 	}
 
 	/**
-	 * The selected feed's stored configuration as pretty JSON, credentials
+	 * The selected feed's stored configuration as JSON, credentials
 	 * redacted. Empty string when no feed is selected (no file is written).
 	 *
 	 * @since 8.0.14
 	 *
-	 * @param string $feed '', 'all', or a feed id.
+	 * @param string $feed   '', 'all', or a feed id.
+	 * @param bool   $pretty Pretty-print (attachment default); false yields
+	 *                       compact single-line JSON for the inline body copy (CBT-589).
 	 * @return string
 	 */
-	private function feed_config_text( string $feed ): string {
+	private function feed_config_text( string $feed, bool $pretty = true ): string {
 		if ( '' === $feed ) {
 			return '';
 		}
@@ -436,8 +526,12 @@ class SupportEndpoint extends RestController {
 			}
 
 			$out .= "===== Feed: {$slug} =====\n";
-			$out .= (string) wp_json_encode( $this->redact_credentials( $data ), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES );
-			$out .= "\n\n";
+			// The attachment stays human-readable; the inline body copy is
+			// compact single-line JSON so the #69086 insurance stops
+			// bloating every ticket (CBT-589) — same data either way.
+			$flags = $pretty ? JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES : JSON_UNESCAPED_SLASHES;
+			$out  .= (string) wp_json_encode( $this->redact_credentials( $data ), $flags );
+			$out  .= "\n\n";
 		}
 
 		return trim( $out );

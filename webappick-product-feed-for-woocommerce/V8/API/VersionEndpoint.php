@@ -56,21 +56,58 @@ class VersionEndpoint extends RestController {
 	 * @return void
 	 */
 	public function register_routes(): void {
+		// `pattern` makes core reject a malformed version with its structured
+		// rest_invalid_param 400 before the callback (CBT-588); the handler's
+		// own preg_match stays as the belt for direct calls. NOTE: core only
+		// wires schema keywords (type/enum/pattern) to hand-written args when
+		// validate_callback is set explicitly — rest_get_endpoint_args_for_schema
+		// adds it for derived args, register_rest_route does NOT.
 		register_rest_route(
 			$this->namespace,
 			'/version/install',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'install_version' ),
-				'permission_callback' => array( $this, 'install_permission_check' ),
-				'args'                => array(
-					'version' => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'install_version' ),
+					'permission_callback' => array( $this, 'install_permission_check' ),
+					'args'                => array(
+						'version' => array(
+							'required'          => true,
+							'type'              => 'string',
+							'pattern'           => '^\\d+(\\.\\d+){1,3}$',
+							'validate_callback' => 'rest_validate_request_arg',
+							'sanitize_callback' => 'sanitize_text_field',
+							'description'       => __( 'Exact plugin release to install from WordPress.org (e.g. 8.0.20).', 'woo-feed' ),
+						),
 					),
 				),
-			) 
+				'schema' => array( $this, 'get_install_response_schema' ),
+			)
+		);
+	}
+
+	/**
+	 * Response schema for POST /version/install.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_install_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-version-install',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'version' => array( 'type' => 'string' ),
+						'message' => array( 'type' => 'string' ),
+					),
+				),
+			),
 		);
 	}
 

@@ -46,23 +46,29 @@ class SettingsEndpoint extends RestController {
 					'methods'             => \WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_settings' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
 				),
 				array(
 					'methods'             => \WP_REST_Server::EDITABLE,
 					'callback'            => array( $this, 'update_settings' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => $this->update_settings_args(),
 				),
-			) 
+				'schema' => array( $this, 'get_settings_response_schema' ),
+			)
 		);
 
 		register_rest_route(
 			$this->namespace,
 			'/settings/features',
 			array(
-				'methods'             => \WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_features' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_features' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+			)
 		);
 
 		// Dropdown data for admin UI selects.
@@ -110,6 +116,107 @@ class SettingsEndpoint extends RestController {
 	 * @var string
 	 */
 	const SETTINGS_KEY = 'woo_feed_settings';
+
+	/**
+	 * Declared args for PUT/PATCH /settings (CBT-588).
+	 *
+	 * Partial-update semantics: every key is optional, none declares a
+	 * `default` (core would inject it and break partiality). Enum'd toggles
+	 * carry an explicit rest_validate_request_arg so core rejects an invalid
+	 * value with a structured 400 naming the parameter — previously an
+	 * invalid toggle silently RESET the setting to its default, which could
+	 * flip a saved value the caller never mentioned. Unknown keys still pass
+	 * through untouched for the woo_feed_save_{key}_option filter extension.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	private function update_settings_args(): array {
+		$enum = static function ( array $values, string $description ): array {
+			return array(
+				'type'              => 'string',
+				'enum'              => $values,
+				'validate_callback' => 'rest_validate_request_arg',
+				'description'       => $description,
+			);
+		};
+
+		$id_field = static function ( string $description ): array {
+			return array(
+				'description' => $description,
+			);
+		};
+
+		return array(
+			'cron_job_new_cron_system_enabled' => array(
+				'type'              => 'boolean',
+				'validate_callback' => 'rest_validate_request_arg',
+				'description'       => __( 'Use the new cron system for feed scheduling.', 'woo-feed' ),
+			),
+			'enable_error_debugging'           => $enum( array( 'on', 'off' ), __( 'Write debug entries to the plugin logs.', 'woo-feed' ) ),
+			'overridden_structured_data'       => $enum( array( 'on', 'off' ), __( 'Override product structured data output.', 'woo-feed' ) ),
+			'disable_pixel'                    => $enum( array( 'enable', 'disable' ), __( 'Facebook pixel integration.', 'woo-feed' ) ),
+			'disable_remarketing'              => $enum( array( 'enable', 'disable' ), __( 'Google remarketing integration.', 'woo-feed' ) ),
+			'pinterest_conversion_tracking'    => $enum( array( 'enable', 'disable' ), __( 'Pinterest conversion tracking.', 'woo-feed' ) ),
+			'allow_all_shipping'               => $enum( array( 'yes', 'no' ), __( 'Include all shipping methods in feeds.', 'woo-feed' ) ),
+			'only_free_shipping'               => $enum( array( 'yes', 'no' ), __( 'Include only free shipping in feeds.', 'woo-feed' ) ),
+			'only_local_pickup_shipping'       => $enum( array( 'yes', 'no' ), __( 'Include only local pickup shipping in feeds.', 'woo-feed' ) ),
+			'enable_ftp_upload'                => $enum( array( 'yes', 'no' ), __( 'Enable FTP/SFTP feed upload.', 'woo-feed' ) ),
+			'enable_cdata'                     => $enum( array( 'yes', 'no' ), __( 'Wrap XML values in CDATA.', 'woo-feed' ) ),
+			'cache_ttl'                        => array(
+				'type'              => 'integer',
+				'minimum'           => 0,
+				'validate_callback' => 'rest_validate_request_arg',
+				'description'       => __( 'Data-cache lifetime in seconds.', 'woo-feed' ),
+			),
+			'pixel_id'                         => $id_field( __( 'Facebook pixel ID.', 'woo-feed' ) ),
+			'remarketing_id'                   => $id_field( __( 'Google remarketing ID.', 'woo-feed' ) ),
+			'remarketing_label'                => $id_field( __( 'Google remarketing label.', 'woo-feed' ) ),
+			'pinterest_tag_id'                 => $id_field( __( 'Pinterest tag ID.', 'woo-feed' ) ),
+			'woo_feed_taxonomy'                => array(
+				'type'        => 'object',
+				'description' => __( 'Per-taxonomy custom-field toggles (enable/disable per key; legacy booleans accepted).', 'woo-feed' ),
+			),
+			'woo_feed_identifier'              => array(
+				'type'        => 'object',
+				'description' => __( 'Per-identifier custom-field toggles (enable/disable per key; legacy booleans accepted).', 'woo-feed' ),
+			),
+			'clear_all_logs'                   => $id_field( __( 'Action: truthy value deletes every plugin log.', 'woo-feed' ) ),
+			'purge_feed_cache'                 => $id_field( __( 'Action: truthy value flushes the plugin cache.', 'woo-feed' ) ),
+			'opt_in'                           => $id_field( __( 'Action: opt the site in/out of anonymous diagnostics (boolean, or yes/on/enable/true/1).', 'woo-feed' ) ),
+		);
+	}
+
+	/**
+	 * Response schema for /settings (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_settings_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-settings',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'        => 'object',
+					'description' => __( 'GET: the merged settings map. PUT/PATCH: message, the full saved settings, and any actions_executed.', 'woo-feed' ),
+					'properties'  => array(
+						'message'          => array( 'type' => 'string' ),
+						'settings'         => array( 'type' => 'object' ),
+						'actions_executed' => array(
+							'type'  => 'array',
+							'items' => array( 'type' => 'string' ),
+						),
+					),
+				),
+			),
+		);
+	}
 
 	/**
 	 * The single cache lifetime (seconds) that governs CTX Feed's data caches.

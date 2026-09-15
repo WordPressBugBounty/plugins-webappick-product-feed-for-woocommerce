@@ -156,19 +156,22 @@ class ProductEndpoint extends RestController {
 				'callback'            => array( $this, 'preview_products' ),
 				'permission_callback' => array( $this, 'permission_check' ),
 				'args'                => array(
+					// Declared bounds instead of closures: same rejection,
+					// discoverable over OPTIONS (CBT-588).
 					'per_page' => array(
+						'type'              => 'integer',
+						'minimum'           => 1,
+						'maximum'           => 200,
 						'default'           => 10,
+						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'absint',
-						'validate_callback' => function ( $value ) {
-							return $value >= 1 && $value <= 200;
-						},
 					),
 					'page'     => array(
+						'type'              => 'integer',
+						'minimum'           => 1,
 						'default'           => 1,
+						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'absint',
-						'validate_callback' => function ( $value ) {
-							return $value >= 1;
-						},
 					),
 				),
 			) 
@@ -202,11 +205,11 @@ class ProductEndpoint extends RestController {
 				'permission_callback' => array( $this, 'permission_check' ),
 				'args'                => array(
 					'context' => array(
+						'type'              => 'string',
+						'enum'              => array( 'full', 'basic' ),
 						'default'           => 'full',
+						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'sanitize_text_field',
-						'validate_callback' => function ( $value ) {
-							return in_array( $value, array( 'full', 'basic' ), true );
-						},
 					),
 				),
 			) 
@@ -226,15 +229,15 @@ class ProductEndpoint extends RestController {
 						'default'           => '',
 						'sanitize_callback' => 'sanitize_text_field',
 					),
+					// 'smart' searches title + SKU + ID in one go; 'paste_ids'
+					// takes a comma-separated ID list; the last four are
+					// legacy values kept for backward compat.
 					'search_type' => array(
+						'type'              => 'string',
+						'enum'              => array( 'smart', 'paste_ids', 'paste_tokens', 'title', 'id', 'sku' ),
 						'default'           => 'smart',
+						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'sanitize_text_field',
-						'validate_callback' => static function ( $value ) {
-							// 'smart' searches title + SKU + ID in one go.
-							// 'paste_ids' accepts a comma-separated list of IDs.
-							// Legacy values accepted for backward compat.
-							return in_array( $value, array( 'smart', 'paste_ids', 'paste_tokens', 'title', 'id', 'sku' ), true );
-						},
 					),
 					'include'     => array(
 						'default'           => '',

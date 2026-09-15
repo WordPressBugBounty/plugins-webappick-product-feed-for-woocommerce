@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.21
+Stable tag: 8.0.22
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -469,6 +469,12 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.22 =
+* Fix: clearing a category mapping now sticks. Removing a category's value in the mapping editor showed it unmapped, but generated feeds quietly kept using the old value until the mapping was rebuilt — cleared entries are now really removed on save.
+* Fix: multilingual stores (WPML) — product variations no longer ship original-language attribute text inside translated feeds. Variation title suffixes and attribute values in feed columns, attribute mappings and dynamic attributes now resolve in the feed's language (WPML/WCML stores also need CTX Feed Pro 8.0.11).
+* Improved: the REST API validates every input up front with clear error messages and publishes response schemas on all endpoints. Invalid values are rejected instead of being silently reset or ignored — settings toggles, bulk feed actions, update intervals, FTP settings, category-mapping updates and channel batch requests included.
+* Improved: support requests sent from the plugin keep the inline feed configuration compact — the readable version travels in the attached feed-config.txt file.
+
 = Version 8.0.21 =
 * Fix: saving a feed no longer fails when a filter or mapping row carries a non-text value — the pre-save completeness check now treats numbers, on/off toggles and empty values exactly the way the server does, so the save proceeds instead of the page breaking.
 * Fix: Skroutz feeds with nested variations respect the feed's stock filters — variations excluded by the stock settings no longer ship inside <variations>.
@@ -477,12 +483,6 @@ If your feed fails to generate:
 * Fix: String Replace rules are validated on save and each rule now carries an explicit "Plain text" or "Pattern (regex)" mode. Existing rules keep their old auto-detect behavior exactly, and a pattern that fails to compile falls back to a plain-text replace instead of silently doing nothing.
 * Fix: prefix, suffix and String Replace values keep literal angle-bracket text (a <br> tag, a "<3") instead of having it stripped as HTML on save.
 * Improved: Attribute Mapping warns about likely misspelled attribute keys ("did you mean...") and circular references that resolve to empty values, in the mapping editor's live preview and the API responses (Pro).
-
-= Version 8.0.20 =
-* Fix: multilingual stores (WPML) — feed product links now always carry the feed's language URL (Pro). Products without a translation in the feed language previously shipped the default-language link, so Google landed on the default-currency page and reported price mismatches; links now use WPML's own URL converter and existing feeds heal on their next regeneration.
-* Improved: security and review hardening across the plugin — every admin input is unslashed before sanitizing, every PHP file blocks direct access, review links follow WordPress.org guidelines, and the dashboard metrics queries use WordPress 6.2's safe identifier placeholders. The plugin now passes the official WordPress.org Plugin Check.
-* Changed: the minimum supported WordPress version is now 6.2 (released March 2023) — the plugin's code has required newer WordPress APIs for some time, and the declared requirement now says so honestly. Sites on older WordPress keep their current plugin version.
-* Changed: the readme changelog lists recent releases only; the complete version history ships with the plugin in changelog.txt.
 
 The complete changelog for all earlier versions ships with the plugin in changelog.txt.
 

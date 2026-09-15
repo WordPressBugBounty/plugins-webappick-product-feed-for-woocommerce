@@ -106,13 +106,34 @@ class CategoryMappingEndpoint extends RestController {
 					'methods'             => \WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_mappings' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
 				),
 				array(
 					'methods'             => \WP_REST_Server::CREATABLE,
 					'callback'            => array( $this, 'create_mapping' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(
+						'name'     => array(
+							'required'          => true,
+							'type'              => 'string',
+							'validate_callback' => array( $this, 'validate_non_blank_string' ),
+							'sanitize_callback' => 'sanitize_text_field',
+							'description'       => __( 'Display name; the stored option slug derives from it.', 'woo-feed' ),
+						),
+						'template' => array(
+							'required'          => true,
+							'type'              => 'string',
+							'validate_callback' => array( $this, 'validate_non_blank_string' ),
+							'sanitize_callback' => 'sanitize_text_field',
+							'description'       => __( 'Merchant template key the mapping targets (e.g. google).', 'woo-feed' ),
+						),
+						'mappings' => array(
+							'description' => __( 'Category rows: either [ { "<wc_cat_id>": "<merchant value>" }, ... ] or one flat { id: value } object — both accepted shapes are preserved.', 'woo-feed' ),
+						),
+					),
 				),
-			) 
+				'schema' => array( $this, 'get_mapping_response_schema' ),
+			)
 		);
 
 		// WooCommerce product categories (hierarchical, cached, paginated).
@@ -131,13 +152,18 @@ class CategoryMappingEndpoint extends RestController {
 				'args'                => array(
 					'page'     => array(
 						'type'              => 'integer',
+						'minimum'           => 1,
 						'default'           => 1,
+						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'absint',
 					),
 					'per_page' => array(
 						'type'              => 'integer',
+						'minimum'           => 1,
 						'default'           => self::CAT_DEFAULT_PER_PAGE,
+						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'absint',
+						'description'       => __( 'Items per page; the server caps oversized values.', 'woo-feed' ),
 					),
 					'search'   => array(
 						'type'              => 'string',
@@ -163,15 +189,20 @@ class CategoryMappingEndpoint extends RestController {
 				'args'                => array(
 					'template' => array(
 						'required'          => true,
+						'type'              => 'string',
+						'validate_callback' => array( $this, 'validate_non_blank_string' ),
 						'sanitize_callback' => 'sanitize_text_field',
 					),
 					'search'   => array(
+						'type'              => 'string',
 						'default'           => '',
 						'sanitize_callback' => 'sanitize_text_field',
 					),
 					'ids'      => array(
+						'type'              => 'string',
 						'default'           => '',
 						'sanitize_callback' => 'sanitize_text_field',
+						'description'       => __( 'Comma-separated merchant category IDs to hydrate labels for.', 'woo-feed' ),
 					),
 				),
 			) 
@@ -186,18 +217,66 @@ class CategoryMappingEndpoint extends RestController {
 					'methods'             => \WP_REST_Server::READABLE,
 					'callback'            => array( $this, 'get_mapping' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
 				),
 				array(
 					'methods'             => \WP_REST_Server::EDITABLE,
 					'callback'            => array( $this, 'update_mapping' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(
+						// A typo'd type (e.g. 'appendd') used to silently mean
+						// REPLACE-everything — the most destructive reading of
+						// a mistyped request. It now 400s (CBT-588).
+						'type' => array(
+							'type'              => 'string',
+							'enum'              => array( 'append', 'replace' ),
+							'validate_callback' => 'rest_validate_request_arg',
+							'description'       => __( "How 'mappings' applies: 'append' merges rows into the existing map (a row sent with an empty value CLEARS that category), 'replace' (or omitted) swaps the whole map.", 'woo-feed' ),
+						),
+					),
 				),
 				array(
 					'methods'             => \WP_REST_Server::DELETABLE,
 					'callback'            => array( $this, 'delete_mapping' ),
 					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
 				),
-			) 
+				'schema' => array( $this, 'get_mapping_response_schema' ),
+			)
+		);
+	}
+
+	/**
+	 * Response schema shared by the mapping collection and item routes (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_mapping_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-category-mapping',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'message'     => array( 'type' => 'string' ),
+						'option_name' => array( 'type' => 'string' ),
+						'data'        => array(
+							'type'       => 'object',
+							'properties' => array(
+								'name'        => array( 'type' => 'string' ),
+								'template'    => array( 'type' => 'string' ),
+								'mappings'    => array( 'type' => 'object' ),
+								'option_name' => array( 'type' => 'string' ),
+							),
+						),
+					),
+				),
+			),
 		);
 	}
 
@@ -581,9 +660,13 @@ class CategoryMappingEndpoint extends RestController {
 		$final_name     = ! empty( $body['name'] ) ? sanitize_text_field( $body['name'] ) : $current['name'];
 		$final_template = ! empty( $body['template'] ) ? sanitize_text_field( $body['template'] ) : $current['template'];
 
-		// Handle mappings — check for append mode.
+		// Handle mappings — check for append mode. Empties are KEPT through
+		// flattening here: an explicitly-sent `key => ''` is the editor's
+		// clear marker, and dropping it before the merge made unmapping a
+		// category silently non-persistent (CBT-590) — the UI said "Saved"
+		// while the stored value survived every reload.
 		$type         = $request->get_param( 'type' );
-		$new_mappings = isset( $body['mappings'] ) ? $this->flatten_mappings( $body['mappings'] ) : null;
+		$new_mappings = isset( $body['mappings'] ) ? $this->flatten_mappings( $body['mappings'], true ) : null;
 
 		if ( null !== $new_mappings ) {
 			if ( 'append' === $type ) {
@@ -591,14 +674,22 @@ class CategoryMappingEndpoint extends RestController {
 				// (NOT array_merge) because category IDs are numeric-string
 				// keys — array_merge would treat them as sequential ints
 				// and REINDEX, silently corrupting every mapping's key.
-				// array_replace preserves keys and overwrites on collision,
-				// which is the correct "append this one row" semantic the
-				// React autosave flow depends on.
+				// array_replace preserves keys and overwrites on collision;
+				// a '' value overwrites the stored one and is stripped
+				// below, which is what deletes the row (CBT-590).
 				$final_mappings = array_replace( (array) $current['mappings'], $new_mappings );
 			} else {
 				// Replace all mappings.
 				$final_mappings = $new_mappings;
 			}
+
+			// '' entries did their job (clearing on merge) — never store them.
+			$final_mappings = array_filter(
+				$final_mappings,
+				static function ( $value ) {
+					return '' !== (string) $value;
+				}
+			);
 		} else {
 			$final_mappings = $current['mappings'];
 		}
@@ -1129,8 +1220,10 @@ class CategoryMappingEndpoint extends RestController {
 	 *
 	 * @param mixed $mappings Raw mappings from request.
 	 * @return array Flat associative array of category_id => category_value.
+	 * @param bool  $keep_empty Keep explicitly-sent empty values (the update
+	 *                           path's clear markers — CBT-590).
 	 */
-	private function flatten_mappings( $mappings ): array {
+	private function flatten_mappings( $mappings, bool $keep_empty = false ): array {
 		if ( ! is_array( $mappings ) ) {
 			return array();
 		}
@@ -1141,16 +1234,16 @@ class CategoryMappingEndpoint extends RestController {
 		if ( isset( $mappings[0] ) && is_array( $mappings[0] ) ) {
 			foreach ( $mappings as $group ) {
 				foreach ( (array) $group as $cat_id => $cat_value ) {
-					if ( ! empty( $cat_value ) ) {
-						$flat[ (string) $cat_id ] = sanitize_text_field( $cat_value );
+					if ( ! empty( $cat_value ) || $keep_empty ) {
+						$flat[ (string) $cat_id ] = sanitize_text_field( (string) $cat_value );
 					}
 				}
 			}
 		} else {
 			// Already a flat associative array.
 			foreach ( $mappings as $cat_id => $cat_value ) {
-				if ( ! empty( $cat_value ) ) {
-					$flat[ (string) $cat_id ] = sanitize_text_field( $cat_value );
+				if ( ! empty( $cat_value ) || $keep_empty ) {
+					$flat[ (string) $cat_id ] = sanitize_text_field( (string) $cat_value );
 				}
 			}
 		}

@@ -33,15 +33,20 @@ class StatusEndpoint extends RestController {
 	 * @return void
 	 */
 	public function register_routes(): void {
-		// GET /ctxfeed/v8/status — full system status.
+		// GET /ctxfeed/v8/status — full system status. No parameters; the
+		// response schema (OPTIONS) documents the section/row shape (CBT-588).
 		register_rest_route(
 			$this->namespace,
 			'/status',
 			array(
-				'methods'             => \WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_status' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_status' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_status_response_schema' ),
+			)
 		);
 
 		// GET /ctxfeed/v8/status/logs — error logs.
@@ -49,10 +54,14 @@ class StatusEndpoint extends RestController {
 			$this->namespace,
 			'/status/logs',
 			array(
-				'methods'             => \WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_logs' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_logs' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_logs_response_schema' ),
+			)
 		);
 
 		// DELETE /ctxfeed/v8/status/cache — clear status cache.
@@ -60,9 +69,13 @@ class StatusEndpoint extends RestController {
 			$this->namespace,
 			'/status/cache',
 			array(
-				'methods'             => \WP_REST_Server::DELETABLE,
-				'callback'            => array( $this, 'clear_cache' ),
-				'permission_callback' => array( $this, 'permission_check' ),
+				array(
+					'methods'             => \WP_REST_Server::DELETABLE,
+					'callback'            => array( $this, 'clear_cache' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_message_response_schema' ),
 			)
 		);
 
@@ -71,29 +84,188 @@ class StatusEndpoint extends RestController {
 			$this->namespace,
 			'/status/notices',
 			array(
-				'methods'             => \WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_notices' ),
-				'permission_callback' => array( $this, 'permission_check' ),
+				array(
+					'methods'             => \WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_notices' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_notices_response_schema' ),
 			)
 		);
 
 		// POST /ctxfeed/v8/status/notices/dismiss — persist a per-user dismissal.
+		// `id` is declared required + non-blank so core rejects a missing or
+		// empty value with its structured rest_missing_callback_param /
+		// rest_invalid_param 400 before the callback runs (CBT-588).
 		register_rest_route(
 			$this->namespace,
 			'/status/notices/dismiss',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'dismiss_notice' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-				'args'                => array(
-					'id' => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
-						'description'       => __( 'Notice ID to dismiss.', 'woo-feed' ),
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'dismiss_notice' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(
+						'id' => array(
+							'required'          => true,
+							'type'              => 'string',
+							'sanitize_callback' => 'sanitize_text_field',
+							'validate_callback' => array( $this, 'validate_non_blank_string' ),
+							'description'       => __( 'Notice ID to dismiss.', 'woo-feed' ),
+						),
 					),
 				),
+				'schema' => array( $this, 'get_dismiss_response_schema' ),
 			)
+		);
+	}
+
+	/**
+	 * Response schema for GET /status — the CBT-588 envelope around
+	 * section-grouped diagnostic rows.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_status_response_schema(): array {
+		$row = array(
+			'type'       => 'object',
+			'properties' => array(
+				'label'   => array( 'type' => 'string' ),
+				'status'  => array(
+					'type' => 'string',
+					'enum' => array( 'success', 'warning', 'error', 'none' ),
+				),
+				'message' => array( 'type' => 'string' ),
+				'action'  => array(
+					'type'       => 'object',
+					'properties' => array(
+						'label'  => array( 'type' => 'string' ),
+						'href'   => array(
+							'type'   => 'string',
+							'format' => 'uri',
+						),
+						'target' => array( 'type' => 'string' ),
+					),
+				),
+			),
+		);
+
+		$sections = array();
+		foreach ( array( 'ctx_feed', 'wordpress', 'server', 'database', 'plugins', 'theme', 'filesystem' ) as $section ) {
+			$sections[ $section ] = array(
+				'type'  => 'array',
+				'items' => $row,
+			);
+		}
+
+		return $this->envelope_schema(
+			'ctxfeed-status',
+			array(
+				'sections' => array(
+					'type'       => 'object',
+					'properties' => $sections,
+				),
+			)
+		);
+	}
+
+	/**
+	 * Response schema for GET /status/logs.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_logs_response_schema(): array {
+		return $this->envelope_schema(
+			'ctxfeed-status-logs',
+			array(
+				'logs' => array(
+					'type'        => 'string',
+					'description' => __( 'Concatenated recent log content, or a friendly empty message.', 'woo-feed' ),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Response schema for endpoints returning a plain confirmation message.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_message_response_schema(): array {
+		return $this->envelope_schema(
+			'ctxfeed-message',
+			array(
+				'message' => array( 'type' => 'string' ),
+			)
+		);
+	}
+
+	/**
+	 * Response schema for GET /status/notices.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_notices_response_schema(): array {
+		return $this->envelope_schema(
+			'ctxfeed-status-notices',
+			array(
+				'notices' => array(
+					'type'  => 'array',
+					'items' => array( 'type' => 'object' ),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Response schema for POST /status/notices/dismiss.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_dismiss_response_schema(): array {
+		return $this->envelope_schema(
+			'ctxfeed-status-notice-dismiss',
+			array(
+				'dismissed' => array(
+					'type'        => 'string',
+					'description' => __( 'The dismissed notice ID.', 'woo-feed' ),
+				),
+			)
+		);
+	}
+
+	/**
+	 * Wrap data properties in the standard {success, data} envelope schema.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @param string $title      Schema title.
+	 * @param array  $properties JSON-schema properties of the data object.
+	 * @return array
+	 */
+	private function envelope_schema( string $title, array $properties ): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => $title,
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => $properties,
+				),
+			),
 		);
 	}
 

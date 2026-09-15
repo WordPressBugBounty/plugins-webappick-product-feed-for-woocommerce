@@ -37,10 +37,47 @@ class HealthEndpoint extends RestController {
 			$this->namespace,
 			'/health',
 			array(
-				'methods'             => \WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_health' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_health' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_health_response_schema' ),
+			)
+		);
+	}
+
+	/**
+	 * Response schema for GET /health (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_health_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-health',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'status'             => array(
+							'type' => 'string',
+							'enum' => array( 'ok' ),
+						),
+						'engine'             => array( 'type' => 'string' ),
+						'php_version'        => array( 'type' => 'string' ),
+						'wp_version'         => array( 'type' => 'string' ),
+						'wc_version'         => array( 'type' => 'string' ),
+						'memory_limit'       => array( 'type' => 'string' ),
+						'max_execution_time' => array( 'type' => 'string' ),
+					),
+				),
+			),
 		);
 	}
 

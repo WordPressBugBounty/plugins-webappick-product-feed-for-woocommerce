@@ -65,10 +65,14 @@ class ChannelEndpoint extends RestController {
 			$this->namespace,
 			'/channels',
 			array(
-				'methods'             => \WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_channels' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_channels' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_channels_response_schema' ),
+			)
 		);
 
 		// Merchant taxonomy list — must be registered BEFORE the {id} route
@@ -81,16 +85,21 @@ class ChannelEndpoint extends RestController {
 				'callback'            => array( $this, 'get_merchant_taxonomy' ),
 				'permission_callback' => array( $this, 'permission_check' ),
 				'args'                => array(
+					// Declared enum instead of a closure: same rejection, but
+					// the accepted values are discoverable over OPTIONS and
+					// the 400 names them (CBT-588).
 					'merchant'     => array(
+						'type'              => 'string',
+						'enum'              => array( 'google', 'facebook' ),
 						'default'           => 'google',
+						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'sanitize_text_field',
-						'validate_callback' => function ( $value ) {
-							return in_array( $value, array( 'google', 'facebook' ), true );
-						},
 					),
 					'country_code' => array(
+						'type'              => 'string',
 						'default'           => 'en-US',
 						'sanitize_callback' => 'sanitize_text_field',
+						'description'       => __( 'Taxonomy locale code, e.g. en-US, de-DE.', 'woo-feed' ),
 					),
 				),
 			) 
@@ -106,19 +115,22 @@ class ChannelEndpoint extends RestController {
 				'permission_callback' => array( $this, 'permission_check' ),
 				'args'                => array(
 					'merchant'     => array(
+						'type'              => 'string',
+						'enum'              => array( 'google', 'facebook' ),
 						'default'           => 'google',
+						'validate_callback' => 'rest_validate_request_arg',
 						'sanitize_callback' => 'sanitize_text_field',
-						'validate_callback' => function ( $value ) {
-							return in_array( $value, array( 'google', 'facebook' ), true );
-						},
 					),
 					'country_code' => array(
+						'type'              => 'string',
 						'default'           => 'en-US',
 						'sanitize_callback' => 'sanitize_text_field',
 					),
 					'with_id'      => array(
+						'type'              => 'boolean',
 						'default'           => true,
 						'sanitize_callback' => 'rest_sanitize_boolean',
+						'description'       => __( 'Fetch the taxonomy variant that carries numeric category IDs.', 'woo-feed' ),
 					),
 				),
 			) 
@@ -173,6 +185,8 @@ class ChannelEndpoint extends RestController {
 				'args'                => array(
 					'provider' => array(
 						'required'          => true,
+						'type'              => 'string',
+						'validate_callback' => array( $this, 'validate_non_blank_string' ),
 						'sanitize_callback' => 'sanitize_text_field',
 						'description'       => __( 'Provider/merchant template key (e.g., google, facebook).', 'woo-feed' ),
 					),
@@ -191,6 +205,8 @@ class ChannelEndpoint extends RestController {
 				'args'                => array(
 					'template' => array(
 						'required'          => true,
+						'type'              => 'string',
+						'validate_callback' => array( $this, 'validate_non_blank_string' ),
 						'sanitize_callback' => 'sanitize_text_field',
 						'description'       => __( 'Template name (e.g., google, facebook, custom).', 'woo-feed' ),
 					),
@@ -203,10 +219,17 @@ class ChannelEndpoint extends RestController {
 			$this->namespace,
 			'/channels/feed-rules/batch',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'get_initial_feed_rules' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'get_initial_feed_rules' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					// The body is a raw JSON ARRAY of template names — args
+					// cannot describe a top-level array body, so the handler's
+					// own 400 stays the contract (documented in the schema).
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_feed_rules_response_schema' ),
+			)
 		);
 
 		// Single channel details.
@@ -214,10 +237,65 @@ class ChannelEndpoint extends RestController {
 			$this->namespace,
 			'/channels/(?P<id>[a-zA-Z0-9_-]+)',
 			array(
-				'methods'             => \WP_REST_Server::READABLE,
-				'callback'            => array( $this, 'get_channel' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::READABLE,
+					'callback'            => array( $this, 'get_channel' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_channels_response_schema' ),
+			)
+		);
+	}
+
+	/**
+	 * Response schema for the channel list/detail routes (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_channels_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-channels',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'        => 'object',
+					'description' => __( 'List: { channels: [...] }. Detail: one channel object with template metadata.', 'woo-feed' ),
+				),
+			),
+		);
+	}
+
+	/**
+	 * Response schema for the feed-rules routes (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_feed_rules_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-channel-feed-rules',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'        => 'object',
+					'description' => __( 'Batch POST accepts a raw JSON array of template names and returns { templates, configs }.', 'woo-feed' ),
+					'properties'  => array(
+						'templates' => array(
+							'type'  => 'array',
+							'items' => array( 'type' => 'string' ),
+						),
+						'configs'   => array( 'type' => 'object' ),
+					),
+				),
+			),
 		);
 	}
 
@@ -302,7 +380,12 @@ class ChannelEndpoint extends RestController {
 	public function get_initial_feed_rules( \WP_REST_Request $request ): \WP_REST_Response {
 		$templates = $request->get_json_params();
 
-		if ( ! is_array( $templates ) || empty( $templates ) ) {
+		// A JSON OBJECT decodes to a PHP assoc array and used to slip past
+		// this guard, contradicting the error message's own contract — the
+		// body must be a JSON LIST of names (CBT-588). Plain-PHP list check
+		// so the pure-unit suite needs no WP stub.
+		$is_list = is_array( $templates ) && array_keys( $templates ) === range( 0, count( $templates ) - 1 );
+		if ( ! is_array( $templates ) || empty( $templates ) || ! $is_list ) {
 			return $this->error( __( 'Request body must be a JSON array of template names.', 'woo-feed' ), 400 );
 		}
 

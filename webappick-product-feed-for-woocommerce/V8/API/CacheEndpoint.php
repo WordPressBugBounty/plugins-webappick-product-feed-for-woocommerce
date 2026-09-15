@@ -61,10 +61,42 @@ class CacheEndpoint extends RestController {
 			$this->namespace,
 			'/cache/clear',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'clear_cache' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'clear_cache' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(),
+				),
+				'schema' => array( $this, 'get_clear_response_schema' ),
+			)
+		);
+	}
+
+	/**
+	 * Response schema for POST /cache/clear (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_clear_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-cache-clear',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'deleted' => array(
+							'type'        => 'integer',
+							'description' => __( 'Number of cache entries removed.', 'woo-feed' ),
+						),
+						'message' => array( 'type' => 'string' ),
+					),
+				),
+			),
 		);
 	}
 

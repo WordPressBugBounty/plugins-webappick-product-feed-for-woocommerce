@@ -74,10 +74,26 @@ class SetupEndpoint extends RestController {
 			$this->namespace,
 			'/setup/complete',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'complete_setup' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-			) 
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'complete_setup' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					'args'                => array(
+						'telemetry' => array(
+							'description' => __( 'Boolean-ish opt-in for anonymous diagnostics; omitted leaves the current choice untouched.', 'woo-feed' ),
+						),
+						'channels'  => array(
+							'type'        => 'array',
+							'items'       => array( 'type' => 'string' ),
+							'description' => __( 'Channel keys picked in the wizard; unknown keys are dropped against the server allow-list.', 'woo-feed' ),
+						),
+						'skipped'   => array(
+							'description' => __( 'Boolean-ish: the wizard was skipped rather than completed.', 'woo-feed' ),
+						),
+					),
+				),
+				'schema' => array( $this, 'get_complete_response_schema' ),
+			)
 		);
 
 		register_rest_route(
@@ -88,6 +104,31 @@ class SetupEndpoint extends RestController {
 				'callback'            => array( $this, 'install_woocommerce' ),
 				'permission_callback' => array( $this, 'install_permission_check' ),
 			) 
+		);
+	}
+
+	/**
+	 * Response schema for POST /setup/complete (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_complete_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-setup-complete',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'completed' => array( 'type' => 'boolean' ),
+						'skipped'   => array( 'type' => 'boolean' ),
+					),
+				),
+			),
 		);
 	}
 

@@ -52,49 +52,114 @@ class FtpTestEndpoint extends RestController {
 			$this->namespace,
 			'/ftp/test',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'test_connection' ),
-				'permission_callback' => array( $this, 'permission_check' ),
-				'args'                => array(
-					'host'     => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
-					),
-					'port'     => array(
-						'required' => false,
-						'type'     => array( 'integer', 'string' ),
-					),
-					'username' => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
-					),
-					// Deliberately NOT sanitized — passwords may legitimately
-					// contain characters sanitize_text_field would strip. The
-					// value is used for the connection only; never stored,
-					// logged, or echoed (see scrub()).
-					'password' => array(
-						'required' => true,
-						'type'     => 'string',
-					),
-					'protocol' => array(
-						'required'          => false,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
-					),
-					'mode'     => array(
-						'required'          => false,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
-					),
-					'path'     => array(
-						'required'          => true,
-						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_text_field',
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'test_connection' ),
+					'permission_callback' => array( $this, 'permission_check' ),
+					// Explicit rest_validate_request_arg wires the schema
+					// keywords (type/enum/min/max) — core does not add it to
+					// hand-written args (CBT-588).
+					'args'                => $this->test_args(),
+				),
+				'schema' => array( $this, 'get_test_response_schema' ),
+			)
+		);
+	}
+
+	/**
+	 * Declared args for POST /ftp/test (CBT-588).
+	 *
+	 * Two loud tightenings vs the old handler tolerance: an unknown protocol
+	 * (previously silently treated as ftp) and an out-of-range port
+	 * (previously silently replaced by the protocol default) now 400 with
+	 * the parameter named.
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	private function test_args(): array {
+		return array(
+			'host'     => array(
+				'required'          => true,
+				'type'              => 'string',
+				'validate_callback' => 'rest_validate_request_arg',
+				'sanitize_callback' => 'sanitize_text_field',
+				'description'       => __( 'Host name or IP; a pasted URL is tolerated (the scheme is stripped).', 'woo-feed' ),
+			),
+			'port'     => array(
+				'required'          => false,
+				'type'              => array( 'integer', 'string' ),
+				'minimum'           => 1,
+				'maximum'           => 65535,
+				'validate_callback' => 'rest_validate_request_arg',
+				'description'       => __( 'Port 1-65535. Omit or send an empty string for the protocol default (21 ftp / 22 sftp).', 'woo-feed' ),
+			),
+			'username' => array(
+				'required'          => true,
+				'type'              => 'string',
+				'validate_callback' => 'rest_validate_request_arg',
+				'sanitize_callback' => 'sanitize_text_field',
+			),
+			// Deliberately NOT sanitized — passwords may legitimately
+			// contain characters sanitize_text_field would strip. The
+			// value is used for the connection only; never stored,
+			// logged, or echoed (see scrub()).
+			'password' => array(
+				'required'          => true,
+				'type'              => 'string',
+				'validate_callback' => 'rest_validate_request_arg',
+			),
+			'protocol' => array(
+				'required'          => false,
+				'type'              => 'string',
+				'enum'              => array( 'ftp', 'sftp' ),
+				'validate_callback' => 'rest_validate_request_arg',
+				'sanitize_callback' => 'sanitize_text_field',
+				'description'       => __( 'Transfer protocol; defaults to ftp.', 'woo-feed' ),
+			),
+			'mode'     => array(
+				'required'          => false,
+				'type'              => 'string',
+				'enum'              => array( 'active', 'passive' ),
+				'validate_callback' => 'rest_validate_request_arg',
+				'sanitize_callback' => 'sanitize_text_field',
+				'description'       => __( 'FTP transfer mode; defaults to passive.', 'woo-feed' ),
+			),
+			'path'     => array(
+				'required'          => true,
+				'type'              => 'string',
+				'validate_callback' => 'rest_validate_request_arg',
+				'sanitize_callback' => 'sanitize_text_field',
+				'description'       => __( 'Absolute remote directory starting with /.', 'woo-feed' ),
+			),
+		);
+	}
+
+	/**
+	 * Response schema for POST /ftp/test (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_test_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-ftp-test',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'message' => array(
+							'type'        => 'string',
+							'description' => __( 'Human-readable connection result; failures return the error envelope with a 4xx/5xx status instead.', 'woo-feed' ),
+						),
 					),
 				),
-			) 
+			),
 		);
 	}
 

@@ -73,10 +73,50 @@ class OurPluginsEndpoint extends RestController {
 			$this->namespace,
 			'/our-plugins/install',
 			array(
-				'methods'             => \WP_REST_Server::CREATABLE,
-				'callback'            => array( $this, 'install_plugin' ),
-				'permission_callback' => array( $this, 'install_permission' ),
+				array(
+					'methods'             => \WP_REST_Server::CREATABLE,
+					'callback'            => array( $this, 'install_plugin' ),
+					'permission_callback' => array( $this, 'install_permission' ),
+					// The enum mirrors the handler's PLUGIN_SLUGS allow-list —
+					// the accepted slugs become discoverable over OPTIONS and
+					// anything else 400s before the callback (CBT-588).
+					'args'                => array(
+						'slug' => array(
+							'required'          => true,
+							'type'              => 'string',
+							'enum'              => self::PLUGIN_SLUGS,
+							'validate_callback' => 'rest_validate_request_arg',
+							'sanitize_callback' => 'sanitize_key',
+						),
+					),
+				),
+				'schema' => array( $this, 'get_install_response_schema' ),
 			)
+		);
+	}
+
+	/**
+	 * Response schema for POST /our-plugins/install (CBT-588).
+	 *
+	 * @since 8.0.22
+	 *
+	 * @return array
+	 */
+	public function get_install_response_schema(): array {
+		return array(
+			'$schema'    => 'http://json-schema.org/draft-04/schema#',
+			'title'      => 'ctxfeed-our-plugins-install',
+			'type'       => 'object',
+			'properties' => array(
+				'success' => array( 'type' => 'boolean' ),
+				'data'    => array(
+					'type'       => 'object',
+					'properties' => array(
+						'message' => array( 'type' => 'string' ),
+						'status'  => array( 'type' => 'string' ),
+					),
+				),
+			),
 		);
 	}
 
