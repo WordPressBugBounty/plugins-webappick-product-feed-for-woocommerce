@@ -27,7 +27,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class BingTransform implements TransformInterface {
 
-	use AppendsCurrencyTrait;
+	use FeedCurrencyFallbackTrait;
+
 
 	/**
 	 * Transform product data for Bing compliance.
@@ -50,10 +51,10 @@ class BingTransform implements TransformInterface {
 		$product_data = $this->transform_availability_date( $product_data );
 		$product_data = $this->transform_shipping( $product_data, $config );
 
-		// MSC money format "<number> <ISO-4217>" (e.g. "34.00 USD") —
-		// same as Google. PriceResolver emits bare numbers; the channel
-		// owns the format (V5 appended the currency universally).
-		$product_data = $this->append_currency( $product_data, $config, array( 'price', 'sale_price' ) );
+		// Price / sale_price = bare number + the row's configured suffix as
+		// written; the feed currency is appended ONLY when the suffix is empty
+		// and a multi-currency plugin provided that currency (CBT-602, owner).
+		$product_data = $this->apply_feed_currency_fallback( $product_data, $config, array( 'price', 'sale_price' ) );
 
 		return $product_data;
 	}

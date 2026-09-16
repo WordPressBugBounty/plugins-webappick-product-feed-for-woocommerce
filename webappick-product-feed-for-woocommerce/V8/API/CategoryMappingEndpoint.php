@@ -81,6 +81,43 @@ class CategoryMappingEndpoint extends RestController {
 	const TAXONOMY_PARSE_CACHE_PREFIX = 'ctxfeed_taxonomy_parsed_';
 
 	/**
+	 * Templates that search the bundled Google product taxonomy.
+	 *
+	 * @since 8.0.23
+	 * @var string[]
+	 */
+	const GOOGLE_TAXONOMY_TEMPLATES = array(
+		'google',
+		'google_shopping',
+		'google_local',
+		'google_local_inventory',
+		'google_shopping_promotions',
+		'google_dynamic_search_ads',
+		'google_manufacturer',
+		'pinterest',
+		'pinterest_rss',
+		'bing',
+		'bing_shopping',
+		'snapchat',
+		'tiktok',
+		'ideal',
+		'pricepy',
+		'become',
+	);
+
+	/**
+	 * Templates that search the bundled Facebook product taxonomy.
+	 *
+	 * @since 8.0.23
+	 * @var string[]
+	 */
+	const FACEBOOK_TAXONOMY_TEMPLATES = array(
+		'facebook',
+		'facebook_catalog',
+		'instagram',
+	);
+
+	/**
 	 * Default page size for the paginated categories endpoint. Matches
 	 * V5's `stringsDocs.categoryPaginationLength` so the two UIs behave
 	 * identically for the customer.
@@ -1005,65 +1042,66 @@ class CategoryMappingEndpoint extends RestController {
 	}
 
 	/**
+	 * Whether a template has a channel taxonomy list to search.
+	 *
+	 * True for the Google family (bundled google_taxonomy.txt, or the
+	 * uploads override), the Facebook family (fb_taxonomy.txt), or any
+	 * template with a bundled `{template}_taxonomy.txt`. Every other
+	 * channel maps categories as FREE TEXT (V5 parity: only the
+	 * "suggestive list" merchants ever had a dropdown) — the editor
+	 * renders a plain input and the typed value ships literally.
+	 *
+	 * @since 8.0.23
+	 *
+	 * @param string $template Template/merchant key.
+	 * @return bool
+	 */
+	public static function has_taxonomy( string $template ): bool {
+		$template = strtolower( trim( $template ) );
+
+		if ( '' === $template ) {
+			return false;
+		}
+
+		if ( in_array( $template, self::GOOGLE_TAXONOMY_TEMPLATES, true )
+			|| in_array( $template, self::FACEBOOK_TAXONOMY_TEMPLATES, true ) ) {
+			return true;
+		}
+
+		$generic = TemplateLocator::taxonomy_dir() . $template . '_taxonomy.txt';
+
+		return '' !== TemplateLocator::taxonomy_dir() && file_exists( $generic );
+	}
+
+	/**
 	 * Resolve a template key to the local taxonomy file path.
 	 *
-	 * Maps common template identifiers to their taxonomy file.
-	 * Google Shopping, Facebook Catalog, and their variants all
-	 * use the same taxonomy files.
+	 * Google Shopping, Facebook Catalog, and their variants all use the
+	 * same taxonomy files. Templates without a list resolve to null — the
+	 * pre-8.0.23 "fall back to Google" branch is gone (CBT-596): it made
+	 * every channel look searchable and hid the free-text mapping V5 had.
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.23 No Google fallback for unknown templates.
 	 *
 	 * @param string $template Template/merchant key.
 	 * @return string|null File path or null if unsupported.
 	 */
 	private function resolve_taxonomy_file( string $template ): ?string {
-		$taxonomy_dir = TemplateLocator::taxonomy_dir();
-		$template     = strtolower( $template );
+		$template = strtolower( $template );
 
-		// Map templates to their taxonomy files.
-		$google_templates = array(
-			'google',
-			'google_shopping',
-			'google_local',
-			'google_local_inventory',
-			'google_shopping_promotions',
-			'google_dynamic_search_ads',
-			'google_manufacturer',
-			'pinterest',
-			'pinterest_rss',
-			'bing',
-			'bing_shopping',
-			'snapchat',
-			'tiktok',
-			'ideal',
-			'pricepy',
-			'become',
-		);
-
-		$facebook_templates = array(
-			'facebook',
-			'facebook_catalog',
-			'instagram',
-		);
-
-		if ( in_array( $template, $google_templates, true ) ) {
+		if ( in_array( $template, self::GOOGLE_TAXONOMY_TEMPLATES, true ) ) {
 			return $this->google_taxonomy_path();
 		}
 
-		if ( in_array( $template, $facebook_templates, true ) ) {
-			return $taxonomy_dir . 'fb_taxonomy.txt';
+		if ( in_array( $template, self::FACEBOOK_TAXONOMY_TEMPLATES, true ) ) {
+			return TemplateLocator::taxonomy_dir() . 'fb_taxonomy.txt';
 		}
 
-		// Try a generic file.
-		$generic = $taxonomy_dir . $template . '_taxonomy.txt';
+		// A bundled generic file, if the channel ships one.
+		$generic = TemplateLocator::taxonomy_dir() . $template . '_taxonomy.txt';
 		if ( file_exists( $generic ) ) {
 			return $generic;
-		}
-
-		// Fallback to Google taxonomy (most merchants use Google categories).
-		$google_file = $this->google_taxonomy_path();
-		if ( file_exists( $google_file ) ) {
-			return $google_file;
 		}
 
 		return null;

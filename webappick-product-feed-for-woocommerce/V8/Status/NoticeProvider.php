@@ -30,6 +30,7 @@ namespace CTXFeed\V8\Status;
 
 use CTXFeed\V8\Admin\Notices;
 use CTXFeed\V8\Core\FeatureGate;
+use CTXFeed\V8\Product\ProductTypeSupport;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -83,6 +84,7 @@ class NoticeProvider {
 		$notices = array_merge( $notices, $this->scheduler_stalled_notice() );
 		$notices = array_merge( $notices, $this->pro_inactive_notice() );
 		$notices = array_merge( $notices, $this->pro_integration_notices() );
+		$notices = array_merge( $notices, $this->unsupported_product_types_notice() );
 
 		/**
 		 * Registry filter for admin notices shown in the React app.
@@ -384,6 +386,63 @@ class NoticeProvider {
 		}
 
 		return $out;
+	}
+
+	/**
+	 * Free stores with products of a type the free query never exports
+	 * (bundle, composite, subscription, auction, custom …) get ONE upgrade
+	 * notice naming the count and the types, with a "Get the Pro" action —
+	 * otherwise those products vanish from every feed silently (CBT-600).
+	 *
+	 * Suppressed only while Pro is ACTIVE (it adds the types to the query).
+	 * An installed-but-inactive Pro still skips these products, so the
+	 * notice shows next to the "activate Pro" one (owner, 2026-09-16).
+	 *
+	 * @since 8.0.23
+	 *
+	 * @return array Zero or one notice.
+	 */
+	private function unsupported_product_types_notice(): array {
+		if ( FeatureGate::is_pro() ) {
+			return array();
+		}
+
+		$counts = ProductTypeSupport::unsupported_counts();
+		if ( empty( $counts ) ) {
+			return array();
+		}
+
+		$total = array_sum( $counts );
+		$types = array();
+		foreach ( $counts as $slug => $count ) {
+			/* translators: 1: product type label, 2: product count. */
+			$types[] = sprintf( __( '%1$s (%2$d)', 'woo-feed' ), ProductTypeSupport::label( (string) $slug ), (int) $count );
+		}
+
+		return array(
+			array(
+				'id'          => 'ctxfeed_unsupported_product_types',
+				'severity'    => 'upgrade',
+				'priority'    => 25,
+				'title'       => __( 'Some products will not be added to feed', 'woo-feed' ),
+				'message'     => sprintf(
+					/* translators: 1: number of products, 2: comma-separated product types with counts. */
+					_n(
+						'Some products will not be added to feed because those are not supported by the free version of the plugin: %1$d product — %2$s.',
+						'Some products will not be added to feed because those are not supported by the free version of the plugin: %1$d products — %2$s.',
+						$total,
+						'woo-feed'
+					),
+					$total,
+					implode( ', ', $types )
+				),
+				'action'      => array(
+					'label' => __( 'Get the Pro', 'woo-feed' ),
+					'url'   => '/premium',
+				),
+				'dismissible' => true,
+			),
+		);
 	}
 
 	/**

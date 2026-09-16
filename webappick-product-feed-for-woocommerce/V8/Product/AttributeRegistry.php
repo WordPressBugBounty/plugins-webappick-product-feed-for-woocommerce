@@ -558,10 +558,36 @@ class AttributeRegistry {
 		// so these identifier options used to silently disappear.
 		$custom_fields = CustomFieldHelper::get_fields();
 		if ( is_array( $custom_fields ) && ! empty( $custom_fields ) ) {
+			// Settings > Product attributes toggles hide disabled fields from
+			// the picker (V5 Woo_Feed_Custom_Identifier_Filter parity, CBT-593):
+			// a key PRESENT in the stored map must read 'enable' (or a truthy
+			// V5 edge value); a key MISSING from the map falls back to the
+			// definition's default_enabled flag, so fields added by third-party
+			// filters keep appearing. Resolution of already-mapped keys is
+			// deliberately untouched — disabling a field hides it from NEW
+			// picks only and never blanks existing feeds.
+			$settings   = get_option( 'woo_feed_settings' );
+			$identifier = isset( $settings['woo_feed_identifier'] ) && is_array( $settings['woo_feed_identifier'] ) ? $settings['woo_feed_identifier'] : array();
+			$taxonomy   = isset( $settings['woo_feed_taxonomy'] ) && is_array( $settings['woo_feed_taxonomy'] ) ? $settings['woo_feed_taxonomy'] : array();
+
 			foreach ( $custom_fields as $key => $value ) {
-				if ( is_array( $value ) && isset( $value[0] ) ) {
-					$options[ 'woo_feed_identifier_' . sanitize_text_field( $key ) ] = sanitize_text_field( $value[0] );
+				if ( ! is_array( $value ) || ! isset( $value[0] ) ) {
+					continue;
 				}
+
+				$map = ( isset( $value[2] ) && 'taxonomy' === $value[2] ) ? $taxonomy : $identifier;
+				if ( array_key_exists( $key, $map ) ) {
+					$toggle  = $map[ $key ];
+					$enabled = ( 'enable' === $toggle || true === $toggle || 1 === $toggle || '1' === $toggle );
+				} else {
+					$enabled = ! empty( $value[1] );
+				}
+
+				if ( ! $enabled ) {
+					continue;
+				}
+
+				$options[ 'woo_feed_identifier_' . sanitize_text_field( $key ) ] = sanitize_text_field( $value[0] );
 			}
 		}
 

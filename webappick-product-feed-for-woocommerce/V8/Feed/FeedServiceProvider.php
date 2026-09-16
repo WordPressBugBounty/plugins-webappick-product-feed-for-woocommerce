@@ -225,6 +225,17 @@ class FeedServiceProvider extends ServiceProvider {
 
 		$this->register_recurring_backfill( $scheduler, $manager );
 		$this->register_legacy_temp_purge( $filesystem );
+
+		// One-time upgrade sweep (CBT-594): clear the invisible brand fallback
+		// the 8.0.17–8.0.22 template defaults stored on Attribute rows. Fired
+		// by CTXFeed_Installer::check_version on the first request after an
+		// update; BrandDefaultHeal flags itself done so later updates skip it.
+		add_action(
+			'woo_feed_plugin_updated',
+			static function () use ( $manager ) {
+				( new BrandDefaultHeal() )->run( $manager );
+			}
+		);
 	}
 
 	/**

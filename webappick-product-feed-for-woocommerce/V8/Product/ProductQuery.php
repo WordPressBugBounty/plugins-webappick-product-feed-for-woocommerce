@@ -171,7 +171,7 @@ class ProductQuery {
 		);
 
 		// Product type filter.
-		$product_types = $config->get( 'product_types', array( 'simple', 'variable', 'grouped', 'external' ) );
+		$product_types = $config->get( 'product_types', ProductTypeSupport::FREE_TYPES );
 		$args['type']  = $product_types;
 
 		// The per-product CategoryFilter remains the AUTHORITY on category

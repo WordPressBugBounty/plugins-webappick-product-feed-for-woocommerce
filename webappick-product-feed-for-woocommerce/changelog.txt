@@ -1,6 +1,15 @@
 CTX Feed — changelog archive
 The most recent releases are listed in readme.txt; this file carries the full history.
 
+= Version 8.0.21 =
+* Fix: saving a feed no longer fails when a filter or mapping row carries a non-text value — the pre-save completeness check now treats numbers, on/off toggles and empty values exactly the way the server does, so the save proceeds instead of the page breaking.
+* Fix: Skroutz feeds with nested variations respect the feed's stock filters — variations excluded by the stock settings no longer ship inside <variations>.
+* Fix: feeds created or updated through the REST API or AI assistants are validated before automatic generation. An incomplete feed saves with a clear "generation skipped" message naming what is missing, and the feed reports an invalid status with those reasons instead of a completed generation that never produced a file.
+* Fix: API feed saves that omit the variations setting keep the interface default (variations included) instead of silently switching the feed to parent products only.
+* Fix: String Replace rules are validated on save and each rule now carries an explicit "Plain text" or "Pattern (regex)" mode. Existing rules keep their old auto-detect behavior exactly, and a pattern that fails to compile falls back to a plain-text replace instead of silently doing nothing.
+* Fix: prefix, suffix and String Replace values keep literal angle-bracket text (a <br> tag, a "<3") instead of having it stripped as HTML on save.
+* Improved: Attribute Mapping warns about likely misspelled attribute keys ("did you mean...") and circular references that resolve to empty values, in the mapping editor's live preview and the API responses (Pro).
+
 = Version 8.0.20 =
 * Fix: multilingual stores (WPML) — feed product links now always carry the feed's language URL (Pro). Products without a translation in the feed language previously shipped the default-language link, so Google landed on the default-currency page and reported price mismatches; links now use WPML's own URL converter and existing feeds heal on their next regeneration.
 * Improved: security and review hardening across the plugin — every admin input is unslashed before sanitizing, every PHP file blocks direct access, review links follow WordPress.org guidelines, and the dashboard metrics queries use WordPress 6.2's safe identifier placeholders. The plugin now passes the official WordPress.org Plugin Check.

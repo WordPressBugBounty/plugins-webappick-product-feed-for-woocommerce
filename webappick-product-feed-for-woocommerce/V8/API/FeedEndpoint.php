@@ -2038,8 +2038,12 @@ class FeedEndpoint extends RestController {
 			$options    = $group['options'] ?? array();
 			foreach ( $options as $key => $label ) {
 				$data[ $key ] = array(
-					'label' => $label,
-					'group' => $group_name,
+					'label'        => $label,
+					'group'        => $group_name,
+					// Whether the category-mapping editor can SEARCH a channel
+					// taxonomy for this template; false = free-text mapping
+					// (CBT-596, V5 parity).
+					'has_taxonomy' => CategoryMappingEndpoint::has_taxonomy( (string) $key ),
 				);
 			}
 		}

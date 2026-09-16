@@ -30,7 +30,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class RedditTransform implements TransformInterface {
 
-	use AppendsCurrencyTrait;
+	use FeedCurrencyFallbackTrait;
+
 
 	/**
 	 * Transform product data for Reddit DPA catalogs.
@@ -50,7 +51,10 @@ class RedditTransform implements TransformInterface {
 		}
 
 		$product_data = $this->transform_availability( $product_data );
-		$product_data = $this->append_currency( $product_data, $config, array( 'price', 'sale_price' ) );
+		// Price / sale_price = bare number + the row's configured suffix as
+		// written; the feed currency is appended ONLY when the suffix is empty
+		// and a multi-currency plugin provided that currency (CBT-602, owner).
+		$product_data = $this->apply_feed_currency_fallback( $product_data, $config, array( 'price', 'sale_price' ) );
 
 		return $product_data;
 	}

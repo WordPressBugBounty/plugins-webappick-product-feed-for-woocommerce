@@ -786,7 +786,7 @@ class ShippingResolver {
 	 * chosen currency, falling back to the store currency. The stored key is
 	 * `feedCurrency` — the previous `$config->get( 'currency' )` never matched
 	 * it, so a feed with a currency override showed the store currency instead.
-	 * Mirrors AppendsCurrencyTrait's key order so the shipping price currency
+	 * Mirrors the feed-currency key order (feed_currency / feedCurrency / currency) so the shipping price currency
 	 * always agrees with the product price currency.
 	 *
 	 * @since 8.0.0

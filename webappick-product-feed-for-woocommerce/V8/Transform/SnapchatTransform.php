@@ -25,7 +25,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class SnapchatTransform implements TransformInterface {
 
-	use AppendsCurrencyTrait;
+	use FeedCurrencyFallbackTrait;
+
 
 	// Channel spec limits (title hard cap, description cap).
 	const TITLE_MAX_LENGTH       = 150;
@@ -54,7 +55,10 @@ class SnapchatTransform implements TransformInterface {
 		// currency universally; the bare number was a V8 regression.
 		$product_data = $this->transform_availability( $product_data );
 		$product_data = $this->transform_lengths( $product_data );
-		$product_data = $this->append_currency( $product_data, $config, array( 'price', 'sale_price' ) );
+		// Price / sale_price = bare number + the row's configured suffix as
+		// written; the feed currency is appended ONLY when the suffix is empty
+		// and a multi-currency plugin provided that currency (CBT-602, owner).
+		$product_data = $this->apply_feed_currency_fallback( $product_data, $config, array( 'price', 'sale_price' ) );
 
 		return $product_data;
 	}

@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.22
+Stable tag: 8.0.23
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -469,20 +469,22 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.23 =
+* Fix: multilingual stores (WPML) — variations whose global (taxonomy) attribute was translated after the variation was created no longer ship the original-language value in translated feeds (needs CTX Feed Pro 8.0.12).
+* Fix: price and sale price carry exactly the suffix configured on the mapping row. A row with no suffix ships the bare number, and on multi-currency stores the feed currency fills in only for an empty suffix — the feed currency is no longer appended to, or substituted into, a price whose suffix says otherwise.
+* Fix: brand — a new feed on a store without WooCommerce Brands terms gets the store name as a visible Text value on the brand row that you can edit; stores with Brands terms source the Parent Brand with no hidden fallback. Feeds created on 8.0.17–8.0.22 stop exporting the site title for products without a brand — the update clears that hidden fallback automatically.
+* Added: a notice when the store has products of types the free plugin does not export (bundles, composite products, subscriptions, auctions and other custom types), with the count per type and a "Get the Pro" link. The health endpoint reports the same counts for AI assistants.
+* Changed: Category mapping — channels with a published category list (Google Shopping and the channels that reuse its taxonomy, Facebook and Instagram) offer a searchable list with a magnifier; every other channel takes the category as free text, exactly as typed. The Google list is no longer offered for channels that do not use it.
+* Fix: store category names containing "&" render correctly in the Category mapping editor.
+* Changed: the feed settings fields are labelled "Feed Language" and "Feed Currency", and required fields show a red asterisk.
+* Improved: the notice slider shows "1 of N" when several notices are waiting, and notice buttons use the primary button style.
+* Fix: the custom-field toggles in Settings hide the disabled fields from the attribute dropdown.
+
 = Version 8.0.22 =
 * Fix: clearing a category mapping now sticks. Removing a category's value in the mapping editor showed it unmapped, but generated feeds quietly kept using the old value until the mapping was rebuilt — cleared entries are now really removed on save.
 * Fix: multilingual stores (WPML) — product variations no longer ship original-language attribute text inside translated feeds. Variation title suffixes and attribute values in feed columns, attribute mappings and dynamic attributes now resolve in the feed's language (WPML/WCML stores also need CTX Feed Pro 8.0.11).
 * Improved: the REST API validates every input up front with clear error messages and publishes response schemas on all endpoints. Invalid values are rejected instead of being silently reset or ignored — settings toggles, bulk feed actions, update intervals, FTP settings, category-mapping updates and channel batch requests included.
 * Improved: support requests sent from the plugin keep the inline feed configuration compact — the readable version travels in the attached feed-config.txt file.
-
-= Version 8.0.21 =
-* Fix: saving a feed no longer fails when a filter or mapping row carries a non-text value — the pre-save completeness check now treats numbers, on/off toggles and empty values exactly the way the server does, so the save proceeds instead of the page breaking.
-* Fix: Skroutz feeds with nested variations respect the feed's stock filters — variations excluded by the stock settings no longer ship inside <variations>.
-* Fix: feeds created or updated through the REST API or AI assistants are validated before automatic generation. An incomplete feed saves with a clear "generation skipped" message naming what is missing, and the feed reports an invalid status with those reasons instead of a completed generation that never produced a file.
-* Fix: API feed saves that omit the variations setting keep the interface default (variations included) instead of silently switching the feed to parent products only.
-* Fix: String Replace rules are validated on save and each rule now carries an explicit "Plain text" or "Pattern (regex)" mode. Existing rules keep their old auto-detect behavior exactly, and a pattern that fails to compile falls back to a plain-text replace instead of silently doing nothing.
-* Fix: prefix, suffix and String Replace values keep literal angle-bracket text (a <br> tag, a "<3") instead of having it stripped as HTML on save.
-* Improved: Attribute Mapping warns about likely misspelled attribute keys ("did you mean...") and circular references that resolve to empty values, in the mapping editor's live preview and the API responses (Pro).
 
 The complete changelog for all earlier versions ships with the plugin in changelog.txt.
 

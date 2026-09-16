@@ -430,7 +430,7 @@ class PriceResolver {
 	 * channel-neutral: currency formatting differs per channel
 	 * ("29.99 USD" for Google/Facebook, bare numbers for others), so
 	 * it is applied by the channel transforms (GoogleTransform etc.)
-	 * via AppendsCurrencyTrait, or by a user-configured suffix.
+	 * by the row's configured suffix only (CBT-602) — never by the channel.
 	 *
 	 * @since 8.0.0
 	 * @implements PROD-FRD-7.2

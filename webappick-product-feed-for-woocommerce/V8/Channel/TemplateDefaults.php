@@ -60,6 +60,15 @@ class TemplateDefaults {
 	private static $currency;
 
 	/**
+	 * Per-request memo: does this store have at least one WooCommerce
+	 * Brands (product_brand) term? null = not computed yet.
+	 *
+	 * @since 8.0.23
+	 * @var bool|null
+	 */
+	private static $brand_terms = null;
+
+	/**
 	 * Constructor — initialize brand and currency.
 	 *
 	 * @since 8.0.0
@@ -215,22 +224,84 @@ class TemplateDefaults {
 	}
 
 	/**
-	 * Rewrite brand-ish columns whose default is the static store brand to
-	 * SOURCE the WooCommerce core Brands taxonomy instead — value
-	 * `wc_brand_parent` (Parent Brand), with the static brand kept as the
-	 * empty-value fallback the resolver applies.
+	 * Whether the merchant-attribute NAME denotes a brand column.
 	 *
-	 * Stores using the `product_brand` taxonomy get real per-product brands
-	 * on NEW feeds; stores without it resolve empty → the default applies →
-	 * output identical to before (an empty g:brand would risk merchant
-	 * disapprovals, so the fallback is load-bearing). Existing feeds are
-	 * untouched — template defaults only shape newly created feeds.
+	 * Name-guarded so shop-name-style columns that reuse the store brand as
+	 * their default stay static text.
+	 *
+	 * @since 8.0.23
+	 *
+	 * @param string $name Merchant attribute name.
+	 * @return bool
+	 */
+	public static function is_brand_column( string $name ): bool {
+		$name = strtolower( $name );
+
+		return false !== strpos( $name, 'brand' ) || false !== strpos( $name, 'manufacturer' );
+	}
+
+	/**
+	 * Whether the store has at least one WooCommerce core Brands term
+	 * (`product_brand`, WC 9.6+). Memoised per request.
+	 *
+	 * @since 8.0.23
+	 *
+	 * @return bool
+	 */
+	public static function store_has_brand_terms(): bool {
+		if ( null !== self::$brand_terms ) {
+			return self::$brand_terms;
+		}
+
+		$populated = false;
+		if ( function_exists( 'taxonomy_exists' ) && taxonomy_exists( 'product_brand' ) && function_exists( 'wp_count_terms' ) ) {
+			$count     = wp_count_terms(
+				array(
+					'taxonomy'   => 'product_brand',
+					'hide_empty' => false,
+				)
+			);
+			$populated = ! is_wp_error( $count ) && (int) $count > 0;
+		}
+
+		/**
+		 * Filter whether the store's Brands taxonomy is considered populated —
+		 * decides if new feeds' brand columns SOURCE `wc_brand_parent` (true)
+		 * or ship the visible static-text store brand row (false).
+		 *
+		 * @since 8.0.23
+		 *
+		 * @param bool $populated True when product_brand has at least one term.
+		 */
+		self::$brand_terms = (bool) apply_filters( 'ctxfeed_brand_taxonomy_populated', $populated );
+
+		return self::$brand_terms;
+	}
+
+	/**
+	 * Rewrite brand-ish columns whose default is the static store brand to
+	 * SOURCE the WooCommerce core Brands taxonomy — value `wc_brand_parent`
+	 * (Parent Brand) with NO hidden fallback — when the store actually has
+	 * Brands terms. Stores without any term keep the pre-8.0.17 VISIBLE
+	 * static-text row (type `pattern`, default = store brand).
+	 *
+	 * Why no hidden fallback (CBT-594): the mapping table renders the
+	 * `default` input only for Text rows, so a default carried on an
+	 * Attribute row is invisible and cannot be cleared. 8.0.17–8.0.22 kept
+	 * the store brand there and every brandless product shipped the SITE
+	 * TITLE as its brand — literally "localhost" on shops provisioned from
+	 * a local template (wp.org "Brand exported as Localhost", #69131).
+	 * An empty brand the user can see beats a wrong brand they cannot.
 	 *
 	 * Guarded by the merchant-attribute NAME (must contain brand /
 	 * manufacturer) so shop-name-style columns that reuse the store brand
-	 * as their default stay static text.
+	 * as their default stay static text. Rows already sourcing a real
+	 * attribute keep their mapping. Existing feeds are untouched here —
+	 * template defaults only shape newly created feeds; saved 8.0.17-shape
+	 * rows are healed once on upgrade by {@see \CTXFeed\V8\Feed\BrandDefaultHeal}.
 	 *
 	 * @since 8.0.17
+	 * @since 8.0.23 No hidden default; taxonomy-populated gate.
 	 *
 	 * @param array $config One merchant's template-default config.
 	 * @return array
@@ -240,6 +311,10 @@ class TemplateDefaults {
 			if ( ! isset( $config[ $key ] ) || ! is_array( $config[ $key ] ) ) {
 				return $config;
 			}
+		}
+
+		if ( ! self::store_has_brand_terms() ) {
+			return $config;
 		}
 
 		foreach ( $config['mattributes'] as $i => $mattr ) {
@@ -252,13 +327,13 @@ class TemplateDefaults {
 				continue;
 			}
 
-			$name = strtolower( (string) $mattr );
-			if ( false === strpos( $name, 'brand' ) && false === strpos( $name, 'manufacturer' ) ) {
+			if ( ! self::is_brand_column( (string) $mattr ) ) {
 				continue;
 			}
 
 			$config['attributes'][ $i ] = 'wc_brand_parent';
 			$config['type'][ $i ]       = 'attribute';
+			$config['default'][ $i ]    = '';
 		}
 
 		return $config;
