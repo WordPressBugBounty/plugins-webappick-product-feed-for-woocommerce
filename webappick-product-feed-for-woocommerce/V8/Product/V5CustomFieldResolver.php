@@ -34,6 +34,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\CustomFields\CustomFieldHelper;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -86,6 +87,19 @@ class V5CustomFieldResolver {
 		// Step 1 — Strip wf_cattr_ admin-dropdown prefix if present.
 		if ( false !== strpos( $field, '_cattr' ) ) {
 			$field = str_replace( self::POST_META_PREFIX, '', $field );
+		}
+
+		// Step 1b — Taxonomy-type panel fields (Brand): today's panel
+		// assigns a TERM, which the meta chain below can never find
+		// (CBT-611 / BUG-0100; V5 had the same gap). Terms win; when the
+		// product has none, fall through to the meta chain so stores that
+		// still hold the older `woo_feed_brand` meta keep exporting it.
+		$taxonomy = self::taxonomy_for_field( $field );
+		if ( null !== $taxonomy ) {
+			$terms = $this->resolve_taxonomy_terms( $taxonomy, $product, $config );
+			if ( '' !== $terms ) {
+				return $terms;
+			}
 		}
 
 		// Step 2 — Variation suffix logic.
@@ -171,6 +185,61 @@ class V5CustomFieldResolver {
 
 		// V5-compat hook — same name V5 fired so existing extensions keep working.
 		return (string) apply_filters( 'woo_feed_filter_product_meta', $value, $product, $config );
+	}
+
+	/**
+	 * The CTX Feed taxonomy behind a panel field key, or null for meta fields.
+	 *
+	 * `CustomFieldHelper::get_fields()` marks a field as type 'taxonomy'
+	 * (today: brand); `TaxonomyRegistrar` registers it as `woo-feed-<key>`
+	 * when its Settings toggle is on. The field key is read off the
+	 * identifier prefix (`woo_feed_` / `woo_feed_identifier_`) with any
+	 * `_var` suffix dropped.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $field Field key after the wf_cattr_ strip.
+	 * @return string|null Taxonomy name or null.
+	 */
+	private static function taxonomy_for_field( string $field ): ?string {
+		$key = preg_replace( '/^woo_feed_(?:identifier_)?/', '', $field );
+		$key = preg_replace( '/_var$/', '', (string) $key );
+		if ( '' === $key || $key === $field ) {
+			return null;
+		}
+
+		$taxonomy_fields = CustomFieldHelper::get_taxonomy_fields();
+		if ( ! isset( $taxonomy_fields[ $key ] ) ) {
+			return null;
+		}
+
+		return sprintf( 'woo-feed-%s', strtolower( $key ) );
+	}
+
+	/**
+	 * Term names of a CTX Feed taxonomy on the product (parent for
+	 * variations), joined with ", " like the wc_brand sources.
+	 *
+	 * Fires V5's `woo_feed_filter_product_taxonomy` so extensions that
+	 * post-process taxonomy values keep working. An unregistered taxonomy
+	 * (toggle off) or no terms → ''.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string      $taxonomy Taxonomy name.
+	 * @param \WC_Product $product  Product (may be a variation).
+	 * @param Config      $config   Feed configuration.
+	 * @return string
+	 */
+	private function resolve_taxonomy_terms( string $taxonomy, \WC_Product $product, Config $config ): string {
+		$source_id = $product->is_type( 'variation' ) && $product->get_parent_id()
+			? (int) $product->get_parent_id()
+			: (int) $product->get_id();
+
+		$terms = get_the_terms( $source_id, $taxonomy );
+		$value = ( is_wp_error( $terms ) || empty( $terms ) ) ? '' : implode( ', ', wp_list_pluck( $terms, 'name' ) );
+
+		return (string) apply_filters( 'woo_feed_filter_product_taxonomy', $value, $product, $config );
 	}
 
 	/**

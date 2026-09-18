@@ -618,6 +618,11 @@ class CategoryMappingEndpoint extends RestController {
 		// Flatten to single object.
 		$flat_mappings = $this->flatten_mappings( $mappings );
 
+		$invalid = $this->invalid_taxonomy_values( $template, $flat_mappings );
+		if ( ! empty( $invalid ) ) {
+			return $this->invalid_taxonomy_error( $template, $invalid );
+		}
+
 		// Convert to V5 format for storage.
 		$config = $this->v8_to_v5( $name, $template, $flat_mappings );
 
@@ -732,6 +737,16 @@ class CategoryMappingEndpoint extends RestController {
 		}
 
 		// Convert to V5 format for storage.
+		// Taxonomy channels only accept values from their list (CBT-609):
+		// validate the rows this request sent (existing rows were validated
+		// when they were saved; '' is the editor's clear marker).
+		if ( null !== $new_mappings ) {
+			$invalid = $this->invalid_taxonomy_values( $final_template, $new_mappings );
+			if ( ! empty( $invalid ) ) {
+				return $this->invalid_taxonomy_error( $final_template, $invalid );
+			}
+		}
+
 		$config = $this->v8_to_v5( $final_name, $final_template, (array) $final_mappings );
 
 		update_option( $option_name, $config, false );
@@ -1004,18 +1019,23 @@ class CategoryMappingEndpoint extends RestController {
 		// only; no substring behavior, no 50-item cap (a page holds up to
 		// per_page mappings, so the caller controls the size).
 		if ( ! empty( $ids ) ) {
+			// Exact matches only. A request whose ids are all non-numeric
+			// used to skip this branch and fall through to list mode,
+			// handing the editor the first 50 categories — which it then
+			// showed as the row's mapped label (CBT-609 / BUG-0094).
 			$requested = array_filter( array_map( 'absint', explode( ',', $ids ) ) );
-			if ( ! empty( $requested ) ) {
-				$as_set     = array_flip( $requested );
-				$categories = array_values(
-					array_filter(
-						$categories,
-						static function ( $cat ) use ( $as_set ) {
-							return isset( $as_set[ (int) $cat['id'] ] );
-						}
-					) 
-				);
+			if ( empty( $requested ) ) {
+				return $this->success( array() );
 			}
+			$as_set     = array_flip( $requested );
+			$categories = array_values(
+				array_filter(
+					$categories,
+					static function ( $cat ) use ( $as_set ) {
+						return isset( $as_set[ (int) $cat['id'] ] );
+					}
+				)
+			);
 			return $this->success( $categories );
 		}
 
@@ -1039,6 +1059,81 @@ class CategoryMappingEndpoint extends RestController {
 		$categories = array_slice( $categories, 0, 50 );
 
 		return $this->success( $categories );
+	}
+
+	/**
+	 * Mapping values that are not in the channel's taxonomy (CBT-609 / BUG-0094).
+	 *
+	 * Owner rule: when a channel has a taxonomy list the API can search,
+	 * a custom value must NOT be stored (the editor's picker already
+	 * prevents it; this closes the REST/MCP path). Channels without a
+	 * list keep free text (CBT-596). Empty values (unmapped / the
+	 * editor's clear marker) are never invalid.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string               $template Template key.
+	 * @param array<string,string> $mappings Flat `wc_cat_id => value` map.
+	 * @return array<string,string> Offending `wc_cat_id => value` pairs.
+	 */
+	private function invalid_taxonomy_values( string $template, array $mappings ): array {
+		if ( ! self::has_taxonomy( $template ) ) {
+			return array();
+		}
+
+		$file_path = $this->resolve_taxonomy_file( $template );
+		if ( ! $file_path || ! file_exists( $file_path ) ) {
+			return array();
+		}
+
+		$known = array();
+		foreach ( $this->parse_taxonomy_file( $file_path, $template ) as $cat ) {
+			$known[ (string) $cat['id'] ] = true;
+		}
+		if ( empty( $known ) ) {
+			return array(); // Unreadable list — never lock the merchant out.
+		}
+
+		$invalid = array();
+		foreach ( $mappings as $cat_id => $value ) {
+			$value = trim( (string) $value );
+			if ( '' === $value ) {
+				continue;
+			}
+			// A stored "1604 - Apparel > Clothing" label form is accepted by id.
+			$candidate = preg_match( '/^(\d+)\s*-\s/', $value, $m ) ? $m[1] : $value;
+			if ( ! isset( $known[ $candidate ] ) ) {
+				$invalid[ (string) $cat_id ] = $value;
+			}
+		}
+
+		return $invalid;
+	}
+
+	/**
+	 * 400 response for values outside the channel taxonomy.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string               $template Template key.
+	 * @param array<string,string> $invalid  Offending `wc_cat_id => value` pairs.
+	 * @return \WP_REST_Response
+	 */
+	private function invalid_taxonomy_error( string $template, array $invalid ): \WP_REST_Response {
+		$pairs = array();
+		foreach ( $invalid as $cat_id => $value ) {
+			$pairs[] = $cat_id . ' => "' . $value . '"';
+		}
+
+		return $this->error(
+			sprintf(
+				/* translators: 1: template key, 2: offending "wc_cat_id => value" pairs. */
+				__( 'The %1$s channel only accepts values from its category taxonomy. Not in the list: %2$s. Use the template-categories lookup to find valid ids.', 'woo-feed' ),
+				$template,
+				implode( ', ', $pairs )
+			),
+			400
+		);
 	}
 
 	/**

@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.23
+Stable tag: 8.0.24
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -469,6 +469,20 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.24 =
+* Added: Split & choose output command — split a value on a separator (comma, space, pipe, semicolon, slash, hyphen, colon or any text) and keep the first, last, Nth or a range of parts, optionally rejoined. Google Merchant Center "Split & Choose" parity for every channel, built from the Output command builder.
+* Added: Extract output command — keep only the listed words or phrases found in a value (first match or all, any case, whole words, or a pattern). Google Merchant Center "Extract" parity.
+* Added: URL parameter output commands — set, remove, or strip query parameters on link values with correct "?" and "&" handling, including plain permalinks. Replaces the "?x=y" suffix pattern that produced broken links.
+* Fix: Text values on mapping rows (and prefix/suffix Text fields) keep ">" and "&" exactly as typed instead of turning into HTML entities. Feeds saved on 8.0.16–8.0.23 with encoded values are healed automatically on the next read; the editor shows the clean value.
+* Fix (security): the WP Options attribute source now reads only the options you have added on the WP options page. Any other option name resolves to empty, so wp_options rows can no longer be published into a feed file through the REST API or an AI assistant.
+* Fix: Category mapping for Google Shopping and Facebook-family channels only accepts categories from the channel list, and the editor flags any unknown stored value with an "Unknown category" marker instead of showing the wrong label as mapped.
+* Fix: custom field values of "No" (false) and 0 export as "0" instead of an empty column.
+* Fix: the "Brand" field under Custom Fields by CTX Feed exports the product's brand term; stores still using the older brand meta keep exporting it.
+* Fix: ACF Image, File and Gallery fields in the default "Array" return format export the file URL(s) instead of a dump of the attachment record.
+* Fix: Yoast WooCommerce SEO GTIN8, GTIN12, GTIN13, GTIN14, ISBN and MPN identifiers export again; variations use their own identifiers and fall back to the parent's.
+* Fix: turning a Custom Fields toggle off in Settings removes those fields from the attribute dropdown immediately instead of after the cache expires.
+* Fix: the per-product debug tool (Debug feed product and the AI ability) runs under the same currency and language context as feed generation, so its prices and values match the generated file.
+
 = Version 8.0.23 =
 * Fix: multilingual stores (WPML) — variations whose global (taxonomy) attribute was translated after the variation was created no longer ship the original-language value in translated feeds (needs CTX Feed Pro 8.0.12).
 * Fix: price and sale price carry exactly the suffix configured on the mapping row. A row with no suffix ships the bare number, and on multi-currency stores the feed currency fills in only for an empty suffix — the feed currency is no longer appended to, or substituted into, a price whose suffix says otherwise.
@@ -479,12 +493,6 @@ If your feed fails to generate:
 * Changed: the feed settings fields are labelled "Feed Language" and "Feed Currency", and required fields show a red asterisk.
 * Improved: the notice slider shows "1 of N" when several notices are waiting, and notice buttons use the primary button style.
 * Fix: the custom-field toggles in Settings hide the disabled fields from the attribute dropdown.
-
-= Version 8.0.22 =
-* Fix: clearing a category mapping now sticks. Removing a category's value in the mapping editor showed it unmapped, but generated feeds quietly kept using the old value until the mapping was rebuilt — cleared entries are now really removed on save.
-* Fix: multilingual stores (WPML) — product variations no longer ship original-language attribute text inside translated feeds. Variation title suffixes and attribute values in feed columns, attribute mappings and dynamic attributes now resolve in the feed's language (WPML/WCML stores also need CTX Feed Pro 8.0.11).
-* Improved: the REST API validates every input up front with clear error messages and publishes response schemas on all endpoints. Invalid values are rejected instead of being silently reset or ignored — settings toggles, bulk feed actions, update intervals, FTP settings, category-mapping updates and channel batch requests included.
-* Improved: support requests sent from the plugin keep the inline feed configuration compact — the readable version travels in the attached feed-config.txt file.
 
 The complete changelog for all earlier versions ships with the plugin in changelog.txt.
 

@@ -67,7 +67,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  *
  * Friendly aliases (XFRM-FRD-9.2) map onto the canonical legacy commands —
  * legacy names keep working forever. New Tier-1/2/3 commands
- * (XFRM-FRD-9.3) use kebab-case canonical names.
+ * (XFRM-FRD-9.3) use kebab-case canonical names; `split-choose` (CBT-604,
+ * Google Merchant Center "Split & Choose" parity) splits a value on a
+ * separator and keeps one node or a range of nodes; `extract` (CBT-605,
+ * GMC "Extract" parity) outputs the listed word(s) found in the value;
+ * `url-param` / `url-remove-param` / `url-strip-query` (CBT-606, GMC
+ * "Optimize URL" parity) edit a URL's query string with proper '?'/'&'
+ * handling.
  *
  * Pro gating (XFRM-FRD-9.4): the whole executor is behind
  * `FeatureGate::has('output_commands')` — gate closed returns the value
@@ -116,6 +122,26 @@ class CommandProcessor {
 		// 'parent-if-empty' needs no entry — dash folding already lands on
 		// the canonical 'parent_if_empty'. Same for 'wpml-price',
 		// 'if-empty', 'truncate-words', etc.
+	);
+
+	/**
+	 * Separator keywords accepted by split-choose's separator and join
+	 * slots. A literal ',' is impossible inside a command (the chain
+	 * splits on commas first — see parse_commands()), so `comma` is the
+	 * only way to split on one; the other keywords exist so whitespace-
+	 * only separators survive the argument trim.
+	 *
+	 * @since 8.0.24
+	 * @var array<string,string>
+	 */
+	private const SEPARATOR_KEYWORDS = array(
+		'comma'     => ',',
+		'space'     => ' ',
+		'pipe'      => '|',
+		'semicolon' => ';',
+		'slash'     => '/',
+		'hyphen'    => '-',
+		'colon'     => ':',
 	);
 
 	/**
@@ -355,6 +381,14 @@ class CommandProcessor {
 			return $this->apply_parent_command( $key, $value, $product, $config, $attribute );
 		}
 
+		// split-choose on a LIST value (e.g. the gallery `images` array
+		// before template flattening): the list is already the split
+		// nodes, so it is chosen from directly — the separator slot only
+		// supplies the default join for ranges.
+		if ( 'split_choose' === $key && is_array( $value ) ) {
+			return $this->split_choose_list( $value, $command );
+		}
+
 		// Non-scalar values (arrays/objects) can't run string commands —
 		// V5 would fatal; we no-op (documented robustness guard).
 		if ( ! is_scalar( $value ) && null !== $value ) {
@@ -527,6 +561,21 @@ class CommandProcessor {
 			// ---------------------------------------------- new (Tier-3).
 			case 'date_format':
 				return $this->format_date( $str, $command, $value );
+
+			case 'split_choose':
+				return $this->split_choose( $str, $command, $value );
+
+			case 'extract':
+				return $this->extract_words( $str, $command, $value );
+
+			case 'url_param':
+				return $this->url_param( $str, $command, $value );
+
+			case 'url_remove_param':
+				return $this->url_remove_param( $str, $command, $value );
+
+			case 'url_strip_query':
+				return $this->url_strip_query( $str, $value );
 
 			case 'wpml_price':
 				/**
@@ -734,6 +783,430 @@ class CommandProcessor {
 		}
 
 		return number_format( (float) $output );
+	}
+
+	/**
+	 * The split-choose command — split a value on a separator and keep one
+	 * node or a range of nodes (Google Merchant Center "Split & Choose"
+	 * parity, CBT-604).
+	 *
+	 * Syntax: `[split-choose => <separator> => <choose> => <join>]`
+	 *   - separator: literal text or a keyword from SEPARATOR_KEYWORDS
+	 *     (`comma` is the only way to split on ','); args are trimmed, so
+	 *     use `space` for a whitespace separator.
+	 *   - choose: `first` | `last` | N (1-based) | -N (from the end) |
+	 *     A-B (inclusive 1-based range).
+	 *   - join (optional): keyword or literal used to glue a range back
+	 *     together; defaults to the separator.
+	 *
+	 * Nodes are trimmed. A choose outside the available nodes yields ''
+	 * (matching GMC, where a missing node is empty — the chain-level `[…]`
+	 * fallback restores the original when that matters). Missing or
+	 * unrecognised arguments and an empty separator return the value
+	 * unchanged (robustness guard). No tag stripping: the command works on
+	 * structured lists such as image URLs.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $str     Current value as string.
+	 * @param string $command Full command token.
+	 * @param mixed  $value   Original value (returned on no-op).
+	 * @return mixed
+	 */
+	private function split_choose( string $str, string $command, $value ) {
+		$args = self::split_choose_args( $command );
+		if ( null === $args ) {
+			return $value;
+		}
+
+		$nodes = array_map( 'trim', explode( $args['separator'], $str ) );
+
+		return self::choose_nodes( $nodes, $args['choose'], $args['join'], $value );
+	}
+
+	/**
+	 * Split-choose applied to a LIST value: the list's scalar members are
+	 * the nodes (no string splitting); the separator only supplies the
+	 * default join.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param array  $members Current list value.
+	 * @param string $command Full command token.
+	 * @return mixed
+	 */
+	private function split_choose_list( array $members, string $command ) {
+		$args = self::split_choose_args( $command );
+		if ( null === $args ) {
+			return $members;
+		}
+
+		$nodes = array();
+		foreach ( $members as $member ) {
+			if ( is_scalar( $member ) || null === $member ) {
+				$nodes[] = trim( (string) $member );
+			}
+		}
+
+		return self::choose_nodes( $nodes, $args['choose'], $args['join'], $members );
+	}
+
+	/**
+	 * Parse the split-choose arguments.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $command Full command token.
+	 * @return array|null {separator, choose, join} or null when unusable.
+	 */
+	private static function split_choose_args( string $command ): ?array {
+		$args = array_map( 'trim', explode( '=>', $command, 4 ) );
+		if ( ! isset( $args[1], $args[2] ) || '' === $args[1] || '' === $args[2] ) {
+			return null;
+		}
+
+		$separator = self::separator_from_keyword( $args[1] );
+		if ( '' === $separator ) {
+			return null;
+		}
+
+		$join = isset( $args[3] ) && '' !== $args[3] ? self::separator_from_keyword( $args[3] ) : $separator;
+
+		return array(
+			'separator' => $separator,
+			'choose'    => strtolower( $args[2] ),
+			'join'      => $join,
+		);
+	}
+
+	/**
+	 * Map a separator keyword to its character; non-keywords are literal.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $arg Trimmed argument.
+	 * @return string
+	 */
+	private static function separator_from_keyword( string $arg ): string {
+		return self::SEPARATOR_KEYWORDS[ strtolower( $arg ) ] ?? $arg;
+	}
+
+	/**
+	 * Pick node(s) from a trimmed node list per the choose spec.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string[] $nodes  Trimmed nodes.
+	 * @param string   $choose Lower-cased choose spec.
+	 * @param string   $join   Glue for ranges.
+	 * @param mixed    $value  Original value (returned when the spec is invalid).
+	 * @return mixed '' when the chosen node(s) do not exist.
+	 */
+	private static function choose_nodes( array $nodes, string $choose, string $join, $value ) {
+		$count = count( $nodes );
+
+		if ( 'first' === $choose ) {
+			return $nodes[0] ?? '';
+		}
+
+		if ( 'last' === $choose ) {
+			return $count > 0 ? $nodes[ $count - 1 ] : '';
+		}
+
+		if ( preg_match( '/^-?\d+$/', $choose ) ) {
+			$position = (int) $choose;
+			if ( 0 === $position ) {
+				return $value;
+			}
+			$index = $position > 0 ? $position - 1 : $count + $position;
+
+			return $nodes[ $index ] ?? '';
+		}
+
+		if ( preg_match( '/^(\d+)-(\d+)$/', $choose, $m ) ) {
+			$from = (int) $m[1];
+			$to   = (int) $m[2];
+			if ( $from < 1 || $to < $from ) {
+				return $value;
+			}
+			if ( $from > $count ) {
+				return '';
+			}
+
+			return implode( $join, array_slice( $nodes, $from - 1, $to - $from + 1 ) );
+		}
+
+		return $value;
+	}
+
+	/**
+	 * The extract command — look for listed words or phrases in the value
+	 * and output the one(s) found (Google Merchant Center "Extract"
+	 * parity, CBT-605).
+	 *
+	 * Syntax: `[extract => <word|word|…> => <first|all> => <flags>]`
+	 *   - list: '|'-separated words or phrases (`comma` = literal ',');
+	 *     entries are trimmed, empties dropped.
+	 *   - mode (default `first`): `first` outputs the FIRST LISTED entry
+	 *     found in the value (GMC's "keep only the first matching value");
+	 *     `all` outputs every listed entry found, in list order, joined
+	 *     by ', '.
+	 *   - flags (space-separated): `case` (case-sensitive — the default is
+	 *     case-insensitive, like GMC), `word` (whole words only, Unicode-
+	 *     aware), `regex` (each entry is a pattern; the result is capture
+	 *     group 1 when present, else the full match).
+	 *
+	 * Plain entries are output AS LISTED (canonical casing), so a title
+	 * containing "RED" with the list Red|Blue yields "Red". No match
+	 * yields '' (the chain-level `[…]` fallback restores the original);
+	 * a missing list, an unknown mode or flag return the value unchanged
+	 * (robustness guard); a malformed regex entry is skipped. No tag
+	 * stripping.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $str     Current value as string.
+	 * @param string $command Full command token.
+	 * @param mixed  $value   Original value (returned on no-op).
+	 * @return mixed
+	 */
+	private function extract_words( string $str, string $command, $value ) {
+		$args = array_map( 'trim', explode( '=>', $command, 4 ) );
+		if ( ! isset( $args[1] ) || '' === $args[1] ) {
+			return $value;
+		}
+
+		$entries = array();
+		foreach ( explode( '|', str_replace( 'comma', ',', $args[1] ) ) as $entry ) {
+			$entry = trim( $entry );
+			if ( '' !== $entry ) {
+				$entries[] = $entry;
+			}
+		}
+		if ( empty( $entries ) ) {
+			return $value;
+		}
+
+		$mode = isset( $args[2] ) && '' !== $args[2] ? strtolower( $args[2] ) : 'first';
+		if ( 'first' !== $mode && 'all' !== $mode ) {
+			return $value;
+		}
+
+		$flags = isset( $args[3] ) && '' !== $args[3] ? preg_split( '/\s+/', strtolower( $args[3] ) ) : array();
+		if ( array_diff( $flags, array( 'case', 'word', 'regex' ) ) ) {
+			return $value;
+		}
+		$case  = in_array( 'case', $flags, true );
+		$word  = in_array( 'word', $flags, true );
+		$regex = in_array( 'regex', $flags, true );
+
+		$found = array();
+		foreach ( $entries as $entry ) {
+			if ( $regex ) {
+				$pattern = '~' . str_replace( '~', '\~', $entry ) . '~u';
+			} else {
+				$pattern = '~'
+					. ( $word ? '(?<![\p{L}\p{N}])' : '' )
+					. preg_quote( $entry, '~' )
+					. ( $word ? '(?![\p{L}\p{N}])' : '' )
+					. '~u';
+			}
+			if ( ! $case ) {
+				$pattern .= 'i';
+			}
+
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- A user-typed regex entry may be malformed; the warning is suppressed and that entry skipped.
+			$hit = @preg_match( $pattern, $str, $m );
+			if ( 1 !== $hit ) {
+				continue;
+			}
+			$found[] = $regex ? ( isset( $m[1] ) ? $m[1] : $m[0] ) : $entry;
+			if ( 'first' === $mode ) {
+				break;
+			}
+		}
+
+		return implode( ', ', $found );
+	}
+
+	/**
+	 * The url-param command — set a query parameter on a URL value (Google
+	 * Merchant Center "Optimize URL" parity, CBT-606).
+	 *
+	 * Syntax: `[url-param => <key> => <value>]`. An existing key is
+	 * REPLACED in place (duplicates collapse to one), otherwise the pair is
+	 * appended with the right '?' or '&'; the fragment is preserved. The
+	 * value is encoded like the UTM stage (rawurlencode with ' ' → '+');
+	 * `comma` stands for a literal ','. Values that are not absolute URLs
+	 * (no '://'), an empty key or a missing value slot return the value
+	 * unchanged. This is what the Suffix field cannot do: a `?x=y` suffix
+	 * breaks on URLs that already carry a query string (plain permalinks).
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $str     Current value as string.
+	 * @param string $command Full command token.
+	 * @param mixed  $value   Original value (returned on no-op).
+	 * @return mixed
+	 */
+	private function url_param( string $str, string $command, $value ) {
+		$args = explode( '=>', $command, 3 );
+		if ( ! isset( $args[1], $args[2] ) ) {
+			return $value;
+		}
+		$key = trim( $args[1] );
+		if ( '' === $key ) {
+			return $value;
+		}
+		$parts = self::url_parts( $str );
+		if ( null === $parts ) {
+			return $value;
+		}
+
+		$param_value = str_replace( 'comma', ',', trim( $args[2] ) );
+		$encoded     = str_replace( '%20', '+', rawurlencode( $param_value ) );
+
+		$params   = array();
+		$replaced = false;
+		foreach ( $parts['params'] as $pair ) {
+			if ( rawurldecode( $pair[0] ) === $key ) {
+				if ( ! $replaced ) {
+					$params[] = array( $pair[0], $encoded );
+					$replaced = true;
+				}
+				continue;
+			}
+			$params[] = $pair;
+		}
+		if ( ! $replaced ) {
+			$params[] = array( rawurlencode( $key ), $encoded );
+		}
+		$parts['params'] = $params;
+
+		return self::url_build( $parts );
+	}
+
+	/**
+	 * The url-remove-param command — drop a query parameter (all
+	 * occurrences); removing the last one drops the '?' too.
+	 *
+	 * Syntax: `[url-remove-param => <key>]`.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $str     Current value as string.
+	 * @param string $command Full command token.
+	 * @param mixed  $value   Original value (returned on no-op).
+	 * @return mixed
+	 */
+	private function url_remove_param( string $str, string $command, $value ) {
+		$args = explode( '=>', $command, 2 );
+		$key  = isset( $args[1] ) ? trim( $args[1] ) : '';
+		if ( '' === $key ) {
+			return $value;
+		}
+		$parts = self::url_parts( $str );
+		if ( null === $parts ) {
+			return $value;
+		}
+
+		$parts['params'] = array_values(
+			array_filter(
+				$parts['params'],
+				static function ( $pair ) use ( $key ) {
+					return rawurldecode( $pair[0] ) !== $key;
+				}
+			)
+		);
+
+		return self::url_build( $parts );
+	}
+
+	/**
+	 * The url-strip-query command — remove the whole query string, keep
+	 * the fragment.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $str   Current value as string.
+	 * @param mixed  $value Original value (returned on no-op).
+	 * @return mixed
+	 */
+	private function url_strip_query( string $str, $value ) {
+		$parts = self::url_parts( $str );
+		if ( null === $parts ) {
+			return $value;
+		}
+		$parts['params'] = array();
+
+		return self::url_build( $parts );
+	}
+
+	/**
+	 * Split an absolute URL into base, ordered raw query pairs and fragment.
+	 *
+	 * Deliberately NOT parse_str()/add_query_arg(): keys are kept verbatim
+	 * (no dot/space → underscore mangling), order is preserved, and the
+	 * executor stays free of WP function dependencies.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $url Candidate URL.
+	 * @return array{base:string,params:array<int,array{0:string,1:?string}>,fragment:string}|null
+	 *         Null when the value is not an absolute URL.
+	 */
+	private static function url_parts( string $url ): ?array {
+		if ( false === strpos( $url, '://' ) ) {
+			return null;
+		}
+
+		$fragment = '';
+		$pos      = strpos( $url, '#' );
+		if ( false !== $pos ) {
+			$fragment = substr( $url, $pos );
+			$url      = substr( $url, 0, $pos );
+		}
+
+		$query = '';
+		$pos   = strpos( $url, '?' );
+		if ( false !== $pos ) {
+			$query = substr( $url, $pos + 1 );
+			$url   = substr( $url, 0, $pos );
+		}
+
+		$params = array();
+		if ( '' !== $query ) {
+			foreach ( explode( '&', $query ) as $pair ) {
+				if ( '' === $pair ) {
+					continue;
+				}
+				$kv       = explode( '=', $pair, 2 );
+				$params[] = array( $kv[0], isset( $kv[1] ) ? $kv[1] : null );
+			}
+		}
+
+		return array(
+			'base'     => $url,
+			'params'   => $params,
+			'fragment' => $fragment,
+		);
+	}
+
+	/**
+	 * Reassemble a URL from url_parts() output.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param array $parts See url_parts().
+	 * @return string
+	 */
+	private static function url_build( array $parts ): string {
+		$pairs = array();
+		foreach ( $parts['params'] as $pair ) {
+			$pairs[] = null === $pair[1] ? $pair[0] : $pair[0] . '=' . $pair[1];
+		}
+
+		return $parts['base'] . ( $pairs ? '?' . implode( '&', $pairs ) : '' ) . $parts['fragment'];
 	}
 
 	/**

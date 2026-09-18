@@ -19,6 +19,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Sanitizer;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -338,6 +339,10 @@ class AttributeResolver {
 			case 'pattern':
 			case 'text': // V8-UI alias briefly written for static rows — same semantics.
 				$value = isset( $mapping['value'] ) ? $mapping['value'] : ( isset( $mapping['default'] ) ? $mapping['default'] : '' );
+				// Feeds saved on 8.0.16–8.0.23 stored `>` / `&` as entities
+				// (CBT-607): restore the typed characters at generation so
+				// existing feeds heal without an option rewrite.
+				$value = Sanitizer::restore_text( $value );
 				break;
 
 			case 'image':

@@ -1,6 +1,12 @@
 CTX Feed — changelog archive
 The most recent releases are listed in readme.txt; this file carries the full history.
 
+= Version 8.0.22 =
+* Fix: clearing a category mapping now sticks. Removing a category's value in the mapping editor showed it unmapped, but generated feeds quietly kept using the old value until the mapping was rebuilt — cleared entries are now really removed on save.
+* Fix: multilingual stores (WPML) — product variations no longer ship original-language attribute text inside translated feeds. Variation title suffixes and attribute values in feed columns, attribute mappings and dynamic attributes now resolve in the feed's language (WPML/WCML stores also need CTX Feed Pro 8.0.11).
+* Improved: the REST API validates every input up front with clear error messages and publishes response schemas on all endpoints. Invalid values are rejected instead of being silently reset or ignored — settings toggles, bulk feed actions, update intervals, FTP settings, category-mapping updates and channel batch requests included.
+* Improved: support requests sent from the plugin keep the inline feed configuration compact — the readable version travels in the attached feed-config.txt file.
+
 = Version 8.0.21 =
 * Fix: saving a feed no longer fails when a filter or mapping row carries a non-text value — the pre-save completeness check now treats numbers, on/off toggles and empty values exactly the way the server does, so the save proceeds instead of the page breaking.
 * Fix: Skroutz feeds with nested variations respect the feed's stock filters — variations excluded by the stock settings no longer ship inside <variations>.

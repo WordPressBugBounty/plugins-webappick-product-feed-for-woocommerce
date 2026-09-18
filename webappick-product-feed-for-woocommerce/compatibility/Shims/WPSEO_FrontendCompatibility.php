@@ -43,17 +43,11 @@ class WPSEO_FrontendCompatibility {
 		// Canonical URL hook.
 		add_filter( 'woo_feed_filter_product_yoast_canonical_url', array( $this, 'canonical_url' ), 10, 3 );
 
-		// GTIN hooks.
-		add_filter( 'yoast_gtin8_attribute_value', array( $this, 'gtin8' ), 10, 2 );
-		add_filter( 'yoast_gtin12_attribute_value', array( $this, 'gtin12' ), 10, 2 );
-		add_filter( 'yoast_gtin13_attribute_value', array( $this, 'gtin13' ), 10, 2 );
-		add_filter( 'yoast_gtin14_attribute_value', array( $this, 'gtin14' ), 10, 2 );
-
-		// ISBN hook.
-		add_filter( 'yoast_isbn_attribute_value', array( $this, 'isbn' ), 10, 2 );
-
-		// MPN hook.
-		add_filter( 'yoast_mpn_attribute_value', array( $this, 'mpn' ), 10, 2 );
+		// The six Yoast WooCommerce SEO identifiers (GTIN8/12/13/14, ISBN,
+		// MPN) are resolved by SeoCompatibilityProvider (CBT-614). The
+		// getters that used to hook `yoast_*_attribute_value` here depended
+		// on a V5-only helper and never ran in V8; the filters still fire
+		// from the provider for third-party listeners.
 	}
 
 	/**
@@ -203,125 +197,5 @@ class WPSEO_FrontendCompatibility {
 		}
 
 		return get_post_meta( $product_id, '_yoast_wpseo_canonical', true );
-	}
-
-	/**
-	 * Get Yoast GTIN8.
-	 *
-	 * @param string      $value   Current value.
-	 * @param \WC_Product $product Product object.
-	 *
-	 * @return string
-	 */
-	public function gtin8( $value, $product ) {
-		if ( ! empty( $value ) ) {
-			return $value;
-		}
-
-		if ( ! class_exists( 'WPSEO_Frontend' ) || ! function_exists( 'woo_feed_get_yoast_identifiers_value' ) ) {
-			return $value;
-		}
-
-		return woo_feed_get_yoast_identifiers_value( 'gtin8', $product );
-	}
-
-	/**
-	 * Get Yoast GTIN12.
-	 *
-	 * @param string      $value   Current value.
-	 * @param \WC_Product $product Product object.
-	 *
-	 * @return string
-	 */
-	public function gtin12( $value, $product ) {
-		if ( ! empty( $value ) ) {
-			return $value;
-		}
-
-		if ( ! class_exists( 'WPSEO_Frontend' ) || ! function_exists( 'woo_feed_get_yoast_identifiers_value' ) ) {
-			return $value;
-		}
-
-		return woo_feed_get_yoast_identifiers_value( 'gtin12', $product );
-	}
-
-	/**
-	 * Get Yoast GTIN13.
-	 *
-	 * @param string      $value   Current value.
-	 * @param \WC_Product $product Product object.
-	 *
-	 * @return string
-	 */
-	public function gtin13( $value, $product ) {
-		if ( ! empty( $value ) ) {
-			return $value;
-		}
-
-		if ( ! class_exists( 'WPSEO_Frontend' ) || ! function_exists( 'woo_feed_get_yoast_identifiers_value' ) ) {
-			return $value;
-		}
-
-		return woo_feed_get_yoast_identifiers_value( 'gtin13', $product );
-	}
-
-	/**
-	 * Get Yoast GTIN14.
-	 *
-	 * @param string      $value   Current value.
-	 * @param \WC_Product $product Product object.
-	 *
-	 * @return string
-	 */
-	public function gtin14( $value, $product ) {
-		if ( ! empty( $value ) ) {
-			return $value;
-		}
-
-		if ( ! class_exists( 'WPSEO_Frontend' ) || ! function_exists( 'woo_feed_get_yoast_identifiers_value' ) ) {
-			return $value;
-		}
-
-		return woo_feed_get_yoast_identifiers_value( 'gtin14', $product );
-	}
-
-	/**
-	 * Get Yoast ISBN.
-	 *
-	 * @param string      $value   Current value.
-	 * @param \WC_Product $product Product object.
-	 *
-	 * @return string
-	 */
-	public function isbn( $value, $product ) {
-		if ( ! empty( $value ) ) {
-			return $value;
-		}
-
-		if ( ! class_exists( 'WPSEO_Frontend' ) || ! function_exists( 'woo_feed_get_yoast_identifiers_value' ) ) {
-			return $value;
-		}
-
-		return woo_feed_get_yoast_identifiers_value( 'isbn', $product );
-	}
-
-	/**
-	 * Get Yoast MPN.
-	 *
-	 * @param string      $value   Current value.
-	 * @param \WC_Product $product Product object.
-	 *
-	 * @return string
-	 */
-	public function mpn( $value, $product ) {
-		if ( ! empty( $value ) ) {
-			return $value;
-		}
-
-		if ( ! class_exists( 'WPSEO_Frontend' ) || ! function_exists( 'woo_feed_get_yoast_identifiers_value' ) ) {
-			return $value;
-		}
-
-		return woo_feed_get_yoast_identifiers_value( 'mpn', $product );
 	}
 }

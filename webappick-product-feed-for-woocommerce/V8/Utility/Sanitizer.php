@@ -205,19 +205,70 @@ class Sanitizer {
 	 * event handlers and other XSS vectors; feed templates escape or
 	 * CDATA-wrap the value again at render time.
 	 *
+	 * Since 8.0.24 this delegates to text_value() (CBT-607): kses on its
+	 * own also entity-encoded bare `>` and `&`, corrupting Text values.
+	 *
 	 * @since 8.0.16
 	 *
 	 * @param mixed $value Raw submitted value.
 	 * @return string Sanitized value with safe HTML preserved.
 	 */
 	public static function rich_text( $value ): string {
+		return self::text_value( $value );
+	}
+
+	/**
+	 * Sanitize a customer-typed feed TEXT value: strip unsafe markup, keep
+	 * the characters they typed (CBT-607).
+	 *
+	 * `wp_kses_post()` alone (8.0.16–8.0.23) also rewrote a bare `>` to
+	 * `&gt;` and `&` to `&amp;`, so "Home > Kitchen" and "?a=1&b=2" were
+	 * STORED encoded, shown encoded in the editor, and — with global CDATA
+	 * off — written to the feed as the literal entities inside CDATA.
+	 *
+	 * Order matters: decode FIRST so an entity-typed tag
+	 * (`&lt;script&gt;`) becomes a real tag kses can strip, then kses,
+	 * then decode again so the plain `< > & " '` survive. Idempotent on a
+	 * clean value. Storing the real characters is safe because every
+	 * render surface escapes: React in the editor, XML escape / CDATA in
+	 * the templates, enclosure in CSV.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param mixed $value Raw submitted value.
+	 * @return string Safe text with the typed characters intact.
+	 */
+	public static function text_value( $value ): string {
 		if ( is_object( $value ) || is_array( $value ) ) {
 			return '';
 		}
 
 		$value = str_replace( "\0", '', (string) $value );
 
-		return wp_kses_post( $value );
+		return self::restore_text( wp_kses_post( self::restore_text( $value ) ) );
+	}
+
+	/**
+	 * Turn the HTML entities that a `wp_kses_post()` save pass introduced
+	 * back into plain characters (CBT-607).
+	 *
+	 * Used on READ paths — the attribute resolver at generation and the
+	 * feed editor response — so feeds saved on 8.0.16–8.0.23 heal in
+	 * place with no option rewrite. Only the five special-character
+	 * entities are decoded (`wp_specialchars_decode`), never arbitrary
+	 * entities. Idempotent; non-strings pass through unchanged.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param mixed $value Stored value.
+	 * @return mixed
+	 */
+	public static function restore_text( $value ) {
+		if ( ! is_string( $value ) || false === strpos( $value, '&' ) ) {
+			return $value;
+		}
+
+		return wp_specialchars_decode( $value, ENT_QUOTES );
 	}
 
 	/**

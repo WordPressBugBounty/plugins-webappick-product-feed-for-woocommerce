@@ -11,7 +11,11 @@
  * group of the Value dropdown with keys like "wf_option_siteurl".
  *
  * During feed generation, this resolver strips the prefix and calls
- * get_option() to fetch the actual WordPress option value.
+ * get_option() to fetch the actual WordPress option value — but ONLY for
+ * option names present in that tracked list (CBT-608 / BUG-0095). The
+ * feedrules are writable through REST and MCP, so without this check any
+ * manage_woocommerce user could publish any wp_options row (API keys,
+ * SMTP passwords) into a public feed file. Untracked names resolve to ''.
  *
  * @package    CTXFeed
  * @subpackage V8/Product
@@ -91,6 +95,15 @@ class WpOptionResolver {
 			return $this->cache[ $option_name ];
 		}
 
+		// Allowlist gate (CBT-608): only options tracked on the WP Options
+		// screen may be read. The UI can only pick tracked names, so no
+		// legitimate feed is affected; an API-written arbitrary name is
+		// refused here, at the one point every write path funnels through.
+		if ( ! $this->is_allowed( $option_name ) ) {
+			$this->cache[ $option_name ] = '';
+			return '';
+		}
+
 		$value = get_option( $option_name, '' );
 
 		// Arrays/objects are flattened for feed output.
@@ -158,5 +171,55 @@ class WpOptionResolver {
 	 */
 	public function clear_cache(): void {
 		$this->cache = array();
+	}
+
+	/**
+	 * Whether an option name is on the tracked list (`wpfp_option`).
+	 *
+	 * The stored shape is V5's: `[ 'siteurl' => [ 'option_id' => 'siteurl',
+	 * 'option_name' => 'wf_option_siteurl' ], … ]`; the key, `option_id`
+	 * and the de-prefixed `option_name` are all accepted so a hand-edited
+	 * or partially-migrated list still works. Read through get_option()
+	 * on every uncached name — WP's option cache makes that free, and the
+	 * resolver is a container singleton whose lifetime spans feeds, so a
+	 * per-instance memo would go stale when the merchant edits the list.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param string $option_name Option name without the wf_option_ prefix.
+	 * @return bool
+	 */
+	private function is_allowed( string $option_name ): bool {
+		$allowed = false;
+		$tracked = get_option( 'wpfp_option', array() );
+		if ( is_array( $tracked ) ) {
+			foreach ( $tracked as $key => $item ) {
+				$names = array( $key );
+				if ( is_array( $item ) ) {
+					$names[] = $item['option_id'] ?? '';
+					$names[] = str_replace( self::WP_OPTION_PREFIX, '', (string) ( $item['option_name'] ?? '' ) );
+				} elseif ( is_string( $item ) ) {
+					$names[] = str_replace( self::WP_OPTION_PREFIX, '', $item );
+				}
+				if ( in_array( $option_name, $names, true ) ) {
+					$allowed = true;
+					break;
+				}
+			}
+		}
+
+		/**
+		 * Filter whether a WordPress option may be exposed as a feed value.
+		 *
+		 * Defaults to the WP Options screen's tracked list. Return true to
+		 * allow an option a programmatic integration needs, false to block
+		 * one even when tracked.
+		 *
+		 * @since 8.0.24
+		 *
+		 * @param bool   $allowed     Whether the option is allowed.
+		 * @param string $option_name Option name without the wf_option_ prefix.
+		 */
+		return (bool) apply_filters( 'ctxfeed_wp_option_allowed', $allowed, $option_name );
 	}
 }

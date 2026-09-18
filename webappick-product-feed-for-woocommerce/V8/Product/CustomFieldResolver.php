@@ -170,15 +170,70 @@ class CustomFieldResolver {
 	 * @return string
 	 */
 	private function normalize( $value ): string {
-		if ( empty( $value ) && false !== $value ) {
+		// Unset / blank only. `empty()` also swallowed '0', 0 and false —
+		// an explicit ACF True/False "No" and a stored zero exported as
+		// nothing, indistinguishable from an unfilled field (CBT-610 /
+		// BUG-0103). V5 string-cast the raw value, so '0' survived there.
+		if ( null === $value || '' === $value || array() === $value ) {
 			return '';
 		}
 
+		// ACF True/False returns PHP booleans; (string) false is ''.
+		// Export ACF's own stored representation so "No" is a value.
+		if ( is_bool( $value ) ) {
+			return $value ? '1' : '0';
+		}
+
 		if ( is_array( $value ) ) {
+			// ACF Image / File (default "Array" return format) and Gallery
+			// describe attachments as arrays carrying a `url` key — export
+			// the URL(s), not a dump of every key and thumbnail size
+			// (CBT-615 / BUG-0102). Any other array keeps the generic join.
+			$urls = $this->attachment_urls( $value );
+			if ( null !== $urls ) {
+				return implode( ',', $urls );
+			}
+
 			return implode( ', ', $this->flatten( $value ) );
 		}
 
 		return (string) $value;
+	}
+
+	/**
+	 * URL(s) from an ACF attachment-shaped array, or null when the array is
+	 * not one.
+	 *
+	 * Accepts a single attachment record (`['ID' => …, 'url' => …, 'sizes'
+	 * => …]`) → one URL, or a list of such records (Gallery) → one URL per
+	 * member. A list is only treated as a gallery when EVERY member is an
+	 * attachment record, so a checkbox/select list of plain values keeps
+	 * the generic comma-join. The full-size `url` is used, never a size.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param array $value Resolved array value.
+	 *
+	 * @return string[]|null
+	 */
+	private function attachment_urls( array $value ): ?array {
+		if ( isset( $value['url'] ) && is_string( $value['url'] ) && '' !== $value['url'] ) {
+			return array( $value['url'] );
+		}
+
+		if ( array() === $value || array_keys( $value ) !== range( 0, count( $value ) - 1 ) ) {
+			return null;
+		}
+
+		$urls = array();
+		foreach ( $value as $member ) {
+			if ( ! is_array( $member ) || ! isset( $member['url'] ) || ! is_string( $member['url'] ) || '' === $member['url'] ) {
+				return null;
+			}
+			$urls[] = $member['url'];
+		}
+
+		return $urls;
 	}
 
 	/**

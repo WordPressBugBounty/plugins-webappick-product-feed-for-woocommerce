@@ -543,6 +543,12 @@ class SettingsEndpoint extends RestController {
 		// on next render. V5 fired this from its per-toggle AJAX handler.
 		if ( $custom_fields_changed ) {
 			delete_transient( '__woo_feed_cache_woo_feed_dropdown_product_attributes' );
+			// The V8 Make Feed picker (and ctxfeed/list-source-attributes)
+			// read the mapping-attributes transients, not the V5 one; the
+			// picker hides disabled identifier fields (CBT-593), so a stale
+			// entry could show a just-disabled field for up to the 6-hour
+			// TTL (CBT-616 / BUG-0099).
+			ProductEndpoint::flush_mapping_attributes_cache();
 			$actions[] = 'product_attribute_cache_cleared';
 
 			/**

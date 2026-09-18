@@ -567,6 +567,13 @@ class FeedEndpoint extends RestController {
 			return $this->error( __( 'Feed not found.', 'woo-feed' ), 404 );
 		}
 
+		// Feeds saved on 8.0.16–8.0.23 carry entity-encoded Text values
+		// (CBT-607); hand the editor the characters the customer typed so
+		// the field reads correctly and the next save stores it clean.
+		if ( isset( $config['feedrules']['default'] ) && is_array( $config['feedrules']['default'] ) ) {
+			$config['feedrules']['default'] = array_map( array( Sanitizer::class, 'restore_text' ), $config['feedrules']['default'] );
+		}
+
 		return $this->success( $config );
 	}
 
@@ -2154,7 +2161,8 @@ class FeedEndpoint extends RestController {
 			// customer typed never reached generation. rich_text keeps the
 			// wp_kses_post-safe tag set and strips XSS vectors; templates
 			// escape/CDATA the value again at render.
-			$defaults[] = isset( $row['default'] ) ? Sanitizer::rich_text( $row['default'] ) : '';
+			// text_value (CBT-607): kses alone stored `>` / `&` as entities.
+			$defaults[] = isset( $row['default'] ) ? Sanitizer::text_value( $row['default'] ) : '';
 			$suffixes[] = Sanitizer::preserve_whitespace( $row['suffix'] ?? '' );
 			// V5-parity multiselect: each row stores an ARRAY of output-type
 			// codes (['2','12']). Accept the array, a comma-joined string, or
@@ -2917,45 +2925,73 @@ class FeedEndpoint extends RestController {
 			'parent_id'          => $product->get_parent_id(),
 		);
 
-		// Stage 1 — product query selection (post_status/type/include-exclude
-		// lists and query-level push-downs).
-		$query_ids         = $container->resolve( 'product.query' )->get_ids( $config );
-		$selected_by_query = in_array( $product_id, array_map( 'intval', $query_ids ), true );
-
-		// Stage 2 — filter verdict, capturing WHICH filter excluded via the
-		// same action the batch loop tallies. Run even for unselected
-		// products: both verdicts together explain the exclusion.
-		\CTXFeed\V8\Product\ProductMemo::clear();
-		\CTXFeed\V8\Product\ProductMemo::remember_current( $product );
-
-		$excluded_by     = array();
-		$ctx_debug_tally = static function ( $filter_name ) use ( &$excluded_by ) {
-			$excluded_by[] = (string) $filter_name;
-		};
-		add_action( 'ctxfeed_filter_excluded', $ctx_debug_tally, 10, 1 );
+		// The real generator fires the V5 batch/loop lifecycle hooks around
+		// its work, and the compat shims key on them: currency switchers
+		// (CURCY, VillaTheme, WCML) swap the active currency on
+		// before_woo_feed_generate_batch_data, language shims filter the
+		// product ids, and every one of them restores state on the after
+		// hooks. Without the same hooks this debugger resolved prices in the
+		// store currency while the file was converted (CBT-612 / BUG-0104).
+		// Batch hooks before the query (as in FeedGenerator), loop hooks
+		// before resolution, every after hook in a finally so a throw still
+		// restores the site.
+		$feed_rules_array = method_exists( $config, 'to_array' ) ? $config->to_array() : array();
+		$loop_started     = false;
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
+		do_action( 'before_woo_feed_generate_batch_data', $config );
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
+		do_action( 'before_woo_feed_get_product_information', $config );
 		try {
-			$passed_filters = (bool) $container->resolve( 'filter.manager' )->should_include( $product, $config );
+			// Stage 1 — product query selection (post_status/type/include-exclude
+			// lists and query-level push-downs).
+			$query_ids         = $container->resolve( 'product.query' )->get_ids( $config );
+			$selected_by_query = in_array( $product_id, array_map( 'intval', $query_ids ), true );
+
+			// Stage 2 — filter verdict, capturing WHICH filter excluded via the
+			// same action the batch loop tallies. Run even for unselected
+			// products: both verdicts together explain the exclusion.
+			\CTXFeed\V8\Product\ProductMemo::clear();
+			\CTXFeed\V8\Product\ProductMemo::remember_current( $product );
+
+			$excluded_by     = array();
+			$ctx_debug_tally = static function ( $filter_name ) use ( &$excluded_by ) {
+				$excluded_by[] = (string) $filter_name;
+			};
+			add_action( 'ctxfeed_filter_excluded', $ctx_debug_tally, 10, 1 );
+			try {
+				$passed_filters = (bool) $container->resolve( 'filter.manager' )->should_include( $product, $config );
+			} finally {
+				remove_action( 'ctxfeed_filter_excluded', $ctx_debug_tally, 10 );
+			}
+
+			// Stage 3 — resolve → transform → merchant mapping. Always attempted
+			// (an excluded product's wrong values are still worth seeing); a throw
+			// here is itself the diagnosis for per-product skip errors.
+			$resolved = null;
+			$output   = null;
+			$error    = null;
+			do_action( 'woo_feed_before_product_loop', array( $product_id ), $feed_rules_array, $config );
+			$loop_started = true;
+			try {
+				$resolved    = $container->resolve( 'product.repository' )->resolve_single( $product, $config );
+				$transformed = $container->resolve( 'transform.pipeline' )->apply( $resolved, $config );
+				$provider    = $config->get_provider();
+				$format      = strtolower( (string) $config->get( 'feedType', 'xml' ) );
+				$output      = $container->resolve( 'channel.attribute_mapper' )->map_product_data( $transformed, $provider, $format );
+			} catch ( \Throwable $e ) {
+				$error = array(
+					'type'    => get_class( $e ),
+					'message' => $e->getMessage(),
+				);
+			}
 		} finally {
-			remove_action( 'ctxfeed_filter_excluded', $ctx_debug_tally, 10 );
-		}
-
-		// Stage 3 — resolve → transform → merchant mapping. Always attempted
-		// (an excluded product's wrong values are still worth seeing); a throw
-		// here is itself the diagnosis for per-product skip errors.
-		$resolved = null;
-		$output   = null;
-		$error    = null;
-		try {
-			$resolved    = $container->resolve( 'product.repository' )->resolve_single( $product, $config );
-			$transformed = $container->resolve( 'transform.pipeline' )->apply( $resolved, $config );
-			$provider    = $config->get_provider();
-			$format      = strtolower( (string) $config->get( 'feedType', 'xml' ) );
-			$output      = $container->resolve( 'channel.attribute_mapper' )->map_product_data( $transformed, $provider, $format );
-		} catch ( \Throwable $e ) {
-			$error = array(
-				'type'    => get_class( $e ),
-				'message' => $e->getMessage(),
-			);
+			if ( $loop_started ) {
+				do_action( 'woo_feed_after_product_loop', array( $product_id ), $feed_rules_array, $config );
+			}
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
+			do_action( 'after_woo_feed_get_product_information', $config );
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
+			do_action( 'after_woo_feed_generate_batch_data', $config );
 		}
 
 		return $this->success(

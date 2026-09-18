@@ -13,6 +13,8 @@
 
 namespace CTXFeed\V8\Core;
 
+use CTXFeed\V8\Utility\Sanitizer;
+
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -355,8 +357,14 @@ class Config {
 	 * @return array Default values.
 	 */
 	public function get_default(): array {
-
-		return $this->filter_mapping_row( (array) ( $this->rules['default'] ?? array() ) );
+		// Feeds saved on 8.0.16–8.0.23 stored `>` / `&` as HTML entities
+		// (CBT-607). Restore the typed characters for EVERY consumer of the
+		// column (repository fallbacks, review resolver, reporter) so those
+		// feeds heal at generation with no option rewrite.
+		return array_map(
+			array( Sanitizer::class, 'restore_text' ),
+			$this->filter_mapping_row( (array) ( $this->rules['default'] ?? array() ) )
+		);
 	}
 
 	/**

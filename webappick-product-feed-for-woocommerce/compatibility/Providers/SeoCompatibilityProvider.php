@@ -78,6 +78,26 @@ class SeoCompatibilityProvider {
 	);
 
 	/**
+	 * Yoast WooCommerce SEO identifier attributes → key inside Yoast's
+	 * `wpseo_global_identifier_values` meta (CBT-614). V5 resolved these in
+	 * `ProductInfos::yoast_gtin8()` … `yoast_mpn()` through the
+	 * `woo_feed_get_yoast_identifiers_value()` helper; the V8 refactor
+	 * re-wired title/description but left these six on a dead filter and
+	 * a helper that no longer exists, so they exported empty since 8.0.0.
+	 *
+	 * @since 8.0.24
+	 * @var array<string,string>
+	 */
+	private static $yoast_identifiers = array(
+		'yoast_gtin8'  => 'gtin8',
+		'yoast_gtin12' => 'gtin12',
+		'yoast_gtin13' => 'gtin13',
+		'yoast_gtin14' => 'gtin14',
+		'yoast_isbn'   => 'isbn',
+		'yoast_mpn'    => 'mpn',
+	);
+
+	/**
 	 * Attributes that fall back to the product's title on empty meta.
 	 *
 	 * @since 8.0.0
@@ -115,6 +135,45 @@ class SeoCompatibilityProvider {
 		add_filter( 'ctxfeed_resolve_seo_attribute', array( $this, 'resolve_attribute' ), 10, 4 );
 		add_filter( 'ctxfeed_register_simple_seo_attributes', array( $this, 'simple_attributes' ) );
 		add_filter( 'ctxfeed_register_seo_attributes', array( $this, 'dropdown_attributes' ) );
+
+		// Feed ROWS resolve a picker key as raw meta and are completed by the
+		// Legacy Bridge `woo_feed_filter_product_{attr}` filter (see
+		// AttributeResolver::SEO_ATTRIBUTES); the title-family keys are
+		// answered there by WPSEO_FrontendCompatibility, but nothing ever
+		// answered the six identifier keys (CBT-614). Hook them here — the
+		// provider is registered unconditionally, the lookup itself gates
+		// on Yoast WooCommerce SEO — so rows, Attribute Mapping and Dynamic
+		// Attributes (resolve_seo_bridged) all reach the same lookup.
+		foreach ( array_keys( self::$yoast_identifiers ) as $attr ) {
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Built as "woo_feed_filter_product_{$attr}", the registered woo_feed Legacy Bridge prefix; the sniff cannot resolve the variable.
+			add_filter( 'woo_feed_filter_product_' . $attr, array( $this, 'bridge_yoast_identifier' ), 10, 2 );
+		}
+	}
+
+	/**
+	 * Legacy Bridge callback for the six Yoast identifier keys.
+	 *
+	 * Defers to a non-empty incoming value (a third-party filter at a
+	 * lower priority, or a real `yoast_mpn` post meta) like every bridge
+	 * getter; otherwise resolves the identifier. The attribute key is read
+	 * from the filter name so one callback serves all six.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param mixed       $value   Incoming value.
+	 * @param \WC_Product $product Product or variation.
+	 * @return mixed
+	 */
+	public function bridge_yoast_identifier( $value, $product ) {
+		if ( ( is_string( $value ) && '' !== trim( $value ) ) || ! $product instanceof \WC_Product ) {
+			return $value;
+		}
+		$attr = str_replace( 'woo_feed_filter_product_', '', (string) current_filter() );
+		if ( ! isset( self::$yoast_identifiers[ $attr ] ) ) {
+			return $value;
+		}
+
+		return $this->resolve_yoast_identifier( $product, $attr );
 	}
 
 	/**
@@ -148,6 +207,11 @@ class SeoCompatibilityProvider {
 		$meta_product_id = $product->is_type( 'variation' )
 			? (int) $product->get_parent_id()
 			: (int) $product->get_id();
+
+		// Yoast WooCommerce SEO identifiers (V5 parity, CBT-614).
+		if ( isset( self::$yoast_identifiers[ $attr ] ) ) {
+			return $this->resolve_yoast_identifier( $product, $attr );
+		}
 
 		$resolved = '';
 		if ( ! empty( $plugin ) && isset( self::$meta_keys[ $plugin ][ $attr ] ) ) {
@@ -272,6 +336,58 @@ class SeoCompatibilityProvider {
 			'optionGroup' => '',
 			'options'     => array(),
 		);
+	}
+
+	/**
+	 * A Yoast WooCommerce SEO identifier (GTIN8/12/13/14, ISBN, MPN).
+	 *
+	 * Port of V5's `woo_feed_get_yoast_identifiers_value()` +
+	 * `ProductInfos::yoast_*()`: Yoast stores the panel's identifiers as
+	 * one array in `wpseo_global_identifier_values` on the product and
+	 * `wpseo_variation_global_identifiers_values` on a variation; a
+	 * variation with no value of its own inherits the parent's. Requires
+	 * Yoast WooCommerce SEO (the class that owns that meta) like V5 did.
+	 * The V5 per-identifier filter (`yoast_mpn_attribute_value`, two args)
+	 * still fires so existing extensions keep working.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param \WC_Product $product Product or variation.
+	 * @param string      $attr    Attribute key (e.g. `yoast_mpn`).
+	 * @return string
+	 */
+	private function resolve_yoast_identifier( \WC_Product $product, string $attr ): string {
+		$key   = self::$yoast_identifiers[ $attr ];
+		$value = '';
+
+		if ( class_exists( 'Yoast_WooCommerce_SEO' ) ) {
+			$value = self::yoast_identifier_meta( (int) $product->get_id(), $key, $product->is_type( 'variation' ) );
+			if ( '' === $value && $product->is_type( 'variation' ) && $product->get_parent_id() ) {
+				$value = self::yoast_identifier_meta( (int) $product->get_parent_id(), $key, false );
+			}
+		}
+
+		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- V5 hook names (yoast_gtin8_attribute_value … yoast_mpn_attribute_value) preserved for third-party listeners.
+		return (string) apply_filters( $attr . '_attribute_value', $value, $product );
+	}
+
+	/**
+	 * One identifier from Yoast's identifier meta on a post.
+	 *
+	 * @since 8.0.24
+	 *
+	 * @param int    $post_id      Product or variation id.
+	 * @param string $key          gtin8 | gtin12 | gtin13 | gtin14 | isbn | mpn.
+	 * @param bool   $is_variation Read the variation-shaped meta key.
+	 * @return string
+	 */
+	private static function yoast_identifier_meta( int $post_id, string $key, bool $is_variation ): string {
+		$meta = get_post_meta( $post_id, $is_variation ? 'wpseo_variation_global_identifiers_values' : 'wpseo_global_identifier_values', true );
+		if ( ! is_array( $meta ) || ! isset( $meta[ $key ] ) || ! is_scalar( $meta[ $key ] ) ) {
+			return '';
+		}
+
+		return trim( (string) $meta[ $key ] );
 	}
 
 	/**
