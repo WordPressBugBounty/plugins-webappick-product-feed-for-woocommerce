@@ -1,6 +1,23 @@
 CTX Feed — changelog archive
 The most recent releases are listed in readme.txt; this file carries the full history.
 
+= Version 8.0.23 =
+* Fix: multilingual stores (WPML) — variations whose global (taxonomy) attribute was translated after the variation was created no longer ship the original-language value in translated feeds (needs CTX Feed Pro 8.0.12).
+* Fix: price and sale price carry exactly the suffix configured on the mapping row. A row with no suffix ships the bare number, and on multi-currency stores the feed currency fills in only for an empty suffix — the feed currency is no longer appended to, or substituted into, a price whose suffix says otherwise.
+* Fix: brand — a new feed on a store without WooCommerce Brands terms gets the store name as a visible Text value on the brand row that you can edit; stores with Brands terms source the Parent Brand with no hidden fallback. Feeds created on 8.0.17–8.0.22 stop exporting the site title for products without a brand — the update clears that hidden fallback automatically.
+* Added: a notice when the store has products of types the free plugin does not export (bundles, composite products, subscriptions, auctions and other custom types), with the count per type and a "Get the Pro" link. The health endpoint reports the same counts for AI assistants.
+* Changed: Category mapping — channels with a published category list (Google Shopping and the channels that reuse its taxonomy, Facebook and Instagram) offer a searchable list with a magnifier; every other channel takes the category as free text, exactly as typed. The Google list is no longer offered for channels that do not use it.
+* Fix: store category names containing "&" render correctly in the Category mapping editor.
+* Changed: the feed settings fields are labelled "Feed Language" and "Feed Currency", and required fields show a red asterisk.
+* Improved: the notice slider shows "1 of N" when several notices are waiting, and notice buttons use the primary button style.
+* Fix: the custom-field toggles in Settings hide the disabled fields from the attribute dropdown.
+
+The complete changelog for all earlier versions ships with the plugin in changelog.txt.
+
+== Upgrade Notice ==
+= 8.0.0 =
+Major update: a rewritten feed engine and a new admin interface. Your feeds and settings carry over automatically, but please back up your site before updating and check your feeds afterwards. Requires PHP 7.4+ (older PHP stays on 6.6.23). Any issue? Contact support@webappick.com.
+
 = Version 8.0.22 =
 * Fix: clearing a category mapping now sticks. Removing a category's value in the mapping editor showed it unmapped, but generated feeds quietly kept using the old value until the mapping was rebuilt — cleared entries are now really removed on save.
 * Fix: multilingual stores (WPML) — product variations no longer ship original-language attribute text inside translated feeds. Variation title suffixes and attribute values in feed columns, attribute mappings and dynamic attributes now resolve in the feed's language (WPML/WCML stores also need CTX Feed Pro 8.0.11).

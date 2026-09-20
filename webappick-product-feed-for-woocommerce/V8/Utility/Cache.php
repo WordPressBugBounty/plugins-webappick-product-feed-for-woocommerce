@@ -133,12 +133,20 @@ class Cache {
 	 * This deliberately does NOT call wp_cache_flush(): that would drop the
 	 * entire site's object cache (every plugin, theme, and core cache), a
 	 * disruptive side effect for a plugin-scoped "Clear Cache" button (owner
-	 * decision, 2026-08-03). On persistent object-cache installs
-	 * (Redis/Memcached) transients live in memory rather than wp_options, so
-	 * the bulk delete below clears the DB-backed transients only; our own
-	 * object-cached transients age out on their TTL.
+	 * decision, 2026-08-03).
+	 *
+	 * On persistent object-cache installs (Redis/Memcached) transients live
+	 * in memory rather than wp_options, so the bulk delete below finds no
+	 * rows there. Until 8.0.25 that left the object-cached copies in place
+	 * until their TTL — the Make Feed attribute picker (6 h) kept hiding
+	 * newly added post metas after "Clear Cache" (CBT-625, #69222). Now
+	 * {@see flush_object_cached_transients()} runs as well: every component
+	 * deletes its known keys through the transient API (which reaches the
+	 * object cache), and the plugin's transient groups are flushed when the
+	 * drop-in supports group flushes.
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.25 Also clears object-cached transients (CBT-625).
 	 *
 	 * @return int Number of option rows deleted (transients + timeouts).
 	 */
@@ -168,8 +176,57 @@ class Cache {
 		 *
 		 * @param int $deleted Option rows deleted.
 		 */
+		$this->flush_object_cached_transients();
+
 		do_action( 'ctxfeed_cache_cleared', ( false === $deleted ) ? 0 : (int) $deleted );
 
 		return ( false === $deleted ) ? 0 : (int) $deleted;
+	}
+
+	/**
+	 * Drop the plugin's transients from a persistent object cache.
+	 *
+	 * Two passes, because drop-ins differ (CBT-625):
+	 *
+	 *   1. `ctxfeed_flush_transients` — every component that owns transient
+	 *      keys deletes them through delete_transient(), which reaches the
+	 *      object cache on any drop-in. The API layer hooks the Make Feed
+	 *      picker and Filters-tab caches here (ProductCacheInvalidator).
+	 *   2. When an external object cache is in use and the drop-in supports
+	 *      group flushes (Redis Object Cache ≥ 2.1, Object Cache Pro, WP
+	 *      core's own cache since 6.1), flush the `transient` and
+	 *      `site-transient` groups so the per-feed keys we cannot enumerate
+	 *      (progress, batch history, locks, filter counts) go too. This is
+	 *      still NOT wp_cache_flush(): posts, terms, options and every other
+	 *      group stay warm — only transients, which regenerate on demand by
+	 *      design, are dropped.
+	 *
+	 * Without an external object cache the transient rows are already gone
+	 * (the SQL in flush_plugin()), so only the first pass runs.
+	 *
+	 * @since 8.0.25
+	 *
+	 * @return bool True when the object cache's transient groups were flushed.
+	 */
+	public function flush_object_cached_transients(): bool {
+		/**
+		 * Components delete the transient keys they own.
+		 *
+		 * @since 8.0.25
+		 */
+		do_action( 'ctxfeed_flush_transients' );
+
+		if ( ! function_exists( 'wp_using_ext_object_cache' ) || ! wp_using_ext_object_cache() ) {
+			return false;
+		}
+
+		if ( ! function_exists( 'wp_cache_supports' ) || ! wp_cache_supports( 'flush_group' ) ) {
+			return false;
+		}
+
+		$flushed = (bool) wp_cache_flush_group( 'transient' );
+		wp_cache_flush_group( 'site-transient' );
+
+		return $flushed;
 	}
 }

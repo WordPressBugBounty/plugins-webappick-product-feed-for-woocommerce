@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.24
+Stable tag: 8.0.25
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -469,6 +469,12 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.25 =
+* Added: the feed you just generated is easy to find again. When a generation finishes, its row on Manage Feeds turns light green and its Last Generated time shows in green for ten seconds.
+* Improved: feed names on Manage Feeds are real links, so right-click "Open in new tab", middle-click and copy link all work while a normal click still opens the editor in place.
+* Improved: when Save finds an empty required field (Country, Template, File name, File type or an incomplete mapping row), every missing field is outlined in a clearer red at once and the page scrolls to the first one; fix it, save again, and it moves to the next.
+* Fix: Clear Cache now also clears CTX Feed's cached data on sites that use a persistent object cache (Redis, Memcached), so a custom field or post meta you just added appears under Custom Fields & Post Metas right away instead of after the cache expires. Fields written directly to products by importers or bridge plugins refresh that list automatically as well.
+
 = Version 8.0.24 =
 * Added: Split & choose output command — split a value on a separator (comma, space, pipe, semicolon, slash, hyphen, colon or any text) and keep the first, last, Nth or a range of parts, optionally rejoined. Google Merchant Center "Split & Choose" parity for every channel, built from the Output command builder.
 * Added: Extract output command — keep only the listed words or phrases found in a value (first match or all, any case, whole words, or a pattern). Google Merchant Center "Extract" parity.
@@ -483,19 +489,3 @@ If your feed fails to generate:
 * Fix: turning a Custom Fields toggle off in Settings removes those fields from the attribute dropdown immediately instead of after the cache expires.
 * Fix: the per-product debug tool (Debug feed product and the AI ability) runs under the same currency and language context as feed generation, so its prices and values match the generated file.
 
-= Version 8.0.23 =
-* Fix: multilingual stores (WPML) — variations whose global (taxonomy) attribute was translated after the variation was created no longer ship the original-language value in translated feeds (needs CTX Feed Pro 8.0.12).
-* Fix: price and sale price carry exactly the suffix configured on the mapping row. A row with no suffix ships the bare number, and on multi-currency stores the feed currency fills in only for an empty suffix — the feed currency is no longer appended to, or substituted into, a price whose suffix says otherwise.
-* Fix: brand — a new feed on a store without WooCommerce Brands terms gets the store name as a visible Text value on the brand row that you can edit; stores with Brands terms source the Parent Brand with no hidden fallback. Feeds created on 8.0.17–8.0.22 stop exporting the site title for products without a brand — the update clears that hidden fallback automatically.
-* Added: a notice when the store has products of types the free plugin does not export (bundles, composite products, subscriptions, auctions and other custom types), with the count per type and a "Get the Pro" link. The health endpoint reports the same counts for AI assistants.
-* Changed: Category mapping — channels with a published category list (Google Shopping and the channels that reuse its taxonomy, Facebook and Instagram) offer a searchable list with a magnifier; every other channel takes the category as free text, exactly as typed. The Google list is no longer offered for channels that do not use it.
-* Fix: store category names containing "&" render correctly in the Category mapping editor.
-* Changed: the feed settings fields are labelled "Feed Language" and "Feed Currency", and required fields show a red asterisk.
-* Improved: the notice slider shows "1 of N" when several notices are waiting, and notice buttons use the primary button style.
-* Fix: the custom-field toggles in Settings hide the disabled fields from the attribute dropdown.
-
-The complete changelog for all earlier versions ships with the plugin in changelog.txt.
-
-== Upgrade Notice ==
-= 8.0.0 =
-Major update: a rewritten feed engine and a new admin interface. Your feeds and settings carry over automatically, but please back up your site before updating and check your feeds afterwards. Requires PHP 7.4+ (older PHP stays on 6.6.23). Any issue? Contact support@webappick.com.

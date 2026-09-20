@@ -72,6 +72,23 @@ final class ProductCacheInvalidator {
 	);
 
 	/**
+	 * Post-meta hooks that schedule a deferred flush when the post is a
+	 * product or variation (CBT-625). The Make Feed picker's "Custom Fields
+	 * & Post Metas" group is built from the DISTINCT meta keys in use, so a
+	 * bridge plugin adding `my_new_field` via update_post_meta() — with no
+	 * product save at all — must still refresh it. Same debounce as the
+	 * product hooks: one scheduler query per request at most.
+	 *
+	 * @since 8.0.25
+	 * @var string[]
+	 */
+	const META_HOOKS = array(
+		'added_post_meta',
+		'updated_post_meta',
+		'deleted_post_meta',
+	);
+
+	/**
 	 * Whether this request already queued (or found) a pending flush.
 	 *
 	 * @var bool
@@ -94,6 +111,39 @@ final class ProductCacheInvalidator {
 		// Any post type fires these — gate to products inside the handler.
 		add_action( 'deleted_post', array( __CLASS__, 'on_post_removed' ), 10, 1 );
 		add_action( 'trashed_post', array( __CLASS__, 'on_post_removed' ), 10, 1 );
+
+		// Meta written straight to a product (bridge plugins, importers,
+		// custom code) — the picker's post-meta group must learn the new key.
+		foreach ( self::META_HOOKS as $hook ) {
+			add_action( $hook, array( __CLASS__, 'on_post_meta_change' ), 10, 2 );
+		}
+
+		// "Clear Cache" on an object-cache install: the SQL bulk delete in
+		// Utility\Cache::flush_plugin() cannot see object-cached transients,
+		// so drop the keys this class owns through the transient API.
+		add_action( 'ctxfeed_flush_transients', array( __CLASS__, 'flush_now' ) );
+	}
+
+	/**
+	 * A post meta row was added, updated or deleted — only products matter.
+	 *
+	 * @since 8.0.25
+	 * @param int|int[] $meta_id   Meta row id(s) — unused, hook signature.
+	 * @param int       $object_id Post ID the meta belongs to.
+	 * @return void
+	 */
+	public static function on_post_meta_change( $meta_id, $object_id ): void { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundBeforeLastUsed -- hook signature.
+		// Cheapest exit first: a request already holding a queued flush
+		// needs no post-type lookup at all.
+		if ( self::$queued_this_request ) {
+			return;
+		}
+		$type = get_post_type( (int) $object_id );
+		if ( 'product' !== $type && 'product_variation' !== $type ) {
+			return;
+		}
+
+		self::on_product_change();
 	}
 
 	/**
