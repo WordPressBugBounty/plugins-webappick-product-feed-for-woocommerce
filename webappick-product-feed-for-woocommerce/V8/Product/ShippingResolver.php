@@ -18,6 +18,7 @@ namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Core\Logger;
+use CTXFeed\V8\Utility\WooContext;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -153,6 +154,12 @@ class ShippingResolver {
 	 * @return mixed Array of shipping entries (XML) or composite string (CSV).
 	 */
 	public function resolve( \WC_Product $product, string $attr, Config $config ) {
+		// Shipping rates carry tax, and WooCommerce resolves the tax
+		// location through the customer, which calls a cart helper that is
+		// not loaded on cron/REST requests (CBT-631). Feed runs already do
+		// this once per batch; this covers the preview/REST callers too.
+		WooContext::ensure_cart_functions();
+
 		$zones = $this->get_shipping_zones();
 
 		// Filter BEFORE computing prices — avoids expensive cart-API calls
@@ -650,7 +657,7 @@ class ShippingResolver {
 		// Ensure cart + session are loaded — they aren't by default in
 		// REST / cron / Action-Scheduler context.
 		if ( ! WC()->cart ) {
-			include_once WC_ABSPATH . 'includes/wc-cart-functions.php';
+			WooContext::ensure_cart_functions();
 			include_once WC_ABSPATH . 'includes/class-wc-cart.php';
 			if ( function_exists( 'wc_load_cart' ) ) {
 				wc_load_cart();

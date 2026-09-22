@@ -64,6 +64,23 @@ class ProductIdFilter implements FilterInterface {
 			$mode = 'include';
 		}
 
+		/**
+		 * Filter the configured product-id list before matching.
+		 *
+		 * The list holds whatever ids the merchant saved — usually the
+		 * default-language ids everyone copies from the Products list. On a
+		 * multilingual store the product reaching this filter is the
+		 * TRANSLATED post, so a compat shim can expand each id to all of its
+		 * translations (CBT-626 / BUG-0110).
+		 *
+		 * @since 8.0.26
+		 *
+		 * @param int[]       $ids     Saved ids (cleaned, non-zero).
+		 * @param \WC_Product $product Product being filtered.
+		 * @param Config      $config  Feed configuration.
+		 */
+		$ids = array_values( array_unique( array_map( 'intval', (array) apply_filters( 'ctxfeed_filter_product_ids_list', $ids, $product, $config ) ) ) );
+
 		// Check both the product's own ID and — for variations — the parent
 		// ID. V5 matches V5 include_products/exclude_products semantics.
 		$product_id = (int) $product->get_id();

@@ -34,6 +34,8 @@ use CTXFeed\V8\Template\GroupedAttributeBuilder;
 use CTXFeed\V8\Product\SkroutzVariationsBuilder;
 use CTXFeed\V8\Utility\FeedLogger;
 use CTXFeed\V8\Utility\Filesystem;
+use CTXFeed\V8\Utility\Memory;
+use CTXFeed\V8\Utility\WooContext;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -55,6 +57,21 @@ class FeedGenerator {
 	 * @var float
 	 */
 	const TIME_BOX_SHARE = 0.6;
+
+	/**
+	 * Share of the PHP memory limit a batch may reach before it hands the
+	 * remaining ids to the next batch.
+	 *
+	 * A batch that runs out of memory takes the whole run down with it: the
+	 * fatal kills the worker mid-write, and the queue retries the same
+	 * offset. Stopping at 85% turns that fatal into a shorter batch — the
+	 * work already written is kept and the rest continues in a fresh
+	 * request with a fresh memory pool (CBT-629).
+	 *
+	 * @since 8.0.26
+	 * @var float
+	 */
+	const MEMORY_BOX_SHARE = 0.85;
 
 	/**
 	 * Seconds between progress heartbeats inside a batch.
@@ -323,6 +340,14 @@ class FeedGenerator {
 	 * @return array Batch result with 'count' and 'next_batch_size' keys.
 	 */
 	public function process_batch( string $feed_name, int $offset, int $batch_size, array $context = array() ): array {
+		// WooCommerce skips its cart helpers on cron/REST requests, which is
+		// every way a feed generates, yet core calls them from the tax
+		// location lookup that price and shipping resolution both reach.
+		// Without this, a store whose tax setup hits that path loses EVERY
+		// product in the batch to "Call to undefined function
+		// wc_get_chosen_shipping_method_ids()" (CBT-631).
+		WooContext::ensure_cart_functions();
+
 		// Bind BatchCalculator to this feed for per-feed history persistence.
 		if ( $this->batch_calculator ) {
 			$this->batch_calculator->set_feed_name( $feed_name );
@@ -393,6 +418,39 @@ class FeedGenerator {
 		$this->product_query->set_feed_name( $feed_name );
 
 		$ids = $this->product_query->get_paginated_ids( $config, $offset, $batch_size );
+
+		/**
+		 * Re-assert the per-run product context before the product loop.
+		 *
+		 * The ID resolution above is not always a transient read: when the
+		 * snapshot is gone — an object cache dropped it between the
+		 * scheduler request and this batch, a cache purge, or the snapshot
+		 * TTL — ProductQuery runs the live WC_Product_Query here and fires
+		 * `ctxfeed_product_query_args` / `ctxfeed_product_ids`. Anything
+		 * hooked there (our own compat shims, or any third-party plugin)
+		 * can leave the request in a different language or currency than
+		 * the feed's, and every row after it then resolves its links,
+		 * category paths and taxonomy text in the wrong context —
+		 * silently, because the run still "succeeds". A
+		 * non-default-language feed whose filters match translated values
+		 * came out EMPTY (HelpScout #69241, CBT-628).
+		 *
+		 * This is a DEDICATED action, not a second fire of the V5
+		 * `before_woo_feed_get_product_information` hook: that hook's
+		 * once-per-batch sequence is a documented V5 compatibility
+		 * contract and third-party listeners rely on it. Compat shims
+		 * hook this one to restate what they set at batch start; every
+		 * shipped listener is an idempotent switch that returns early
+		 * when the context is already the feed's.
+		 *
+		 * @since 8.0.26
+		 *
+		 * @param Config $config    Feed configuration.
+		 * @param string $feed_name Feed slug.
+		 */
+		if ( apply_filters( 'ctxfeed_reassert_batch_context_enabled', true, $config, $feed_name ) ) {
+			do_action( 'ctxfeed_reassert_batch_context', $config, $feed_name );
+		}
 
 		// Products actually SCANNED this batch (the scheduled work). Drives
 		// adaptive batch sizing below — recording the post-filter WRITTEN count
@@ -540,6 +598,13 @@ class FeedGenerator {
 		$time_boxed       = false;
 		$last_heartbeat   = $start_time;
 
+		// Memory box. Same contract as the time box, for the other resource
+		// a batch can exhaust: stop scanning once the request is close to
+		// PHP's memory limit and let the next batch continue from there with
+		// a fresh pool, instead of fatalling mid-write (CBT-629).
+		$memory_box_bytes = $this->batch_memory_box_bytes();
+		$memory_boxed     = false;
+
 		// Per-stage timing (seconds) + the slowest single product. Costs two
 		// microtime() calls per stage per product and answers "where do the
 		// milliseconds go?" from a customer log instead of a guess.
@@ -586,6 +651,13 @@ class FeedGenerator {
 					$time_boxed = true;
 					break;
 				}
+				if ( $processed_ids > 0 && $memory_box_bytes > 0 && Memory::usage() >= $memory_box_bytes ) {
+					// Reuses the time-box path: the offset advances by what
+					// was scanned and the rest goes to the next batch.
+					$time_boxed   = true;
+					$memory_boxed = true;
+					break;
+				}
 				++$processed_ids;
 
 				// Heartbeat: touch the progress record every few seconds so the
@@ -596,38 +668,46 @@ class FeedGenerator {
 					$this->manager->heartbeat( $feed_name, $offset + $processed_ids - 1 );
 				}
 
-				$p0               = microtime( true );
-				$q0               = $track_q ? (int) $wpdb->num_queries : 0;
-				$product          = wc_get_product( $product_id );
-				$p1               = microtime( true );
-				$q1               = $track_q ? (int) $wpdb->num_queries : 0;
-				$stage_s['load'] += $p1 - $p0;
-				$stage_q['load'] += $q1 - $q0;
-				if ( ! $product ) {
-					++$unloadable;
-					continue;
-				}
-
-				// One-slot register: transforms that re-load "their own"
-				// product by ID get this object back from ProductMemo.
-				\CTXFeed\V8\Product\ProductMemo::remember_current( $product );
-
-				$included           = $this->filter_manager->should_include( $product, $config );
-				$p2                 = microtime( true );
-				$q2                 = $track_q ? (int) $wpdb->num_queries : 0;
-				$stage_s['filter'] += $p2 - $p1;
-				$stage_q['filter'] += $q2 - $q1;
-				if ( ! $included ) {
-					continue;
-				}
-
-				// Per-product error isolation. A throw while resolving,
-				// transforming, rendering, or writing ONE product must NOT
-				// abort the batch — that would drop every remaining product in
-				// it. Log the product id + reason, count it, and move on, so a
-				// single malformed product can't break the whole feed
+				// Per-product error isolation. A throw anywhere in ONE
+				// product's work — loading it, deciding whether it belongs in
+				// the feed, resolving, transforming, rendering, writing — must
+				// NOT abort the batch; that would drop every remaining product
+				// in it. Log the product id + reason, count it, and move on, so
+				// a single malformed product can't break the whole feed
 				// (the resilience the V5 engine relied on, made explicit here).
+				//
+				// The load and filter stages are INSIDE the guard (CBT-632):
+				// `should_include()` runs our own filters and the public
+				// `ctxfeed_product_should_include` hook, so it executes other
+				// plugins' code. A throw there used to escape the loop and kill
+				// the batch, which the scheduler then retried at a halved size
+				// until it gave up — the whole feed lost to one listener.
 				try {
+					$p0               = microtime( true );
+					$q0               = $track_q ? (int) $wpdb->num_queries : 0;
+					$product          = wc_get_product( $product_id );
+					$p1               = microtime( true );
+					$q1               = $track_q ? (int) $wpdb->num_queries : 0;
+					$stage_s['load'] += $p1 - $p0;
+					$stage_q['load'] += $q1 - $q0;
+					if ( ! $product ) {
+						++$unloadable;
+						continue;
+					}
+
+					// One-slot register: transforms that re-load "their own"
+					// product by ID get this object back from ProductMemo.
+					\CTXFeed\V8\Product\ProductMemo::remember_current( $product );
+
+					$included           = $this->filter_manager->should_include( $product, $config );
+					$p2                 = microtime( true );
+					$q2                 = $track_q ? (int) $wpdb->num_queries : 0;
+					$stage_s['filter'] += $p2 - $p1;
+					$stage_q['filter'] += $q2 - $q1;
+					if ( ! $included ) {
+						continue;
+					}
+
 					// Google Product Review feeds export the product's REVIEWS,
 					// not a product row — one <review> entry per approved comment
 					// with content and a star rating (V5 GooglereviewStructure).
@@ -812,15 +892,21 @@ class FeedGenerator {
 		if ( $time_boxed ) {
 			$scanned = max( $processed_ids, 1 );
 			if ( $this->feed_logger ) {
-				$this->feed_logger->info(
-					$feed_name,
-					sprintf(
+				$message = $memory_boxed
+					? sprintf(
+						/* translators: 1: products processed in this batch, 2: seconds the batch ran. */
+						__( 'Batch paused after %1$s in %2$ds to stay inside the site\'s PHP memory limit — continuing with the rest in the next batch', 'woo-feed' ),
+						FeedLogger::products( $processed_ids ),
+						(int) round( $batch_time )
+					)
+					: sprintf(
 						/* translators: 1: products processed in this batch, 2: seconds the batch ran. */
 						__( 'Batch paused after %1$s in %2$ds to stay inside the scheduler time limit — continuing with the rest in the next batch', 'woo-feed' ),
 						FeedLogger::products( $processed_ids ),
 						(int) round( $batch_time )
-					)
-				);
+					);
+
+				$this->feed_logger->info( $feed_name, $message );
 			}
 		}
 
@@ -936,6 +1022,8 @@ class FeedGenerator {
 			// this, not by the nominal batch size (differs when time-boxed).
 			'step'            => $step,
 			'time_boxed'      => $time_boxed,
+			// True when the pause was the memory box rather than the clock.
+			'memory_boxed'    => $memory_boxed,
 			// Where the batch's time went (ms per pipeline stage) and the
 			// single most expensive product — the same data the [PERF] trace
 			// logs, exposed for callers and tests.
@@ -971,6 +1059,33 @@ class FeedGenerator {
 		 * @param float $budget The underlying time budget (seconds).
 		 */
 		return max( 0.0, (float) apply_filters( 'ctxfeed_batch_time_box_seconds', $box, $budget ) );
+	}
+
+	/**
+	 * Memory usage at which a batch stops scanning and hands the rest to the
+	 * next batch: 85% of PHP's memory limit.
+	 *
+	 * Returns 0 when there is no limit to stay inside, which disables the
+	 * check.
+	 *
+	 * @since 8.0.26
+	 *
+	 * @return float Bytes, or 0 to disable.
+	 */
+	private function batch_memory_box_bytes(): float {
+		$limit = Memory::limit_bytes();
+		$box   = $limit > 0 ? $limit * self::MEMORY_BOX_SHARE : 0.0;
+
+		/**
+		 * Filter the per-batch memory box (bytes of process memory before a
+		 * batch hands over to the next one). Return 0 to disable it.
+		 *
+		 * @since 8.0.26
+		 *
+		 * @param float $box   Bytes.
+		 * @param float $limit The PHP memory limit in bytes (0 = unlimited).
+		 */
+		return max( 0.0, (float) apply_filters( 'ctxfeed_batch_memory_box_bytes', $box, $limit ) );
 	}
 
 	/**
@@ -1053,7 +1168,47 @@ class FeedGenerator {
 		$file_path     = $this->get_feed_file_path( $feed_name, $format, $provider );
 		$progress      = $this->manager->get_progress( $feed_name );
 		$product_total = isset( $progress['total'] ) ? (int) $progress['total'] : 0;
-		$this->promote_working_file( $working_path, $file_path, $product_total, $feed_name );
+		$written_total = isset( $progress['written_total'] ) ? (int) $progress['written_total'] : 0;
+		$skipped_total = isset( $progress['skipped_total'] ) ? (int) $progress['skipped_total'] : 0;
+
+		// A run where every product threw is NOT an empty catalog — it is a
+		// broken run, and publishing its header-only file would replace a
+		// good feed with nothing (CBT-631: one store lost its feed to a
+		// 95-byte file after all 91 products failed on the same error).
+		// Products dropped by FILTERS count as excluded, not skipped, so
+		// this never catches a feed that is legitimately empty.
+		$run_failed = $product_total > 0 && $written_total < 1 && $skipped_total > 0;
+
+		if ( $run_failed ) {
+			$kept = file_exists( $file_path ) && (int) filesize( $file_path ) > 0;
+
+			if ( file_exists( $working_path ) ) {
+				wp_delete_file( $working_path );
+			}
+
+			if ( $this->logger ) {
+				$this->logger->error(
+					"Every product failed; the feed was not published: {$feed_name}",
+					array(
+						'products' => $product_total,
+						'skipped'  => $skipped_total,
+						'kept'     => $kept ? $file_path : 'none',
+					)
+				);
+			}
+
+			if ( $this->feed_logger ) {
+				$this->feed_logger->error(
+					$feed_name,
+					$kept
+						? sprintf( 'Every product failed — nothing was written, so the previous feed file was kept. Fix the errors above and generate again. (%s attempted)', FeedLogger::products( $product_total ) )
+						: sprintf( 'Every product failed — nothing was written and there is no previous feed to fall back on. Fix the errors above and generate again. (%s attempted)', FeedLogger::products( $product_total ) )
+				);
+				$this->feed_logger->flush( $feed_name );
+			}
+		} else {
+			$this->promote_working_file( $working_path, $file_path, $product_total, $feed_name );
+		}
 
 		// Self-heal the #68989 directory fork: while sanitize_file_name was
 		// mangling the feed-type folder, generations landed in
@@ -1063,8 +1218,10 @@ class FeedGenerator {
 		// with) an outdated duplicate of this feed.
 		$this->cleanup_forked_feed_copy( $file_path, $format );
 
-		// Promote feed: update wf_feed_ with URL and timestamp.
-		if ( ! empty( $file_path ) ) {
+		// Promote feed: update wf_feed_ with URL and timestamp. A failed run
+		// published nothing, so it must not stamp the feed as freshly
+		// updated — the file on disk is the PREVIOUS run's.
+		if ( ! empty( $file_path ) && ! $run_failed ) {
 			$this->manager->promote_feed( $feed_name, $file_path );
 		}
 
@@ -1097,14 +1254,16 @@ class FeedGenerator {
 			}
 		}
 
-		// Update progress to completed. @implements FEED-FRD-10.1.
+		// Update progress. A run that wrote nothing because every product
+		// failed reports `failed`, not `completed` — the admin must see that
+		// the live file is stale. @implements FEED-FRD-10.1.
 		$progress = $this->manager->get_progress( $feed_name );
 		$this->manager->update_progress(
 			$feed_name,
 			array(
 				'current' => $progress['total'],
 				'total'   => $progress['total'],
-				'status'  => 'completed',
+				'status'  => $run_failed ? 'failed' : 'completed',
 			) 
 		);
 
@@ -1164,10 +1323,13 @@ class FeedGenerator {
 			// points at the renamed-away working file, which no longer exists.
 			$file_size = ( ! empty( $file_path ) && file_exists( $file_path ) ) ? size_format( filesize( $file_path ) ) : 'N/A';
 
+			// Report what the feed CONTAINS, not what the run scanned: a run
+			// that skipped every product used to sign off with "Completed —
+			// 91 products exported" above a 95-byte file (CBT-631).
 			$this->feed_logger->complete(
 				$feed_name,
 				array(
-					'total_products' => $progress['total'],
+					'total_products' => $written_total,
 					'health_score'   => $health_score . '%',
 					'file_size'      => $file_size,
 				) 

@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.25
+Stable tag: 8.0.26
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -469,23 +469,17 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.26 =
+* Fix: a scheduled run could publish an empty file over a good feed. On some stores every product in a background run failed with "Call to undefined function wc_get_chosen_shipping_method_ids()" — a WooCommerce cart helper that WooCommerce does not load for background or REST requests but still calls while working out tax — and the run then wrote a header-only file over the previous feed. CTX Feed now loads that helper itself before generating.
+* Fix: a run that writes nothing because its products failed no longer publishes. The previous feed is kept, the run shows as Failed on Manage Feeds, and the feed log says why. A feed you have filtered down to nothing still publishes as before.
+* Fix: the feed log's closing line reports how many products were written, not how many were scanned.
+* Fix: an error while loading a product, or while a filter decides whether it belongs in the feed (including code from other plugins hooked into that decision), now skips that one product instead of failing the whole run.
+* Fix: large, variation-heavy catalogs no longer stop with "Allowed memory size exhausted" during a scheduled run. Cache priming stops before the memory limit is reached, a batch hands its remaining products to the next batch when memory runs short, and a small feed that pauses itself continues in the background instead of publishing a partial file.
+* Fix: multilingual stores (WPML) — a feed in a non-default language no longer comes out empty, or ships the other language's links and category paths, when its product list has to be re-read during a background batch. Needs CTX Feed Pro 8.0.16.
+* Improved: multilingual stores — the category and product-ID filters and the product search in the feed editor now have hooks for translation plugins, so include/exclude filters saved in one language match the translated products. Used by CTX Feed Pro 8.0.16 with WPML.
+
 = Version 8.0.25 =
 * Added: the feed you just generated is easy to find again. When a generation finishes, its row on Manage Feeds turns light green and its Last Generated time shows in green for ten seconds.
 * Improved: feed names on Manage Feeds are real links, so right-click "Open in new tab", middle-click and copy link all work while a normal click still opens the editor in place.
 * Improved: when Save finds an empty required field (Country, Template, File name, File type or an incomplete mapping row), every missing field is outlined in a clearer red at once and the page scrolls to the first one; fix it, save again, and it moves to the next.
 * Fix: Clear Cache now also clears CTX Feed's cached data on sites that use a persistent object cache (Redis, Memcached), so a custom field or post meta you just added appears under Custom Fields & Post Metas right away instead of after the cache expires. Fields written directly to products by importers or bridge plugins refresh that list automatically as well.
-
-= Version 8.0.24 =
-* Added: Split & choose output command — split a value on a separator (comma, space, pipe, semicolon, slash, hyphen, colon or any text) and keep the first, last, Nth or a range of parts, optionally rejoined. Google Merchant Center "Split & Choose" parity for every channel, built from the Output command builder.
-* Added: Extract output command — keep only the listed words or phrases found in a value (first match or all, any case, whole words, or a pattern). Google Merchant Center "Extract" parity.
-* Added: URL parameter output commands — set, remove, or strip query parameters on link values with correct "?" and "&" handling, including plain permalinks. Replaces the "?x=y" suffix pattern that produced broken links.
-* Fix: Text values on mapping rows (and prefix/suffix Text fields) keep ">" and "&" exactly as typed instead of turning into HTML entities. Feeds saved on 8.0.16–8.0.23 with encoded values are healed automatically on the next read; the editor shows the clean value.
-* Fix (security): the WP Options attribute source now reads only the options you have added on the WP options page. Any other option name resolves to empty, so wp_options rows can no longer be published into a feed file through the REST API or an AI assistant.
-* Fix: Category mapping for Google Shopping and Facebook-family channels only accepts categories from the channel list, and the editor flags any unknown stored value with an "Unknown category" marker instead of showing the wrong label as mapped.
-* Fix: custom field values of "No" (false) and 0 export as "0" instead of an empty column.
-* Fix: the "Brand" field under Custom Fields by CTX Feed exports the product's brand term; stores still using the older brand meta keep exporting it.
-* Fix: ACF Image, File and Gallery fields in the default "Array" return format export the file URL(s) instead of a dump of the attachment record.
-* Fix: Yoast WooCommerce SEO GTIN8, GTIN12, GTIN13, GTIN14, ISBN and MPN identifiers export again; variations use their own identifiers and fall back to the parent's.
-* Fix: turning a Custom Fields toggle off in Settings removes those fields from the attribute dropdown immediately instead of after the cache expires.
-* Fix: the per-product debug tool (Debug feed product and the AI ability) runs under the same currency and language context as feed generation, so its prices and values match the generated file.
-

@@ -519,7 +519,7 @@ class FeedScheduler {
 			Logger::info( "Synchronous generation — {$total} products fit in one batch: {$feed_name}" );
 
 			try {
-				$this->generator->process_batch(
+				$result = $this->generator->process_batch(
 					$feed_name,
 					0,
 					$batch_size,
@@ -527,6 +527,27 @@ class FeedScheduler {
 						'total' => $total,
 					) 
 				);
+
+				// The batch may have paused itself: the time box keeps it
+				// inside the scheduler's period, the memory box keeps it
+				// inside PHP's memory limit (CBT-629). Either way it consumed
+				// fewer ids than the set holds, and finalizing here would
+				// publish a truncated feed — so the remainder goes to the
+				// queue exactly as it does on the async path.
+				$step = isset( $result['step'] ) && (int) $result['step'] > 0 ? (int) $result['step'] : $total;
+
+				if ( $step < $total ) {
+					Logger::info( "Synchronous generation paused at {$step}/{$total} products — continuing in the background: {$feed_name}" );
+
+					$next_size = isset( $result['next_batch_size'] ) && (int) $result['next_batch_size'] > 0
+						? (int) $result['next_batch_size']
+						: $batch_size;
+
+					$this->schedule_next_or_finalize( $feed_name, 0, $step, $total, $next_size );
+					$this->dispatch_runner();
+
+					return true;
+				}
 
 				// Finalize immediately.
 				$manager->update_progress(

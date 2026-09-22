@@ -580,8 +580,30 @@ class ProductEndpoint extends RestController {
 				);
 			}
 
-			$args['post__in'] = $ids;
-			$args['orderby']  = 'post__in';
+			// Hydrate the SAVED ids directly, never through WP_Query: a
+			// multilingual plugin rewrites post__in to the admin's current
+			// language from pre_get_posts, so a saved default-language id
+			// came back as its translation and the picker could not match
+			// the chip to the stored value (CBT-626 / BUG-0111 for products).
+			$results = array();
+			foreach ( $ids as $product_id ) {
+				$product = wc_get_product( $product_id );
+				if ( ! $product ) {
+					continue;
+				}
+				$results[] = array(
+					'id'    => (int) $product_id,
+					'title' => $product->get_name(),
+					'type'  => $product->get_type(),
+					'sku'   => $product->get_sku(),
+				);
+			}
+			return $this->success(
+				array(
+					'products' => $results,
+					'total'    => count( $results ),
+				)
+			);
 		} else {
 			// Apply the search-type strategy.
 			switch ( $search_type ) {
@@ -742,6 +764,22 @@ class ProductEndpoint extends RestController {
 					break;
 			}
 		}
+
+		/**
+		 * Filter the Specific-products search query arguments.
+		 *
+		 * Lets a multilingual shim search every language (WPML scopes
+		 * WP_Query to the current language, so a default-language title
+		 * never matched from a translated feed — CBT-626 / BUG-0112) and
+		 * hydrate saved ids that live in another language.
+		 *
+		 * @since 8.0.26
+		 *
+		 * @param array  $args        WP_Query arguments.
+		 * @param string $search_type 'title' | 'sku' | 'id' | 'paste_ids' | 'paste_tokens' | 'smart'.
+		 * @param string $search      Raw search text.
+		 */
+		$args = apply_filters( 'ctxfeed_product_search_query_args', $args, $search_type, $search );
 
 		$query   = new \WP_Query( $args );
 		$results = array();
@@ -929,14 +967,19 @@ class ProductEndpoint extends RestController {
 
 		// 2. Title search.
 		$title_q = new \WP_Query(
-			array(
-				'post_type'      => 'product',
-				'post_status'    => $statuses,
-				's'              => $search,
-				'posts_per_page' => $limit,
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-			) 
+			apply_filters(
+				'ctxfeed_product_search_query_args',
+				array(
+					'post_type'      => 'product',
+					'post_status'    => $statuses,
+					's'              => $search,
+					'posts_per_page' => $limit,
+					'fields'         => 'ids',
+					'no_found_rows'  => true,
+				),
+				'smart',
+				$search
+			)
 		);
 		foreach ( $title_q->posts as $id ) {
 			$collected[ $id ] = $id;
@@ -948,20 +991,25 @@ class ProductEndpoint extends RestController {
 		// 3. SKU search (only if we still have room and search isn't empty).
 		if ( count( $collected ) < $limit ) {
 			$sku_q = new \WP_Query(
-				array(
-					'post_type'      => 'product',
-					'post_status'    => $statuses,
-					'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- SKU search requires a meta lookup; capped by $limit with no_found_rows.
-						array(
-							'key'     => '_sku',
-							'value'   => $search,
-							'compare' => 'LIKE',
+				apply_filters(
+					'ctxfeed_product_search_query_args',
+					array(
+						'post_type'      => 'product',
+						'post_status'    => $statuses,
+						'meta_query'     => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- SKU search requires a meta lookup; capped by $limit with no_found_rows.
+							array(
+								'key'     => '_sku',
+								'value'   => $search,
+								'compare' => 'LIKE',
+							),
 						),
+						'posts_per_page' => $limit,
+						'fields'         => 'ids',
+						'no_found_rows'  => true,
 					),
-					'posts_per_page' => $limit,
-					'fields'         => 'ids',
-					'no_found_rows'  => true,
-				) 
+					'smart',
+					$search
+				)
 			);
 			foreach ( $sku_q->posts as $id ) {
 				$collected[ $id ] = $id;

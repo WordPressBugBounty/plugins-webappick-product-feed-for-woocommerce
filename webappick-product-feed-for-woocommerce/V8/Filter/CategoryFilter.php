@@ -64,6 +64,25 @@ class CategoryFilter implements FilterInterface {
 			? $product->get_parent_id()
 			: $product->get_id();
 
+		/**
+		 * Filter the configured category terms before membership is checked.
+		 *
+		 * The saved list holds the slugs the merchant picked in the admin's
+		 * language. On a multilingual store a translated product is tagged
+		 * with the TRANSLATED term, so a compat shim can expand the list to
+		 * every language's slug (CBT-626 / BUG-0109 — a French feed with a
+		 * category filter shipped 0 products). V5 never needed this: its
+		 * category filter was a tax_query that WPML rewrote; has_term() gets
+		 * no such rewrite.
+		 *
+		 * @since 8.0.26
+		 *
+		 * @param array       $categories Slugs/ids as saved (cleaned).
+		 * @param \WC_Product $product    Product being filtered.
+		 * @param Config      $config     Feed configuration.
+		 */
+		$categories = array_values( array_unique( (array) apply_filters( 'ctxfeed_filter_category_terms', $categories, $product, $config ) ) );
+
 		// has_term() accepts an array of term slugs/ids; using slugs here
 		// matches V5's storage format.
 		$has_any = has_term( $categories, 'product_cat', $cat_product_id );
