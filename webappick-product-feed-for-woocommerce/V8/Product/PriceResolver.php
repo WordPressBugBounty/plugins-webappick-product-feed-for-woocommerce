@@ -1,10 +1,15 @@
 <?php
 /**
- * PriceResolver — Resolves all price types with tax and currency formatting.
+ * PriceResolver — Resolves all price types as RAW WooCommerce values.
  *
  * Handles regular, sale, tax-inclusive, and tax-exclusive prices
- * using WooCommerce built-in tax functions. Currency formatting
- * uses WC decimal/thousand separator settings.
+ * using WooCommerce built-in tax functions. The resolver applies NO
+ * number formatting (V5 parity, CBT-635): the value is whatever
+ * WooCommerce stores (`16980`, `12.5`) or computes for the tax twins.
+ * Formatting happens LAST, in the output stage, and only when the row's
+ * Output Type is "Price" or "Rounded Price" (OutputTypeTransform +
+ * Utility\NumberFormat). Dynamic-attribute conditions, advanced filters
+ * and the Integer output type therefore always see the plain number.
  *
  * @package    CTXFeed
  * @subpackage V8/Product
@@ -29,26 +34,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 class PriceResolver {
 
 	/**
-	 * Config the memoised price format below was resolved from.
-	 *
-	 * @since 8.0.12
-	 * @var Config|null
-	 */
-	private $format_memo_config = null;
-
-	/**
-	 * Memoised [ decimals, decimal separator, thousand separator ].
-	 *
-	 * @since 8.0.12
-	 * @var array|null
-	 */
-	private $format_memo = null;
-
-	/**
 	 * Resolve a price attribute for a product.
 	 *
 	 * Routes to the appropriate WC price getter based on attribute name.
-	 * Returns formatted price string with currency code appended.
+	 * Returns the RAW price as a string — no number formatting, no currency
+	 * (V5 `ProductInfo::price()` parity). A zero or negative price ships
+	 * EMPTY, exactly as V5 `Price\ProductPrice` did (`<= 0` → `''`).
 	 *
 	 * @since 8.0.0
 	 * @implements PROD-FRD-7.1
@@ -57,7 +48,7 @@ class PriceResolver {
 	 * @param string      $attr    Price attribute name.
 	 * @param Config      $config  Feed configuration.
 	 *
-	 * @return string Formatted price or empty string.
+	 * @return string Raw price or empty string.
 	 */
 	public function resolve( \WC_Product $product, string $attr, Config $config ): string {
 		$price = $this->get_raw_price( $product, $attr, $config );
@@ -76,7 +67,13 @@ class PriceResolver {
 			return '';
 		}
 
-		return $this->format_price( $price, $config );
+		// V5 parity: ProductPrice::regular_price()/price()/sale_price()
+		// returned '' for a zero or negative value.
+		if ( is_numeric( $price ) && (float) $price <= 0 ) {
+			return '';
+		}
+
+		return (string) $price;
 	}
 
 	/**
@@ -421,65 +418,5 @@ class PriceResolver {
 		}
 
 		return (string) $total;
-	}
-
-	/**
-	 * Format a raw price with WC decimal/thousand separators.
-	 *
-	 * Returns the NUMBER ONLY — no currency code. Resolvers are
-	 * channel-neutral: currency formatting differs per channel
-	 * ("29.99 USD" for Google/Facebook, bare numbers for others), so
-	 * it is applied by the channel transforms (GoogleTransform etc.)
-	 * by the row's configured suffix only (CBT-602) — never by the channel.
-	 *
-	 * @since 8.0.0
-	 * @implements PROD-FRD-7.2
-	 *
-	 * @param mixed  $price  Raw price value.
-	 * @param Config $config Feed configuration.
-	 *
-	 * @return string Formatted price string (e.g., "29.99").
-	 */
-	private function format_price( $price, Config $config ): string {
-		// The format triple depends only on feed config + store settings,
-		// both fixed per request — resolve once per Config, not per price.
-		// The Config REFERENCE is held so an object id cannot be recycled.
-		if ( $config !== $this->format_memo_config ) {
-			// V5-compatible keys — user-entered values win. The fallbacks are
-			// MACHINE defaults, never WooCommerce's DISPLAY separators: feeds
-			// are parsed by channels, and WC display settings on locale stores
-			// (thousand '.', decimal ',') produced channel-invalid prices like
-			// "2.169.00 PLN" (#68983). V5 never applied these settings to
-			// prices at all, so dot-decimal/no-thousands is also the parity
-			// behavior every existing feed shipped with. An EMPTY separator
-			// field is honored literally — '' thousand separator means NONE
-			// (there is no other way for a user to say "no separator").
-			$decimals_raw = $config->get( 'decimals', '' );
-			$dec_sep_raw  = $config->get( 'decimal_separator', '' );
-			$thou_sep_raw = $config->get( 'thousand_separator', '' );
-
-			$this->format_memo_config = $config;
-			$this->format_memo        = array(
-				// Hardcoded 2, not wc_get_price_decimals() — V5 parity
-				// (owner decision 2026-09-11): raw two-decimal prices
-				// unless the user sets Filter-tab decimals.
-				( '' === $decimals_raw || null === $decimals_raw )
-					? 2
-					: (int) $decimals_raw,
-				( '' === $dec_sep_raw || null === $dec_sep_raw )
-					? '.'
-					: wp_specialchars_decode( wp_unslash( $dec_sep_raw ) ),
-				( null === $thou_sep_raw || false === $thou_sep_raw )
-					? ''
-					: wp_specialchars_decode( wp_unslash( (string) $thou_sep_raw ) ),
-			);
-		}
-
-		return number_format(
-			(float) $price,
-			$this->format_memo[0],
-			$this->format_memo[1],
-			$this->format_memo[2]
-		);
 	}
 }

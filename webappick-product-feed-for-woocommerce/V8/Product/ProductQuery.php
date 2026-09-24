@@ -14,7 +14,6 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
-use CTXFeed\V8\Core\Logger;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -174,29 +173,35 @@ class ProductQuery {
 		$product_types = $config->get( 'product_types', ProductTypeSupport::FREE_TYPES );
 		$args['type']  = $product_types;
 
-		// The per-product CategoryFilter remains the AUTHORITY on category
-		// membership. The query level only pre-cuts what it can prove:
-		// include mode via prune_to_included_categories() (8.0.14) and
-		// exclude mode via the NOT IN tax_query below (8.0.16) — both
-		// superset-safe, both fail-open to the loop filter.
+		// Category push-down seams (CBT-650). The category filter is a
+		// Filters-tab (Pro) feature, so the query-level cuts that used to live
+		// here — include mode via prune_to_included_categories() (8.0.14) and
+		// exclude mode via a NOT IN tax_query (8.0.16) — moved to the Pro
+		// engine (Pro\Engine\Filter\CategoryQueryPushdown). Free keeps two
+		// generic seams: a list of term_taxonomy_ids to cut INSIDE the query
+		// and a hook on the id set BEFORE variation expansion. Both stay
+		// superset-safe: the per-product CategoryFilter (Pro) remains the
+		// authority in the loop. With nothing hooked the catalog query runs
+		// exactly as V5 free did.
 
 		// Allow V8 and compat plugins to modify query args.
 		// @hook ctxfeed_product_query_args.
 		$args = apply_filters( 'ctxfeed_product_query_args', $args, $config );
 
-		// Exclude-mode category push-down (#68989, V5 parity): cut excluded
-		// categories INSIDE the query via a NOT IN tax_query, so a broad
-		// exclusion never warms and iterates the whole catalog. Resolved
-		// AFTER the args filter fires so multilingual shims have already
-		// pinned the query language (term resolution runs in the feed's
-		// language). Safety inversion of the include push-down: only
-		// POSITIVELY resolved term_taxonomy_ids may exclude — a term that
-		// fails to resolve is simply not cut here and the authoritative
-		// per-product CategoryFilter removes it in the loop (slower, never
-		// wrong). include_children is OFF to mirror has_term()'s
-		// direct-assignment semantics — the tax_query default would also
-		// exclude child-category products the loop would KEEP.
-		$exclude_tt_ids = $this->excluded_category_tt_ids( $config );
+		/**
+		 * Filter the term_taxonomy_ids the product query cuts with a NOT IN
+		 * `product_cat` tax_query (`include_children` OFF — has_term()'s
+		 * direct-assignment semantics; the tax_query default would also
+		 * exclude child-category products the loop would KEEP). Resolved
+		 * AFTER the args filter so multilingual shims have already pinned
+		 * the query language. Empty = no clause injected.
+		 *
+		 * @since 8.0.27
+		 *
+		 * @param int[]  $tt_ids term_taxonomy_ids to exclude.
+		 * @param Config $config Feed configuration.
+		 */
+		$exclude_tt_ids = array_values( array_filter( array_map( 'intval', (array) apply_filters( 'ctxfeed_product_query_exclude_term_taxonomy_ids', array(), $config ) ) ) );
 		$inject_exclude = null;
 		if ( ! empty( $exclude_tt_ids ) ) {
 			$inject_exclude = static function ( $wp_query_args ) use ( $exclude_tt_ids ) {
@@ -226,10 +231,20 @@ class ProductQuery {
 			}
 		}
 
-		// Include-mode category push-down: shrink the ID set BEFORE variation
-		// expansion and per-product filtering, so a 5-product category feed
-		// on a 500K-product store doesn't load the whole catalog (#68989).
-		$product_ids = $this->prune_to_included_categories( $product_ids, $config );
+		/**
+		 * Filter the queried product ids BEFORE variation expansion and
+		 * per-product filtering. The Pro include-mode category push-down
+		 * intersects them with the selected categories here (#68989), so a
+		 * 5-product category feed on a 500K-product store doesn't load the
+		 * whole catalog. Listeners must only REMOVE ids the per-product
+		 * filters would remove anyway (superset-safe).
+		 *
+		 * @since 8.0.27
+		 *
+		 * @param int[]  $product_ids Queried ids (catalog order).
+		 * @param Config $config      Feed configuration.
+		 */
+		$product_ids = array_values( (array) apply_filters( 'ctxfeed_product_query_ids_before_expansion', $product_ids, $config ) );
 
 		// Expand variations if configured.
 		// @implements PROD-FRD-3.2.
@@ -276,222 +291,6 @@ class ProductQuery {
 
 		// @hook ctxfeed_product_ids
 		return apply_filters( 'ctxfeed_product_ids', $product_ids, $config );
-	}
-
-	/**
-	 * Prune the queried IDs to products carrying one of the feed's INCLUDE
-	 * categories, before variations expand and batches load full products.
-	 *
-	 * CategoryFilter stays the source of truth — it still runs per product.
-	 * This is purely an early SUPERSET cut, so it may only ever REMOVE ids
-	 * the filter would definitely reject; on any doubt it returns the ids
-	 * untouched (fail open). The guarantees that make the cut safe:
-	 *
-	 *   - Include mode only; exclude mode has its own QUERY-level cut
-	 *     (see excluded_category_tt_ids(), 8.0.16) and empty selections
-	 *     pass through.
-	 *   - Term resolution mirrors has_term()/is_object_in_term(): a string
-	 *     entry matches by slug OR name, so both are resolved (name__in
-	 *     catches same-name terms a single get_term_by would miss), plus
-	 *     numeric entries as term ids — the resolved set can only be a
-	 *     superset of what has_term would match.
-	 *   - Variations are expanded AFTER this cut and CategoryFilter checks
-	 *     the PARENT's terms, so pruning parents is equivalent.
-	 *   - Children of selected categories are NOT implied — has_term
-	 *     matches assigned terms only, and so does this.
-	 *
-	 * Cost control: one COUNT on term_relationships first; when the matched
-	 * set wouldn't meaningfully shrink the catalog (>= 80%), the id fetch
-	 * is skipped entirely so wide selections never pay for a large
-	 * intermediate array. Kill switch: `ctxfeed_category_query_pushdown`.
-	 *
-	 * @since 8.0.14
-	 *
-	 * @param array  $ids    Queried product ids.
-	 * @param Config $config Feed configuration.
-	 * @return array Possibly pruned ids (order preserved).
-	 */
-	private function prune_to_included_categories( array $ids, Config $config ): array {
-		$categories = (array) $config->get( 'categories', array() );
-		$mode_all   = (array) $config->get( 'filter_mode', array() );
-		$mode       = isset( $mode_all['categories'] ) ? $mode_all['categories'] : 'include';
-
-		if ( empty( $categories ) || 'include' !== $mode || empty( $ids ) ) {
-			return $ids;
-		}
-
-		/**
-		 * Filter whether the include-mode category push-down runs.
-		 *
-		 * Disabling falls back to per-product-only category filtering.
-		 *
-		 * @since 8.0.14
-		 *
-		 * @param bool   $enabled Whether the push-down is enabled.
-		 * @param Config $config  Feed configuration.
-		 */
-		if ( ! apply_filters( 'ctxfeed_category_query_pushdown', true, $config ) ) {
-			return $ids;
-		}
-
-		$tt_ids = $this->resolve_category_tt_ids( $categories );
-		if ( empty( $tt_ids ) ) {
-			return $ids;
-		}
-
-		global $wpdb;
-		$placeholders = implode( ',', array_fill( 0, count( $tt_ids ), '%d' ) );
-
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- Single indexed read of term_relationships ($placeholders is literal %d tokens filled by prepare); WP offers no bulk "object ids for terms" API that avoids loading term objects.
-		$matched_count = (int) $wpdb->get_var(
-			$wpdb->prepare(
-				"SELECT COUNT(DISTINCT object_id) FROM {$wpdb->term_relationships} WHERE term_taxonomy_id IN ($placeholders)",
-				$tt_ids
-			)
-		);
-
-		// Wide selection — nothing meaningful to cut; don't pay for fetching
-		// a huge id list only to keep almost everything.
-		if ( $matched_count >= (int) ceil( count( $ids ) * 0.8 ) ) {
-			return $ids;
-		}
-
-		$matched = $wpdb->get_col(
-			$wpdb->prepare(
-				"SELECT DISTINCT object_id FROM {$wpdb->term_relationships} WHERE term_taxonomy_id IN ($placeholders)",
-				$tt_ids
-			)
-		);
-		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare
-
-		if ( empty( $matched ) ) {
-			// Fail open — an empty match here would zero the feed on any
-			// resolution blind spot; let the per-product filter decide.
-			return $ids;
-		}
-
-		$keep = array_fill_keys( array_map( 'intval', $matched ), true );
-
-		$pruned = array();
-		foreach ( $ids as $id ) {
-			if ( isset( $keep[ (int) $id ] ) ) {
-				$pruned[] = $id;
-			}
-		}
-
-		Logger::info(
-			sprintf(
-				'Category push-down narrowed the catalog scan: %d of %d products carry the selected categories.',
-				count( $pruned ),
-				count( $ids )
-			)
-		);
-
-		return $pruned;
-	}
-
-	/**
-	 * The term_taxonomy_ids to cut from the query for an EXCLUDE-mode category
-	 * filter, or an empty array when the push-down must not run.
-	 *
-	 * Fail-open on every edge: wrong mode, no categories, kill switch off,
-	 * resolution failure/exception — all return [] and the query runs
-	 * exactly as before (the per-product CategoryFilter stays authoritative
-	 * either way). Only positively resolved ids may exclude, so a
-	 * resolution miss degrades to "slower", never to a wrongly removed
-	 * product. V5 ran this same NOT IN cut (by slug, children included)
-	 * unconditionally for years; this version is stricter on both counts.
-	 *
-	 * @since 8.0.16
-	 *
-	 * @param Config $config Feed configuration.
-	 * @return int[] term_taxonomy_ids to exclude, or [].
-	 */
-	private function excluded_category_tt_ids( Config $config ): array {
-		$categories = (array) $config->get( 'categories', array() );
-		$mode_all   = (array) $config->get( 'filter_mode', array() );
-		$mode       = isset( $mode_all['categories'] ) ? $mode_all['categories'] : 'include';
-
-		if ( empty( $categories ) || 'exclude' !== $mode ) {
-			return array();
-		}
-
-		/**
-		 * Filter whether the exclude-mode category push-down runs.
-		 *
-		 * Disabling falls back to per-product-only category filtering
-		 * (the pre-8.0.16 behavior: the whole catalog is warmed and
-		 * iterated, excluded products dropped in the loop).
-		 *
-		 * @since 8.0.16
-		 *
-		 * @param bool   $enabled Whether the push-down is enabled.
-		 * @param Config $config  Feed configuration.
-		 */
-		if ( ! apply_filters( 'ctxfeed_category_query_pushdown_exclude', true, $config ) ) {
-			return array();
-		}
-
-		try {
-			return $this->resolve_category_tt_ids( $categories );
-		} catch ( \Throwable $e ) {
-			Logger::warning( 'Exclude-category push-down skipped (term resolution failed): ' . $e->getMessage() );
-			return array();
-		}
-	}
-
-	/**
-	 * Resolve the configured category values into term_taxonomy_ids the way
-	 * has_term() would match them: strings by slug AND by name, numeric
-	 * entries additionally as term ids. Unresolvable entries contribute
-	 * nothing (has_term would not match them either).
-	 *
-	 * @since 8.0.14
-	 *
-	 * @param array $values Configured category values (V5 stores slugs).
-	 * @return int[] Unique term_taxonomy_ids.
-	 */
-	private function resolve_category_tt_ids( array $values ): array {
-		$values = array_values( array_filter( array_map( 'strval', $values ), 'strlen' ) );
-		if ( empty( $values ) ) {
-			return array();
-		}
-
-		// WP_Term_Query arg names: 'slug' and 'name' (both take arrays) —
-		// NOT the WP_Query-style slug__in/name__in, which WP_Term_Query
-		// silently ignores (returning EVERY term, which the 80%-skip then
-		// turns into a harmless no-op — caught in live verification).
-		$lookups = array(
-			array( 'slug' => $values ),
-			array( 'name' => $values ),
-		);
-
-		$numeric = array_map( 'intval', array_filter( $values, 'is_numeric' ) );
-		if ( ! empty( $numeric ) ) {
-			$lookups[] = array( 'include' => $numeric );
-		}
-
-		$tt_ids = array();
-		foreach ( $lookups as $extra ) {
-			$terms = get_terms(
-				array_merge(
-					array(
-						'taxonomy'   => 'product_cat',
-						'hide_empty' => false,
-						'fields'     => 'tt_ids',
-					),
-					$extra
-				)
-			);
-
-			if ( is_array( $terms ) ) {
-				foreach ( $terms as $tt_id ) {
-					$tt_ids[ (int) $tt_id ] = true;
-				}
-			}
-		}
-
-		return array_keys( $tt_ids );
 	}
 
 	/**

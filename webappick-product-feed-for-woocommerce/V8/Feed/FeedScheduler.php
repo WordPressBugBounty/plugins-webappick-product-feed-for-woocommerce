@@ -20,6 +20,7 @@
 namespace CTXFeed\V8\Feed;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Core\FeatureGate;
 use CTXFeed\V8\Core\Logger;
 use CTXFeed\V8\Product\ProductQuery;
 use CTXFeed\V8\Utility\FeedLogger;
@@ -1017,10 +1018,19 @@ class FeedScheduler {
 
 		// 1. Per-feed override (V8-native, seconds). Written by the Make Feed
 		// minute-interval picker (Pro, 8.0.19) — FeedEndpoint persists the
-		// m5/m15/m30/m45 codes here as seconds; hour codes clear it.
+		// m5/m15/m30/m45 codes here as seconds through the Pro Scheduling
+		// engine (ctxfeed_update_interval_seconds, CBT-653); hour codes and
+		// free clear it.
 		if ( isset( $rules['update_interval'] ) ) {
 			$per_feed = (int) $rules['update_interval'];
-			if ( $per_feed > 0 ) {
+			// A sub-hour value can only have come from the Pro minute picker.
+			// Free clears it on the next SAVE, but a licence lapse / Pro
+			// deactivation never re-saves the feed, so without this gate the
+			// 5/15/30/45-minute cadence — and the "Every 15 Minutes" label —
+			// survived Pro (CBT-657). Gate closed → fall through to the hourly
+			// `cron` code / the 24h default, exactly as if the feed were saved
+			// on free. Hour-or-longer values are not a Pro feature and stand.
+			if ( $per_feed > 0 && ( $per_feed >= HOUR_IN_SECONDS || FeatureGate::has( 'short_update_intervals' ) ) ) {
 				return $per_feed;
 			}
 		}
@@ -1696,7 +1706,12 @@ class FeedScheduler {
 			// which process_batch isolates and skips). Try a smaller retry of the
 			// SAME offset first; only give up (fail the whole run) once retries
 			// are exhausted or the size is already at the floor. @implements 8.0.7.
-			if ( $this->maybe_schedule_batch_retry( $feed_name, $offset, $batch_size, $total, $attempt, $e->getMessage() ) ) {
+			// A PermanentFailure (Custom Template 2 without Pro, an unsupported
+			// format) is deterministic for the feed as configured — halving the
+			// batch five times only delays the same failure (CBT-659), so it
+			// fails on the first attempt with one log line.
+			if ( ! $this->is_permanent_failure( $e, $feed_name )
+				&& $this->maybe_schedule_batch_retry( $feed_name, $offset, $batch_size, $total, $attempt, $e->getMessage() ) ) {
 				return;
 			}
 
@@ -1768,6 +1783,35 @@ class FeedScheduler {
 			// headroom to schedule) — the feed simply stays where it was.
 			return;
 		}
+	}
+
+	/**
+	 * Whether a batch error is deterministic for the feed as configured, so a
+	 * smaller retry cannot help (CBT-659).
+	 *
+	 * True for any exception implementing {@see PermanentFailure}; extensions
+	 * can widen (or narrow) the verdict through the filter — e.g. a Pro engine
+	 * whose own guard throws a plain \RuntimeException.
+	 *
+	 * @since 8.0.27
+	 *
+	 * @param \Throwable $e         The caught batch error.
+	 * @param string     $feed_name Feed slug identifier.
+	 * @return bool
+	 */
+	private function is_permanent_failure( \Throwable $e, string $feed_name ): bool {
+		$permanent = $e instanceof PermanentFailure;
+
+		/**
+		 * Filter whether a batch failure is permanent (no smaller-batch retry).
+		 *
+		 * @since 8.0.27
+		 *
+		 * @param bool       $permanent True to fail the run on the first attempt.
+		 * @param \Throwable $e         The caught batch error.
+		 * @param string     $feed_name Feed slug identifier.
+		 */
+		return (bool) apply_filters( 'ctxfeed_batch_failure_is_permanent', $permanent, $e, $feed_name );
 	}
 
 	/**

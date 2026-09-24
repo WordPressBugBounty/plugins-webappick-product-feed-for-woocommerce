@@ -185,11 +185,9 @@ class AttributeRegistry {
 			$attributes[] = $cat_mapping;
 		}
 
-		// ACF fields — Pro-only in the attribute picker. Existing feeds keep
-		// working regardless: the `acf_fields_` prefix + value resolution live
-		// in Free (CustomFieldResolver), so a saved mapping still resolves
-		// without Pro; only LISTING ACF fields to map is gated. Pro unlocks
-		// `acf_attributes` via FeatureGate. @gate acf_attributes.
+		// ACF fields — Pro picker group. The `acf_fields_` value resolution is
+		// the Pro CustomFieldPrefixResolver engine too (CBT-652); a saved
+		// mapping ships '' without Pro. @gate acf_attributes.
 		if ( FeatureGate::has( 'acf_attributes' ) ) {
 			$acf = $this->get_acf_attributes();
 			if ( ! empty( $acf['options'] ) ) {
@@ -197,10 +195,10 @@ class AttributeRegistry {
 			}
 		}
 
-		// Toolset Types fields — same split as ACF: only the picker LISTING
-		// is Pro-gated; the toolset_fields_ prefix + resolution live in Free
-		// (CustomFieldResolver). Toolset-registered product taxonomies flow
-		// through get_taxonomy_dropdown() with no gate. @gate toolset_attributes.
+		// Toolset Types fields — same split as ACF: listing and the
+		// toolset_fields_ resolution are Pro (CBT-652). Toolset-registered
+		// product taxonomies flow through get_taxonomy_dropdown() with no
+		// gate. @gate toolset_attributes.
 		if ( FeatureGate::has( 'toolset_attributes' ) ) {
 			$toolset = $this->get_toolset_attributes();
 			if ( ! empty( $toolset['options'] ) ) {

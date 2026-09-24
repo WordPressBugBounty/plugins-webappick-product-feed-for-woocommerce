@@ -33,7 +33,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
-use CTXFeed\V8\Filter\StockFilter;
+use CTXFeed\V8\Filter\FilterInterface;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -84,7 +84,7 @@ class SkroutzVariationsBuilder {
 	 * now gates each child, so the filters mean the same thing one level
 	 * deeper — and feeds with the filters off keep every size, unchanged.
 	 *
-	 * @var StockFilter
+	 * @var FilterInterface|null Null = no per-child stock gate (free without Pro, CBT-650).
 	 */
 	private $stock_filter;
 
@@ -93,14 +93,18 @@ class SkroutzVariationsBuilder {
 	 *
 	 * @since 8.0.0
 	 *
-	 * @param ProductRepository $product_repo Product data resolver.
-	 * @param StockFilter|null  $stock_filter Per-child stock gate (CBT-582);
-	 *                                        a fresh stateless instance when
-	 *                                        omitted.
+	 * @param ProductRepository    $product_repo Product data resolver.
+	 * @param FilterInterface|null $stock_filter Per-child stock gate (CBT-582).
+	 *                                           The stock filter is a Pro
+	 *                                           engine (CBT-650): FeedServiceProvider
+	 *                                           passes the container's
+	 *                                           `filter.stock` when Pro bound
+	 *                                           it, null otherwise (every
+	 *                                           child is kept).
 	 */
-	public function __construct( ProductRepository $product_repo, ?StockFilter $stock_filter = null ) {
+	public function __construct( ProductRepository $product_repo, ?FilterInterface $stock_filter = null ) {
 		$this->product_repo = $product_repo;
-		$this->stock_filter = $stock_filter ? $stock_filter : new StockFilter();
+		$this->stock_filter = $stock_filter;
 	}
 
 	/**
@@ -248,7 +252,7 @@ class SkroutzVariationsBuilder {
 			// as they do to the parent list (CBT-582): is_outOfStock drops
 			// outofstock / qty-0 sizes (backorder pass-through preserved),
 			// is_backorder drops backordered sizes. Both off → no change.
-			if ( ! $this->stock_filter->passes( $child, $config ) ) {
+			if ( null !== $this->stock_filter && ! $this->stock_filter->passes( $child, $config ) ) {
 				continue;
 			}
 

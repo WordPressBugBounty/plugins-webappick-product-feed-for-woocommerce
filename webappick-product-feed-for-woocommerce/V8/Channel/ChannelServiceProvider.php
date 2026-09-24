@@ -5,7 +5,7 @@
  * Eighth ServiceProvider in the Bootstrap registration order.
  * Binds 2 services: ChannelRegistry and ChannelConfig placeholder.
  * During boot(), initializes built-in channels and fires the
- * ctxfeed_channels_registered action for Pro/third-party registration.
+ * ctxfeed_channels_registered action for third-party registration.
  *
  * @package    CTXFeed
  * @subpackage V8/Channel
@@ -71,7 +71,7 @@ class ChannelServiceProvider extends ServiceProvider {
 	 * Boot channel services.
 	 *
 	 * Initializes the ChannelRegistry with built-in channels and fires
-	 * the ctxfeed_channels_registered action for Pro/third-party extensions.
+	 * the ctxfeed_channels_registered action for third-party extensions.
 	 *
 	 * @since 8.0.0
 	 * @implements CHAN-FRD-6.2

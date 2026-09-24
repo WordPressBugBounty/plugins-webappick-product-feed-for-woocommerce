@@ -4,7 +4,9 @@
  *
  * Supports uppercase, lowercase, trim, ucfirst, strip_tags, character limit,
  * and shortcode removal. Operations are configurable per-attribute via the
- * `output_type` config array.
+ * `output_type` config array. The Search & Replace rule engine (Filters tab
+ * "String replace", Pro) plugs into the loop through the
+ * `ctxfeed_string_replace_value` filter (CBT-651).
  *
  * @package    CTXFeed
  * @subpackage V8/Transform
@@ -46,9 +48,6 @@ class StringTransform implements TransformInterface {
 	 */
 	public function transform( array $product_data, Config $config ): array {
 		$output_types = $config->get( 'output_type', array() );
-
-		// V5-compatible string-replace rules: array of { subject, search, replace }.
-		$str_replace_rules = (array) $config->get( 'str_replace', array() );
 
 		// Build a merchant-attribute → source-product-attribute lookup so the
 		// str_replace `subject` can be matched against the ORIGINAL product
@@ -113,15 +112,27 @@ class StringTransform implements TransformInterface {
 				$value = wp_strip_all_tags( $value );
 			}
 
-			// Apply V5-compatible string-replace rules. Match against the
-			// source product attribute (title, wf_dattribute_*,
-			// wp_attr_mapping_*, etc.) AND the merchant key, so rules fire
-			// regardless of whether the user picked the source attribute
-			// or the merchant attribute in the UI.
-			if ( ! empty( $str_replace_rules ) ) {
-				$source_attr = isset( $merchant_to_source[ $lookup_attr ] ) ? $merchant_to_source[ $lookup_attr ] : '';
-				$value       = self::apply_str_replace_rules( $value, $lookup_attr, $source_attr, $str_replace_rules );
-			}
+			// Search & Replace rules (Filters tab "String replace") are a Pro
+			// feature: the engine moved to the Pro plugin in CBT-651
+			// (Pro\Engine\Transform\StringReplaceRules) and runs here, in
+			// V5's slot — after the case/strip ops, before shortcode removal
+			// and the character limit. Free never reads the saved rules.
+			$source_attr = isset( $merchant_to_source[ $lookup_attr ] ) ? $merchant_to_source[ $lookup_attr ] : '';
+
+			/**
+			 * Filter an attribute value at the string-replace step.
+			 *
+			 * The Pro engine applies the feed's `str_replace` rules here;
+			 * with nothing hooked the value passes through unchanged.
+			 *
+			 * @since 8.0.27
+			 *
+			 * @param string $value         Value after the case / strip-tags operations.
+			 * @param string $merchant_attr Merchant attribute key (dup suffix stripped, e.g. 'g:title').
+			 * @param string $source_attr   Source product attribute the row maps ('' for pattern rows).
+			 * @param Config $config        Feed configuration.
+			 */
+			$value = (string) apply_filters( 'ctxfeed_string_replace_value', $value, $lookup_attr, $source_attr, $config );
 
 			// Remove shortcodes (global setting). @implements XFRM-FRD-4.4.
 			//
@@ -205,96 +216,5 @@ class StringTransform implements TransformInterface {
 		}
 
 		return rtrim( $cut );
-	}
-
-	/**
-	 * Apply V5-compatible `str_replace` rules to a single attribute value.
-	 *
-	 * Mirrors V5 ProductHelper::str_replace() with one extension: the rule's
-	 * `subject` matches against either the **source product attribute** (V5's
-	 * behaviour — "title", "wf_dattribute_foo", "wp_attr_mapping_author",
-	 * etc.) OR the **merchant attribute** (convenience: "g:title"). This
-	 * means rules fire correctly for Attribute Mapping and Dynamic Attribute
-	 * outputs, matching how V5 runs str_replace mid-resolution.
-	 *
-	 * If the `search` string contains a slash, plain str_replace is used;
-	 * otherwise it's treated as a regex pattern with the /mi flags (multiline,
-	 * case-insensitive) — same as V5.
-	 *
-	 * @since 8.0.0
-	 *
-	 * Public so Custom2Template can run the same V5-parity rules against
-	 * `{attribute}` placeholder output (V5 Custom2Template applied
-	 * ProductHelper::str_replace() to every attribute body — line 256).
-	 *
-	 * @param string $value            Resolved attribute value.
-	 * @param string $merchant_attr    Merchant attribute key (e.g. 'g:title').
-	 * @param string $source_attr      Source product attribute (e.g. 'title',
-	 *                                 'wf_dattribute_foo'). May be empty for
-	 *                                 pattern-typed mappings with no source.
-	 * @param array  $rules            Array of { subject, search, replace } rows.
-	 *
-	 * @return string
-	 */
-	public static function apply_str_replace_rules( string $value, string $merchant_attr, string $source_attr, array $rules ): string {
-		foreach ( $rules as $rule ) {
-			if ( ! is_array( $rule ) || empty( $rule['subject'] ) ) {
-				continue;
-			}
-
-			$subject = (string) $rule['subject'];
-			$search  = isset( $rule['search'] ) ? (string) $rule['search'] : '';
-			$replace = isset( $rule['replace'] ) ? (string) $rule['replace'] : '';
-
-			$matches_source   = ( '' !== $source_attr ) && (
-				$subject === $source_attr
-				|| 'product_' . $source_attr === $subject // V5 PRODUCT_ATTRIBUTE_PREFIX.
-			);
-			$matches_merchant = $subject === $merchant_attr;
-
-			if ( ! $matches_source && ! $matches_merchant ) {
-				continue;
-			}
-
-			if ( '' === $search ) {
-				continue;
-			}
-
-			// CBT-585 (BUG-0088): per-rule matching mode.
-			// 'literal' — exact-text str_replace, what a spreadsheet-style
-			// find/replace means; the UI's default for NEW rules
-			// (searching for '$' removes the dollar sign instead
-			// of anchoring to line end).
-			// 'regex'   — the whole search is a pattern body, compiled with
-			// the ~ delimiter (so '/' needs no escaping) + mi.
-			// ''        — V5-VERBATIM legacy: no slash → compile /search/mi,
-			// slash present → literal. Existing configs carry
-			// no mode and MUST keep this behavior byte-for-byte
-			// (stores rely on regex rules taught for years).
-			// In both regex paths a pattern preg_replace REJECTS now falls
-			// back to a literal replace instead of silently doing nothing —
-			// an invalid pattern still expresses clear literal intent.
-			$mode = isset( $rule['mode'] ) ? (string) $rule['mode'] : '';
-
-			if ( 'literal' === $mode ) {
-				$value = str_replace( $search, $replace, $value );
-			} elseif ( 'regex' === $mode ) {
-				$pattern = '~' . str_replace( '~', '\~', $search ) . '~mi';
-				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- User-supplied pattern from feed config may be malformed; @ mutes the E_WARNING and the null check below falls back to a literal replace.
-				$replaced = @preg_replace( $pattern, $replace, $value );
-				$value    = null !== $replaced ? $replaced : str_replace( $search, $replace, $value );
-			} elseif ( false === strpos( $search, '/' ) ) {
-				// Legacy: treat as regex with /mi flags — same as V5.
-				$pattern = '/' . stripslashes( $search ) . '/mi';
-				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- User-supplied pattern from feed config may be malformed; @ mutes the E_WARNING (V5 parity) and the null check below falls back to a literal replace.
-				$replaced = @preg_replace( $pattern, $replace, $value );
-				$value    = null !== $replaced ? $replaced : str_replace( $search, $replace, $value );
-			} else {
-				// Legacy: search contains a slash — plain str_replace (V5).
-				$value = str_replace( $search, $replace, $value );
-			}
-		}
-
-		return $value;
 	}
 }

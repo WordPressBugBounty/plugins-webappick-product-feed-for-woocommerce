@@ -262,6 +262,16 @@ class ApiServiceProvider extends ServiceProvider {
 		add_action( 'woocommerce_attribute_updated', $invalidate_attribute_dropdown );
 		add_action( 'woocommerce_attribute_deleted', $invalidate_attribute_dropdown );
 
+		// Plugin (de)activation adds or removes whole picker GROUPS — the SEO
+		// titles/descriptions (Yoast / Rank Math / AIOSEO), ACF fields, the
+		// Pro-only groups when CTX Feed Pro itself toggles, WPML/Polylang
+		// language sources… — and none of the hooks above fire for it, so the
+		// cached list served a merchant the OLD plugin's groups for the whole
+		// TTL (CBT-656, 6 h by default). Both hooks fire for wp-admin, WP-CLI
+		// and network (de)activation. WP_IMPORTING guard reused.
+		add_action( 'activated_plugin', $invalidate_attribute_dropdown );
+		add_action( 'deactivated_plugin', $invalidate_attribute_dropdown );
+
 		// Attribute Mapping / Dynamic Attribute / Category Mapping (matched by
 		// their AttributeRegistry option-name prefixes) AND the exposed-WP-options
 		// list (the single `wpfp_option` key) are all selectable value sources in

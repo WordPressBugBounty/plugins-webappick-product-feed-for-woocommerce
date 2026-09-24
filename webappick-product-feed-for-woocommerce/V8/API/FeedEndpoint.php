@@ -314,6 +314,7 @@ class FeedEndpoint extends RestController {
 			),
 			'shippingCountry'    => array( 'description' => __( "'feed', 'all', or a country code.", 'woo-feed' ) ),
 			'taxCountry'         => array( 'description' => __( "'feed' or a country code.", 'woo-feed' ) ),
+			'compositePrice'     => array( 'description' => __( "Composite product price (Pro): 'parent_product_price' (base price) or 'all_product_price' (base + components). Other values clear the setting.", 'woo-feed' ) ),
 			'ftp'                => array( 'description' => __( 'FTP/SFTP upload settings.', 'woo-feed' ) ),
 			'advancedFilter'     => array( 'description' => __( 'Advanced filter rows and _filter_groups.', 'woo-feed' ) ),
 			'autoGenerate'       => array(
@@ -608,6 +609,7 @@ class FeedEndpoint extends RestController {
 		$string_replace      = $request->get_param( 'stringReplace' );
 		$shipping_country    = $request->get_param( 'shippingCountry' );
 		$tax_country         = $request->get_param( 'taxCountry' );
+		$composite_price     = $request->get_param( 'compositePrice' );
 		$ftp                 = $request->get_param( 'ftp' );
 		$advanced_filter     = $request->get_param( 'advancedFilter' );
 
@@ -667,7 +669,8 @@ class FeedEndpoint extends RestController {
 			is_string( $tax_country ) ? $tax_country : '',
 			is_array( $ftp ) ? $ftp : array(),
 			array(), // No existing feedrules on create.
-			is_array( $advanced_filter ) ? $advanced_filter : array()
+			is_array( $advanced_filter ) ? $advanced_filter : array(),
+			is_string( $composite_price ) ? $composite_price : ''
 		);
 
 		// Generate unique slug from file name.
@@ -784,6 +787,7 @@ class FeedEndpoint extends RestController {
 		$string_replace      = $request->get_param( 'stringReplace' );
 		$shipping_country    = $request->get_param( 'shippingCountry' );
 		$tax_country         = $request->get_param( 'taxCountry' );
+		$composite_price     = $request->get_param( 'compositePrice' );
 		$ftp                 = $request->get_param( 'ftp' );
 		$advanced_filter     = $request->get_param( 'advancedFilter' );
 
@@ -846,7 +850,8 @@ class FeedEndpoint extends RestController {
 			is_string( $tax_country ) ? $tax_country : '',
 			is_array( $ftp ) ? $ftp : array(),
 			$existing_feedrules,
-			is_array( $advanced_filter ) ? $advanced_filter : array()
+			is_array( $advanced_filter ) ? $advanced_filter : array(),
+			is_string( $composite_price ) ? $composite_price : ''
 		);
 
 		// Direct update — V8 handles its own persistence.
@@ -2114,6 +2119,7 @@ class FeedEndpoint extends RestController {
 	 * @param array  $ftp                 Remote transport settings (enabled, protocol, mode, host, port, username, password, path).
 	 * @param array  $existing_feedrules  Previously saved feedrules; used to keep the stored FTP password when the form sends a masked value. Empty on create.
 	 * @param array  $advanced_filter     Advanced filter groups from the query builder.
+	 * @param string $composite_price     Composite product price mode (V5 key): 'parent_product_price' | 'all_product_price' | ''.
 	 * @return array V5-compatible feedrules.
 	 */
 	private function build_feedrules_from_form(
@@ -2131,7 +2137,8 @@ class FeedEndpoint extends RestController {
 		string $tax_country = '',
 		array $ftp = array(),
 		array $existing_feedrules = array(),
-		array $advanced_filter = array()
+		array $advanced_filter = array(),
+		string $composite_price = ''
 	): array {
 		// Build parallel arrays from row objects.
 		$mattributes = array();
@@ -2240,9 +2247,11 @@ class FeedEndpoint extends RestController {
 			'cron'              => sanitize_text_field( $form['intervalTime'] ?? '' ),
 			// Minute intervals (Pro): the m5/m15/m30/m45 picker codes persist
 			// as SECONDS in update_interval — resolve_interval()'s highest-
-			// precedence source. Hour codes write '' so a feed switched back
-			// to hours is not stuck on the stale minute value.
-			'update_interval'   => self::minute_interval_seconds( (string) ( $form['intervalTime'] ?? '' ) ),
+			// precedence source — mapped by the Pro Scheduling engine through
+			// ctxfeed_update_interval_seconds (CBT-653). Hour codes (and free)
+			// write '' so a feed switched back to hours is not stuck on the
+			// stale minute value.
+			'update_interval'   => self::minute_interval_seconds( (string) ( $form['intervalTime'] ?? '' ), $form ),
 			'mattributes'       => $mattributes,
 			'prefix'            => $prefixes,
 			'type'              => $types,
@@ -2495,6 +2504,10 @@ class FeedEndpoint extends RestController {
 			? $tax_country
 			: '';
 
+		// Composite product price (V5 key, Pro; CBT-654). The Pro composite
+		// shims act only on 'all_product_price'; anything else is base price.
+		$feedrules['composite_price'] = self::sanitize_composite_price( $composite_price );
+
 		// FTP / SFTP upload settings (V5 feedrules keys).
 		// Passwords are encrypted at rest via V8 Encryptor. Empty password
 		// from the UI means "keep the existing one" — important so users
@@ -2718,6 +2731,16 @@ class FeedEndpoint extends RestController {
 	}
 
 	/**
+	 * Minute-level picker codes (Pro). Free knows the codes only to reject
+	 * them when the `short_update_intervals` gate is closed; the seconds
+	 * come from the Pro engine (CBT-653).
+	 *
+	 * @since 8.0.27
+	 * @var string[]
+	 */
+	private const MINUTE_INTERVAL_CODES = array( 'm5', 'm15', 'm30', 'm45' );
+
+	/**
 	 * Allowed minute-interval picker codes → seconds (Pro).
 	 *
 	 * Whitelisted so a hand-crafted request can't schedule arbitrary
@@ -2727,17 +2750,44 @@ class FeedEndpoint extends RestController {
 	 * @since 8.0.19
 	 *
 	 * @param string $code intervalTime form code ('m15', '24', …).
-	 * @return int|string Seconds for a known minute code, '' otherwise.
+	 * @param array  $form makeFeedForm from the request (passed to the seam).
+	 * @return int|string Seconds for a known minute code (Pro engine), '' otherwise.
 	 */
-	private static function minute_interval_seconds( string $code ) {
-		$map = array(
-			'm5'  => 5 * MINUTE_IN_SECONDS,
-			'm15' => 15 * MINUTE_IN_SECONDS,
-			'm30' => 30 * MINUTE_IN_SECONDS,
-			'm45' => 45 * MINUTE_IN_SECONDS,
-		);
+	private static function minute_interval_seconds( string $code, array $form = array() ) {
+		if ( ! in_array( $code, self::MINUTE_INTERVAL_CODES, true ) ) {
+			return '';
+		}
 
-		return $map[ $code ] ?? '';
+		/**
+		 * Filter the per-feed update interval, in seconds, for a picker code.
+		 *
+		 * The minute codes are a Pro feature: the Pro Scheduling engine
+		 * maps m5/m15/m30/m45 here (CBT-653). Free returns '' so the
+		 * scheduler falls back to the hourly `cron` code.
+		 *
+		 * @since 8.0.27
+		 *
+		 * @param int|string $seconds '' (no per-feed override) or seconds.
+		 * @param string     $code    intervalTime form code ('m15', '24', …).
+		 * @param array      $form    makeFeedForm from the request.
+		 */
+		$seconds = apply_filters( 'ctxfeed_update_interval_seconds', '', $code, $form );
+
+		return is_numeric( $seconds ) && (int) $seconds > 0 ? (int) $seconds : '';
+	}
+
+	/**
+	 * Whitelist the composite product price mode (V5 `composite_price`).
+	 *
+	 * @since 8.0.27
+	 *
+	 * @param mixed $value Raw request value.
+	 * @return string 'parent_product_price', 'all_product_price' or ''.
+	 */
+	private static function sanitize_composite_price( $value ): string {
+		$value = is_string( $value ) ? trim( $value ) : '';
+
+		return in_array( $value, array( 'parent_product_price', 'all_product_price' ), true ) ? $value : '';
 	}
 
 	/**
@@ -2750,7 +2800,7 @@ class FeedEndpoint extends RestController {
 	 */
 	private function minute_interval_gate_error( array $form ): string {
 		$code = (string) ( $form['intervalTime'] ?? '' );
-		if ( '' === (string) self::minute_interval_seconds( $code ) ) {
+		if ( ! in_array( $code, self::MINUTE_INTERVAL_CODES, true ) ) {
 			return '';
 		}
 		if ( \CTXFeed\V8\Core\FeatureGate::has( 'short_update_intervals' ) ) {

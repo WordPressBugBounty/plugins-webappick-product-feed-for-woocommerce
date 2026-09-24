@@ -95,44 +95,11 @@ class TemplateServiceProvider extends ServiceProvider {
 			} 
 		);
 
-		// Custom Template 2 (XML) — user-supplied template string parser
-		// and renderer. Routed by TemplateEngine when feedType=xml AND
-		// provider is in the custom2 merchant set. PROD-FRD-10.6.
-		$container->register(
-			'template.custom2_structure',
-			function () {
-				return new Custom2Structure();
-			} 
-		);
-
-		$container->register(
-			'template.custom2',
-			function ( Container $c ) {
-				// AttributeResolver / FilterManager may not be available in all
-				// bootstraps (e.g. partial test wiring). Guard with try/catch so
-				// the container can still resolve other template services.
-				$attribute_resolver = null;
-				try {
-					$attribute_resolver = $c->resolve( 'product.attribute_resolver' );
-				} catch ( \Throwable $e ) {
-					$attribute_resolver = null;
-				}
-				// FilterManager validates variation children in the
-				// `{{each variation start}}` sub-loop (V5 ran per-variation
-				// ValidateProduct::is_valid()). PROD-FRD-10.6.
-				$filter_manager = null;
-				try {
-					$filter_manager = $c->resolve( 'filter.manager' );
-				} catch ( \Throwable $e ) {
-					$filter_manager = null;
-				}
-				return new Custom2Template(
-					$c->resolve( 'template.custom2_structure' ),
-					$attribute_resolver,
-					$filter_manager
-				);
-			} 
-		);
+		// Custom Template 2 (XML) — the parser + renderer live in the Pro
+		// plugin (Engine\Template\Custom2Template, CBT-644) and are bound as
+		// 'template.custom2_structure' / 'template.custom2' through the
+		// ctxfeed_container_bindings filter; boot() below picks the renderer
+		// up when it is bound. PROD-FRD-10.6.
 
 		// Engine is registered as placeholder; populated in boot().
 		$container->register(
@@ -187,10 +154,10 @@ class TemplateServiceProvider extends ServiceProvider {
 		 */
 		$templates = apply_filters( 'ctxfeed_template_engines', $templates );
 
-		// Resolve the Custom2 renderer (registered above). When the
-		// AttributeResolver isn't yet available the resolved Custom2
-		// instance still works, just without product-attribute resolution
-		// at render time — which is what V5 customers would also see.
+		// Resolve the Custom2 renderer when the Pro plugin bound it
+		// (ctxfeed_container_bindings, CBT-644). Free without Pro has no
+		// renderer: TemplateEngine then refuses a custom2-family feed with a
+		// clear "requires CTX Feed Pro" error instead of a wrong XML file.
 		$custom2 = null;
 		try {
 			$custom2 = $container->resolve( 'template.custom2' );

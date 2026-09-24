@@ -904,7 +904,9 @@ class CategoryMappingEndpoint extends RestController {
 		foreach ( $terms as $term ) {
 			$categories[] = array(
 				'id'        => $term->term_id,
-				'name'      => $term->name,
+				// Stored entity-encoded by wp_insert_term(); the React picker
+				// renders plain text (CBT-658).
+				'name'      => wp_specialchars_decode( (string) $term->name, ENT_QUOTES ),
 				'slug'      => $term->slug,
 				'parent'    => $term->parent,
 				'count'     => $term->count,
@@ -968,12 +970,12 @@ class CategoryMappingEndpoint extends RestController {
 	 * @return string Hierarchy string, e.g. "Clothing > T-Shirts > V-Neck".
 	 */
 	private function build_hierarchy( \WP_Term $term, array $term_map ): string {
-		$parts   = array( $term->name );
+		$parts   = array( wp_specialchars_decode( (string) $term->name, ENT_QUOTES ) );
 		$current = $term;
 
 		while ( $current->parent > 0 && isset( $term_map[ $current->parent ] ) ) {
 			$current = $term_map[ $current->parent ];
-			array_unshift( $parts, $current->name );
+			array_unshift( $parts, wp_specialchars_decode( (string) $current->name, ENT_QUOTES ) );
 		}
 
 		return implode( ' > ', $parts );

@@ -2,10 +2,10 @@
 /**
  * LocalizedNumber — parse a possibly-already-formatted number back to a float.
  *
- * The feed pipeline can run number_format() on a price more than once:
- * PriceResolver formats at resolution, NumberTransform formats price
- * attributes in every feed's default pipeline, and output codes 6/7 format
- * again when mapped. Re-formatting a formatted string through a bare
+ * A price row can run number_format() more than once: when both the
+ * "Price" (6) and "Rounded Price" (7) output types are selected the second
+ * code sees the first one's formatted text. Re-formatting a formatted
+ * string through a bare
  * `(float)` cast corrupts it whenever the thousand separator parses as a
  * decimal point — with decimals=0, decimal "," and thousand ".",
  * 1499 → "1.499" → (float) 1.499 → "1", so a 1 499 SEK product reached

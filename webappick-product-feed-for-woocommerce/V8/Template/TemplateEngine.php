@@ -14,6 +14,8 @@
 
 namespace CTXFeed\V8\Template;
 
+use CTXFeed\V8\Feed\PermanentBatchFailure;
+
 use CTXFeed\V8\Core\Config;
 
 // Exit if accessed directly.
@@ -93,7 +95,8 @@ class TemplateEngine {
 	 *
 	 * @return TemplateInterface Template instance for the requested format.
 	 *
-	 * @throws \InvalidArgumentException If the format is not supported.
+	 * @throws UnsupportedTemplateFormat If the format is not supported (an \InvalidArgumentException; permanent, CBT-659).
+	 * @throws PermanentBatchFailure     If a custom2-family feed is requested and no Pro renderer is bound (a \RuntimeException; CBT-644, permanent CBT-659).
 	 */
 	public function get_template( $format, ?Config $config = null ) {
 		$format = strtolower( $format );
@@ -108,7 +111,7 @@ class TemplateEngine {
 			$format = 'csv';
 		}
 
-		if ( 'xml' === $format && null !== $this->custom2_template && null !== $config ) {
+		if ( 'xml' === $format && null !== $config ) {
 			$provider = '';
 			if ( method_exists( $config, 'get_provider' ) ) {
 				$provider = (string) $config->get_provider();
@@ -117,12 +120,25 @@ class TemplateEngine {
 				$provider = (string) $config->get( 'provider', '' );
 			}
 			if ( in_array( $provider, self::CUSTOM2_PROVIDERS, true ) ) {
-				return $this->custom2_template;
+				if ( null !== $this->custom2_template ) {
+					return $this->custom2_template;
+				}
+				// The renderer is a Pro engine (CBT-644). Refuse loudly rather
+				// than render the generic XML template for a custom2 feed.
+				// Permanent for the feed as configured — the batch retry must
+				// not halve its way through five attempts (CBT-659).
+				throw new PermanentBatchFailure(
+					// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Message is consumed by the feed logger/WP_Error chain, never rendered as HTML.
+					sprintf( 'CTXFeed: Custom Template 2 (%s) requires the CTX Feed Pro plugin to be active.', $provider )
+				);
 			}
 		}
 
 		if ( ! isset( $this->templates[ $format ] ) ) {
-			throw new \InvalidArgumentException(
+			// A format nobody registered is a configuration error, not a
+			// batch-size problem (CBT-659). \InvalidArgumentException is kept
+			// as the parent for callers that catch it.
+			throw new UnsupportedTemplateFormat(
 				// phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- Message is consumed by the feed logger/WP_Error chain, never rendered as HTML.
 				sprintf( 'CTXFeed: Unsupported template format: %s', $format )
 			);

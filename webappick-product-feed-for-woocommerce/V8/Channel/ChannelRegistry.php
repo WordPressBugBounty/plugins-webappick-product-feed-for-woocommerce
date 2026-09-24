@@ -1,20 +1,27 @@
 <?php
 /**
- * ChannelRegistry — Central registry of all supported merchant channels.
+ * ChannelRegistry — metadata registry for the built-in channel classes.
  *
- * Free version includes top 5 channels; Pro unlocks all 130+ via
- * FeatureGate. Third-party developers can register custom channels
- * via the ctxfeed_channels_registered action hook.
+ * This is NOT the template list and it gates nothing. Every channel template
+ * and its attributes are FREE; the list a store owner picks from comes from
+ * `MerchantAttributes` + `TemplateDefaults` (see
+ * 01-features/channels/google-clone-channels.md). The registry only holds
+ * the thin channel classes under V8/Channel/* — the performance dashboard
+ * reads `get_all()` for channel names — and fires
+ * `ctxfeed_channels_registered` so third-party code can add its own.
+ *
+ * History: the original V8 design gated channels behind Pro ("top 5 free,
+ * Pro unlocks the rest"). That design was dropped before 8.0.0 shipped; the
+ * gate method and its "Pro-only" stub classes were removed in 8.0.27
+ * (CBT-633) after a support draft cited them as fact.
  *
  * @package    CTXFeed
  * @subpackage V8/Channel
  * @since      8.0.0
- * @implements CHAN-FRD-1.1, CHAN-FRD-1.2, CHAN-FRD-1.3, CHAN-FRD-1.4, CHAN-FRD-7.1
+ * @implements CHAN-FRD-1.1, CHAN-FRD-1.2, CHAN-FRD-1.4, CHAN-FRD-7.1
  */
 
 namespace CTXFeed\V8\Channel;
-
-use CTXFeed\V8\Core\FeatureGate;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -51,7 +58,7 @@ class ChannelRegistry {
 	 * @return void
 	 */
 	public function init(): void {
-		// Free channels (always available). @implements CHAN-FRD-1.4.
+		// Built-in channel classes. @implements CHAN-FRD-1.4.
 		$this->register( new Google\GoogleShopping() );
 		$this->register( new Meta\FacebookCatalog() );
 		$this->register( new Microsoft\BingShopping() );
@@ -64,10 +71,10 @@ class ChannelRegistry {
 		$this->register( new AI\Perplexity() );
 
 		/**
-		 * Fires after built-in channels are registered.
+		 * Fires after the built-in channel classes are registered.
 		 *
-		 * Pro plugin and third-party developers use this action
-		 * to register additional channels.
+		 * Third-party code can register additional channel classes here.
+		 * (The Pro plugin does not: it gates features, never channels.)
 		 *
 		 * @since 8.0.0
 		 *
@@ -116,25 +123,5 @@ class ChannelRegistry {
 	 */
 	public function get_all(): array {
 		return $this->channels;
-	}
-
-	/**
-	 * Get channels available to current user (respects Free/Pro limits).
-	 *
-	 * Free version returns max 5 channels. Pro returns all.
-	 *
-	 * @since 8.0.0
-	 * @implements CHAN-FRD-1.3
-	 *
-	 * @return ChannelInterface[] Available channels.
-	 */
-	public function get_available(): array {
-		$max = FeatureGate::limit( 'channels', 5 );
-
-		if ( $max >= count( $this->channels ) ) {
-			return $this->channels;
-		}
-
-		return array_slice( $this->channels, 0, $max, true );
 	}
 }

@@ -44,8 +44,8 @@ class FeatureGate {
 		'attribute_mapping',
 		'dynamic_attribute',
 		'product_filter',
-		// Advanced-filters tab rule engines (Filter\CustomFilter /
-		// Filter\ProductTypeFilter) — checked in Free, unlocked by Pro.
+		// Advanced-filters tab rule engines — the engines live in the Pro
+		// plugin (Engine\Filters, CBT-645); the flags still drive the UI.
 		'custom_filters',
 		'product_type_filter',
 		'conditional_transform',
@@ -57,18 +57,17 @@ class FeatureGate {
 		'ftp_export',
 		// Pro-only translation gate. WPML support ships via the
 		// ctx-compatibility submodule (free + Pro). Polylang's per-attribute
-		// parent-language resolution (V5 output_type codes 23/24) is
-		// Pro-only — same gating V5 applies via CompatibilityFactory.
+		// parent-language resolution (V5 output_type codes 23/24) is the Pro
+		// PolylangParentLanguage engine (CBT-652) — same gating V5 applied.
 		'polylang_translation',
-		// ACF field enumeration into the product-attribute picker is Pro-only.
-		// The `acf_fields_` prefix + value resolution stay in Free (existing
-		// feeds keep resolving); only listing ACF fields to map is Pro. PROD-FRD-10.1.
+		// ACF fields in the product-attribute picker AND the `acf_fields_`
+		// value resolution are Pro (the Pro CustomFieldPrefixResolver engine,
+		// CBT-652); a bare custom_field row still resolves in free. PROD-FRD-10.1.
 		'acf_attributes',
-		// Toolset Types field enumeration into the picker — same split as
-		// ACF: the toolset_fields_ prefix and value resolution stay in Free
-		// (existing feeds keep resolving); only LISTING the fields to map
-		// is Pro. Toolset-registered product taxonomies need no gate — they
-		// flow through the normal taxonomy dropdown. PROD-FRD-10.1.
+		// Toolset Types fields — same split as ACF: picker listing and the
+		// toolset_fields_ resolution are the Pro engine. Toolset-registered
+		// product taxonomies need no gate — they flow through the normal
+		// taxonomy dropdown. PROD-FRD-10.1.
 		'toolset_attributes',
 		// Minute-level feed update intervals (5/15/30/45m) in the Make Feed
 		// interval picker — restores the V5 Pro extension that was silently

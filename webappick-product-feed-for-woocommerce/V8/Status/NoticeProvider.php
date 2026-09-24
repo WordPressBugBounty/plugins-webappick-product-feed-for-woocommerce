@@ -80,6 +80,7 @@ class NoticeProvider {
 		$notices = array();
 
 		$notices = array_merge( $notices, $this->old_pro_notice() );
+		$notices = array_merge( $notices, $this->outdated_pro_notice() );
 		$notices = array_merge( $notices, $this->debug_logging_notice() );
 		$notices = array_merge( $notices, $this->scheduler_stalled_notice() );
 		$notices = array_merge( $notices, $this->pro_inactive_notice() );
@@ -231,6 +232,40 @@ class NoticeProvider {
 				'title'       => __( 'CTX Feed Pro must be updated now', 'woo-feed' ),
 				'message'     => LegacyPro::message( LegacyPro::DOWNLOAD_URL !== $action['url'] ),
 				'action'      => $action,
+				'dismissible' => false,
+			),
+		);
+	}
+
+	/**
+	 * Pinned ERROR notice when an active V8 Pro predates the engine migration
+	 * (CBT-649): its gates are closed by ProHandshake, so every Pro feature is
+	 * inactive until CTX Feed Pro is updated.
+	 *
+	 * @since 8.0.27
+	 * @return array Zero or one notice.
+	 */
+	private function outdated_pro_notice(): array {
+		if ( ! ProHandshake::pro_outdated() ) {
+			return array();
+		}
+
+		return array(
+			array(
+				'id'          => 'ctxfeed_pro_outdated',
+				'severity'    => 'error',
+				'priority'    => 1,
+				'title'       => __( 'CTX Feed Pro needs an update', 'woo-feed' ),
+				'message'     => sprintf(
+					/* translators: 1: installed Pro version, 2: required Pro version. */
+					__( 'CTX Feed Pro %1$s is older than this version of CTX Feed. Pro features — advanced filters, dynamic attributes, attribute mapping, output commands, Custom Template 2 — stay inactive until CTX Feed Pro is updated to %2$s or newer.', 'woo-feed' ),
+					ProHandshake::pro_version(),
+					ProHandshake::REQUIRED_PRO_VERSION
+				),
+				'action'      => array(
+					'label' => __( 'Update CTX Feed Pro', 'woo-feed' ),
+					'url'   => LegacyPro::DOWNLOAD_URL,
+				),
 				'dismissible' => false,
 			),
 		);

@@ -392,7 +392,11 @@ class DropdownRegistry {
 
 		if ( ! is_wp_error( $terms ) && is_array( $terms ) ) {
 			foreach ( $terms as $term ) {
-				$categories[ $term->slug ] = $term->name;
+				// wp_insert_term() stores names entity-encoded ("Toys &amp;
+				// Electronics"); the React picker renders plain text, so decode
+				// here or the merchant reads "&amp;" (CBT-658). Slug stays raw —
+				// it is what the feed config saves.
+				$categories[ $term->slug ] = wp_specialchars_decode( (string) $term->name, ENT_QUOTES );
 			}
 		}
 

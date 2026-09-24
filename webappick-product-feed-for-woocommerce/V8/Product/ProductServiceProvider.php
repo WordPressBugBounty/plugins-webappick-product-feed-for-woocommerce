@@ -165,19 +165,13 @@ class ProductServiceProvider extends ServiceProvider {
 			} 
 		);
 
-		$container->register(
-			'product.attr_mapping_resolver',
-			function () {
-				return new AttributeMappingResolver();
-			} 
-		);
-
-		$container->register(
-			'product.dynamic_attr_resolver',
-			function () {
-				return new DynamicAttributeResolver();
-			} 
-		);
+		// Attribute mapping (wp_attr_mapping_*) and dynamic attributes
+		// (wf_dattribute_*) are Pro engines (CBT-648). The Pro plugin binds
+		// 'product.attr_mapping_resolver' / 'product.dynamic_attr_resolver'
+		// through ctxfeed_container_bindings; the AttributeResolver factory
+		// below injects them when bound and runs with null otherwise (a
+		// free install then resolves those prefixes to '' — see
+		// AttributeResolver::resolve_prefixed()).
 
 		// Integration services (depend on foundation).
 		$container->register(
@@ -194,8 +188,8 @@ class ProductServiceProvider extends ServiceProvider {
 					$c->resolve( 'product.shipping_resolver' ),
 					$c->resolve( 'product.tax_resolver' ),
 					$c->resolve( 'product.wp_option_resolver' ),
-					$c->resolve( 'product.attr_mapping_resolver' ),
-					$c->resolve( 'product.dynamic_attr_resolver' ),
+					$c->has( 'product.attr_mapping_resolver' ) ? $c->resolve( 'product.attr_mapping_resolver' ) : null,
+					$c->has( 'product.dynamic_attr_resolver' ) ? $c->resolve( 'product.dynamic_attr_resolver' ) : null,
 					$c->resolve( 'product.v5_custom_field_resolver' ),
 					$c->resolve( 'product.category_mapping_resolver' )
 				);
@@ -248,8 +242,7 @@ class ProductServiceProvider extends ServiceProvider {
 	 *
 	 * Resolves circular dependencies via setter injection:
 	 * - VariationResolver needs AttributeResolver to re-resolve from parent product.
-	 * - AttributeMappingResolver needs AttributeResolver to resolve source attributes.
-	 * - DynamicAttributeResolver needs AttributeResolver to resolve condition/output attributes.
+	 * - the Pro mapping / dynamic-attribute engines (when bound) need AttributeResolver to resolve source attributes.
 	 *
 	 * @since 8.0.0
 	 * @implements PROD-FRD-14.2
@@ -265,13 +258,34 @@ class ProductServiceProvider extends ServiceProvider {
 		$variation_resolver = $container->resolve( 'product.variation_resolver' );
 		$variation_resolver->set_attribute_resolver( $attribute_resolver );
 
-		// Break circular dependency: AttributeMappingResolver ↔ AttributeResolver.
-		$attr_mapping_resolver = $container->resolve( 'product.attr_mapping_resolver' );
-		$attr_mapping_resolver->set_attribute_resolver( $attribute_resolver );
+		// Break the circular dependency for the Pro engines when bound
+		// (CBT-648): mapping / dynamic-attribute resolvers ↔ AttributeResolver.
+		foreach ( array( 'product.attr_mapping_resolver', 'product.dynamic_attr_resolver' ) as $engine_id ) {
+			if ( $container->has( $engine_id ) ) {
+				$engine = $container->resolve( $engine_id );
+				if ( $engine instanceof PrefixResolverInterface ) {
+					$engine->set_attribute_resolver( $attribute_resolver );
+				}
+			}
+		}
 
-		// Break circular dependency: DynamicAttributeResolver ↔ AttributeResolver.
-		$dynamic_attr_resolver = $container->resolve( 'product.dynamic_attr_resolver' );
-		$dynamic_attr_resolver->set_attribute_resolver( $attribute_resolver );
+		/**
+		 * Register additional source-attribute prefix resolvers (CBT-642).
+		 *
+		 * The Pro plugin plugs its attribute engines in here. Every entry
+		 * must implement PrefixResolverInterface; anything else is ignored.
+		 *
+		 * @since 8.0.27
+		 *
+		 * @param PrefixResolverInterface[] $resolvers Resolvers to register, in order.
+		 * @param Container                 $container DI container.
+		 */
+		$extra_resolvers = apply_filters( 'ctxfeed_attribute_prefix_resolvers', array(), $container );
+		foreach ( (array) $extra_resolvers as $extra_resolver ) {
+			if ( $extra_resolver instanceof PrefixResolverInterface ) {
+				$attribute_resolver->register_prefix_resolver( $extra_resolver );
+			}
+		}
 
 		// Force the tax location to the feed's target country during feed
 		// generation, so "Price with Tax" attributes reflect the destination

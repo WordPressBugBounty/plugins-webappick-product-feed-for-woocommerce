@@ -210,7 +210,10 @@ class FeedServiceProvider extends ServiceProvider {
 			$generator->set_variations_builder(
 				new \CTXFeed\V8\Product\SkroutzVariationsBuilder(
 					$product_repo,
-					$container->resolve( 'filter.stock' )
+					// The per-child stock gate is the Pro StockFilter, bound as
+					// `filter.stock` by Pro\Engine\ProductSelection (CBT-650);
+					// free without Pro keeps every child.
+					$container->has( 'filter.stock' ) ? $container->resolve( 'filter.stock' ) : null
 				)
 			);
 

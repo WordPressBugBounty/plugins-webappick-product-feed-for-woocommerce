@@ -70,7 +70,7 @@ class WooContext {
 			return false;
 		}
 
-		include_once $file;
+		include_once $file; // phpcs:ignore WordPressVIPMinimum.Files.IncludingFile.UsingVariable -- Path is WC_ABSPATH . 'includes/wc-cart-functions.php', a WooCommerce core file resolved from a constant; no user input.
 
 		return function_exists( self::CART_PROBE );
 	}

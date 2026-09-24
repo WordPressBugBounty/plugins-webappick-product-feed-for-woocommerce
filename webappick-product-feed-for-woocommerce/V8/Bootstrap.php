@@ -116,6 +116,11 @@ class Bootstrap {
 		// Require PSR-4 autoloader.
 		require_once __DIR__ . '/autoload.php';
 
+		// A Pro build older than the engine migration (CBT-649) flips the
+		// gates but ships no engines — close them so the UI never unlocks
+		// what nothing executes; NoticeProvider explains the update.
+		Status\ProHandshake::close_gates();
+
 		// Create container singleton.
 		$this->container = Container::get_instance();
 
@@ -144,7 +149,7 @@ class Bootstrap {
 	private function define_constants(): void {
 
 		if ( ! defined( 'CTXFEED_V8_VERSION' ) ) {
-			define( 'CTXFEED_V8_VERSION', '8.0.26' );
+			define( 'CTXFEED_V8_VERSION', '8.0.27' );
 		}
 
 		if ( ! defined( 'CTXFEED_V8_PATH' ) ) {

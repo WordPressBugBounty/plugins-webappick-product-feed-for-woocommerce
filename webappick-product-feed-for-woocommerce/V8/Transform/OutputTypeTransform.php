@@ -40,6 +40,7 @@ namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Product\ProductRepository;
+use CTXFeed\V8\Utility\NumberFormat;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -66,6 +67,14 @@ class OutputTypeTransform implements TransformInterface {
 	 * @since 8.0.0
 	 * @var string[]
 	 */
+	/**
+	 * Templates whose price rows default to output type "Price" (V5 parity).
+	 *
+	 * @since 8.0.27
+	 * @var string[]
+	 */
+	private const SPECIAL_PRICE_TEMPLATES = array( 'custom2', 'admarkt', 'glami', 'yandex_xml' );
+
 	private const FORMAT_CODE_ORDER = array(
 		'2',
 		'3',
@@ -238,13 +247,10 @@ class OutputTypeTransform implements TransformInterface {
 	 */
 	private function build_lookup( Config $config ): array {
 		$output_types = (array) $config->get( 'output_type', array() );
-		if ( empty( $output_types ) ) {
-			return array();
-		}
 
 		// String-keyed (V8 test fixture style) — return as-is.
 		$keys            = array_keys( $output_types );
-		$is_zero_indexed = range( 0, count( $output_types ) - 1 ) === $keys;
+		$is_zero_indexed = empty( $output_types ) || range( 0, count( $output_types ) - 1 ) === $keys;
 		if ( ! $is_zero_indexed ) {
 			return $output_types;
 		}
@@ -258,12 +264,55 @@ class OutputTypeTransform implements TransformInterface {
 			}
 			$lookup[ (string) $attr ] = $output_types[ $i ];
 		}
+		return $this->apply_special_template_price_default( $lookup, $config );
+	}
+
+	/**
+	 * V5 special-template default: price rows without an output type get "Price" (6).
+	 *
+	 * V5 `Config::get_attribute_output_types()`: on `custom2`, `admarkt`,
+	 * `glami` and `yandex_xml` a row whose SOURCE attribute name contains
+	 * `price` and has no stored output type falls back to `array( 6 )`.
+	 * Rows that store any code (including Default `1`) are left alone,
+	 * exactly as V5's `! empty()` test did.
+	 *
+	 * @since 8.0.27
+	 *
+	 * @param array<string,mixed> $lookup Merchant attr → code(s).
+	 * @param Config              $config Feed configuration.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function apply_special_template_price_default( array $lookup, Config $config ): array {
+		if ( ! in_array( $config->get_provider(), self::SPECIAL_PRICE_TEMPLATES, true ) ) {
+			return $lookup;
+		}
+
+		$mattributes = (array) $config->get( 'mattributes', array() );
+		$attributes  = (array) $config->get( 'attributes', array() );
+		$types       = (array) $config->get( 'type', array() );
+
+		foreach ( $mattributes as $i => $mattr ) {
+			$mattr  = (string) $mattr;
+			$source = isset( $attributes[ $i ] ) ? (string) $attributes[ $i ] : '';
+			$type   = isset( $types[ $i ] ) ? (string) $types[ $i ] : 'attribute';
+			if ( '' === $mattr || 'attribute' !== $type || false === strpos( $source, 'price' ) ) {
+				continue;
+			}
+			if ( empty( $lookup[ $mattr ] ) ) {
+				$lookup[ $mattr ] = '6';
+			}
+		}
+
 		return $lookup;
 	}
 
 	/**
-	 * Resolve number-format settings (decimals, separators) from config,
-	 * falling back to WooCommerce defaults.
+	 * Resolve the feed's number format for the "Price" / "Rounded Price" codes.
+	 *
+	 * V5 semantics, one owner ({@see NumberFormat::resolve()}): the base is the
+	 * WooCommerce number settings; Pro replaces each with the Filters-tab box
+	 * the user actually filled in; free ignores the boxes (CBT-640).
 	 *
 	 * @since 8.0.0
 	 *
@@ -271,40 +320,7 @@ class OutputTypeTransform implements TransformInterface {
 	 * @return array{decimals:int, decimal_separator:string, thousand_separator:string}
 	 */
 	private function resolve_number_format( Config $config ): array {
-		$decimals_raw = $config->get( 'decimals', '' );
-		// Default is a HARDCODED 2, not wc_get_price_decimals(): V5's Format
-		// Price was number_format($v, 2, '.', '') verbatim, and the owner
-		// decision (2026-09-11) is that prices ship RAW two-decimal
-		// ("1313133.33" / "12.33") unless the user sets a custom number
-		// format in the Filter tab — the store's display-decimals setting
-		// (0, 3, …) must never leak into feeds.
-		$decimals = ( '' === $decimals_raw || ! is_numeric( $decimals_raw ) )
-			? 2
-			: (int) $decimals_raw;
-
-		// MACHINE defaults, never WooCommerce's DISPLAY separators — the same
-		// contract as PriceResolver::format_price() and NumberTransform
-		// (#68983, #68913). An EMPTY thousand separator means NONE; only a
-		// null/absent key falls back (to none as well — feeds are parsed by
-		// machines).
-		$dec_sep = (string) $config->get( 'decimal_separator', '' );
-		if ( '' === $dec_sep ) {
-			$dec_sep = '.';
-		}
-
-		$thou_sep_raw = $config->get( 'thousand_separator', '' );
-		$thou_sep     = ( null === $thou_sep_raw || false === $thou_sep_raw ) ? '' : (string) $thou_sep_raw;
-
-		// V5 wp_specialchars_decode the separator strings to allow `&nbsp;`
-		// etc. saved from the form. Do the same for compat.
-		$dec_sep  = function_exists( 'wp_specialchars_decode' ) ? (string) wp_specialchars_decode( wp_unslash( $dec_sep ) ) : $dec_sep;
-		$thou_sep = function_exists( 'wp_specialchars_decode' ) ? (string) wp_specialchars_decode( wp_unslash( $thou_sep ) ) : $thou_sep;
-
-		return array(
-			'decimals'           => $decimals,
-			'decimal_separator'  => $dec_sep,
-			'thousand_separator' => $thou_sep,
-		);
+		return NumberFormat::resolve( $config );
 	}
 
 	/**
@@ -439,11 +455,12 @@ class OutputTypeTransform implements TransformInterface {
 	 * @return string
 	 */
 	private function format_price( string $value, array $nf ): string {
-		// Parse with the feed's separators FIRST: the value may already be
-		// formatted (PriceResolver and NumberTransform run with the same
-		// config), and a bare (float) cast read a '.' thousand separator as
-		// a decimal point — "1.499" → "1" (support #68878). Parsing makes
-		// this code idempotent no matter how many stages run.
+		// Parse with the feed's separators FIRST: the value is usually the
+		// raw WooCommerce price, but when "Price" and "Rounded Price" are
+		// both selected the second code sees the first one's formatted text,
+		// and a bare (float) cast read a '.' thousand separator as a decimal
+		// point — "1.499" → "1" (support #68878). Parsing keeps the code
+		// idempotent.
 		$parsed = \CTXFeed\V8\Utility\LocalizedNumber::parse( $value, $nf['decimal_separator'], $nf['thousand_separator'] );
 		if ( null === $parsed || $parsed <= 0 ) {
 			return $value;

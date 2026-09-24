@@ -36,9 +36,7 @@ class TransformServiceProvider extends ServiceProvider {
 	 * Services registered:
 	 * - transform.prefix_suffix:    Prefix/suffix text on attribute values.
 	 * - transform.string:           String operations (uppercase, trim, strip_tags, etc.).
-	 * - transform.number:           Number formatting for price attributes.
 	 * - transform.category_mapping: WooCommerce to channel category mapping.
-	 * - transform.conditional:      Conditional if/then rules (Pro feature).
 	 * - transform.output_formatter: Encoding normalization and control char removal.
 	 * - transform.utm:              UTM tracking parameter injection.
 	 * - transform.google:           Google Shopping-specific formatting.
@@ -77,16 +75,6 @@ class TransformServiceProvider extends ServiceProvider {
 			} 
 		);
 
-		// Config-tab output-command executor — runs directly after
-		// output_type so V5's order (str_replace → output_types → commands
-		// → prefix/suffix) is preserved. XFRM-FRD-9.5.
-		$container->register(
-			'transform.command',
-			function () {
-				return new CommandTransform();
-			} 
-		);
-
 		$container->register(
 			'transform.prefix_suffix',
 			function () {
@@ -102,23 +90,9 @@ class TransformServiceProvider extends ServiceProvider {
 		);
 
 		$container->register(
-			'transform.number',
-			function () {
-				return new NumberTransform();
-			} 
-		);
-
-		$container->register(
 			'transform.category_mapping',
 			function () {
 				return new CategoryMapping();
-			} 
-		);
-
-		$container->register(
-			'transform.conditional',
-			function () {
-				return new ConditionalTransform();
 			} 
 		);
 
@@ -285,30 +259,36 @@ class TransformServiceProvider extends ServiceProvider {
 	 * applies the `ctxfeed_transform_pipeline` filter, and re-registers the
 	 * pipeline with the final transform array.
 	 *
-	 * Pipeline order:
-	 *  1. PrefixSuffix
-	 *  2. StringTransform
-	 *  3. NumberTransform
-	 *  4. CategoryMapping
-	 *  5. ConditionalTransform
-	 *  6. GoogleTransform
-	 *  7. FacebookTransform
-	 *  8. PinterestTransform
-	 *  9. BingTransform
-	 * 10. SnapchatTransform
-	 * 11. TikTokTransform
-	 * 12. IdealoTransform
-	 * 13. BestPriceTransform
-	 * 14. SkroutzTransform
-	 * 15. PricerunnerTransform
-	 * 16. SpartooTransform
-	 * 17. ZboziTransform
-	 * 18. PinterestRssTransform
-	 * 19. AdmarktTransform
-	 * 20. GoogleReviewTransform
-	 * 21. TrovaprezziTransform
-	 * 22. OutputFormatter
-	 * 23. UTMTransform
+	 * Pipeline order (no feed-wide number formatting stage — V5 parity,
+	 * CBT-635: prices are formatted only by the row's "Price" / "Rounded
+	 * Price" output type, inside OutputTypeTransform):
+	 *  1. OutputTypeTransform
+	 *  2. CommandTransform — Pro plugin, inserted via ctxfeed_transform_pipeline (CBT-644)
+	 *  3. PrefixSuffix
+	 *  4. StringTransform
+	 *  5. CategoryMapping
+	 *  6. ConditionalTransform — Pro plugin, inserted via ctxfeed_transform_pipeline (CBT-645)
+	 *  7. GoogleTransform
+	 *  8. FacebookTransform
+	 *  9. PinterestTransform
+	 * 10. BingTransform
+	 * 11. SnapchatTransform
+	 * 12. TikTokTransform
+	 * 13. IdealoTransform
+	 * 14. BestPriceTransform
+	 * 15. SkroutzTransform
+	 * 16. PricerunnerTransform
+	 * 17. SpartooTransform
+	 * 18. ZboziTransform
+	 * 19. PinterestRssTransform
+	 * 20. AdmarktTransform
+	 * 21. GoogleReviewTransform
+	 * 22. TrovaprezziTransform
+	 * 23. RedditTransform
+	 * 24. ChatGptTransform
+	 * 25. XTransform
+	 * 26. OutputFormatter
+	 * 27. UTMTransform
 	 *
 	 * @since 8.0.0
 	 * @implements XFRM-FRD-10.2
@@ -327,15 +307,15 @@ class TransformServiceProvider extends ServiceProvider {
 		// formatters → prefix/suffix.
 		$transforms = array(
 			$container->resolve( 'transform.output_type' ),
-			// XFRM-FRD-9.5: CommandTransform sits between output_type and
-			// prefix_suffix, mirroring V5 process_output() ordering
-			// (output_types → commands → prefix/suffix).
-			$container->resolve( 'transform.command' ),
+			// XFRM-FRD-9.5: the Pro plugin inserts its CommandTransform right
+			// after output_type through the ctxfeed_transform_pipeline filter
+			// (Core\PipelineOrder), mirroring V5 process_output() ordering
+			// (output_types → commands → prefix/suffix). CBT-644.
 			$container->resolve( 'transform.prefix_suffix' ),
 			$container->resolve( 'transform.string' ),
-			$container->resolve( 'transform.number' ),
 			$container->resolve( 'transform.category_mapping' ),
-			$container->resolve( 'transform.conditional' ),
+			// The Pro plugin inserts ConditionalTransform right after
+			// CategoryMapping through ctxfeed_transform_pipeline (CBT-645).
 			// Provider-specific transforms (no-op for non-matching providers).
 			$container->resolve( 'transform.google' ),
 			$container->resolve( 'transform.facebook' ),

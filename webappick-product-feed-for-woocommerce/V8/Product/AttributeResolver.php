@@ -19,6 +19,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Core\Logger;
 use CTXFeed\V8\Utility\Sanitizer;
 
 // Exit if accessed directly.
@@ -114,20 +115,46 @@ class AttributeResolver {
 	private $wp_option;
 
 	/**
-	 * Attribute mapping resolver instance.
+	 * Attribute-mapping engine (Pro); null when the Pro plugin is absent.
 	 *
 	 * @since 8.0.0
-	 * @var AttributeMappingResolver
+	 * @var PrefixResolverInterface|null
 	 */
 	private $attr_mapping;
 
 	/**
-	 * Dynamic attribute resolver instance.
+	 * Dynamic-attribute engine (Pro); null when the Pro plugin is absent.
 	 *
 	 * @since 8.0.0
-	 * @var DynamicAttributeResolver
+	 * @var PrefixResolverInterface|null
 	 */
 	private $dynamic_attr;
+
+	/**
+	 * Prefix resolvers registered through `register_prefix_resolver()` /
+	 * the `ctxfeed_attribute_prefix_resolvers` filter (CBT-642).
+	 *
+	 * @since 8.0.27
+	 * @var PrefixResolverInterface[]
+	 */
+	private $prefix_resolvers = array();
+
+	/**
+	 * Source-name prefixes owned by Pro engines. When no resolver claims one
+	 * of these (Pro absent), the value is '' — never a stray meta lookup.
+	 *
+	 * @since 8.0.27
+	 * @var string[]
+	 */
+	private const PRO_PREFIXES = array( 'wf_dattribute_', 'wp_attr_mapping_', 'acf_fields_', 'toolset_fields_' );
+
+	/**
+	 * Pro prefixes already reported as unhandled in this request.
+	 *
+	 * @since 8.0.27
+	 * @var array<string,bool>
+	 */
+	private static $unhandled_logged = array();
 
 	/**
 	 * V5-compat custom field resolver (woo_feed_* identifier path).
@@ -170,8 +197,8 @@ class AttributeResolver {
 	 * @param ShippingResolver             $shipping     Shipping resolver.
 	 * @param TaxResolver                  $tax          Tax resolver.
 	 * @param WpOptionResolver             $wp_option    WordPress option resolver.
-	 * @param AttributeMappingResolver     $attr_mapping Attribute mapping resolver.
-	 * @param DynamicAttributeResolver     $dynamic_attr Dynamic attribute resolver.
+	 * @param PrefixResolverInterface|null $attr_mapping Attribute mapping engine (Pro), or null.
+	 * @param PrefixResolverInterface|null $dynamic_attr Dynamic attribute engine (Pro), or null.
 	 * @param V5CustomFieldResolver|null   $v5_custom_field   V5-compat woo_feed_*
 	 *                                                       resolver. Optional for
 	 *                                                       back-compat with older
@@ -192,8 +219,8 @@ class AttributeResolver {
 		ShippingResolver $shipping,
 		TaxResolver $tax,
 		WpOptionResolver $wp_option,
-		AttributeMappingResolver $attr_mapping,
-		DynamicAttributeResolver $dynamic_attr,
+		?PrefixResolverInterface $attr_mapping = null,
+		?PrefixResolverInterface $dynamic_attr = null,
 		?V5CustomFieldResolver $v5_custom_field = null,
 		?CategoryMappingResolver $category_mapping = null
 	) {
@@ -211,6 +238,79 @@ class AttributeResolver {
 		$this->dynamic_attr     = $dynamic_attr;
 		$this->v5_custom_field  = $v5_custom_field;
 		$this->category_mapping = $category_mapping;
+	}
+
+	/**
+	 * Register a prefix resolver (Pro engines, third parties).
+	 *
+	 * Registered resolvers are consulted after the constructor-injected
+	 * mapping / dynamic-attribute engines, in registration order. The
+	 * resolver receives this router so nested source attributes resolve.
+	 *
+	 * @since 8.0.27
+	 * @implements PROD-FRD-10 (extension seam, CBT-642)
+	 *
+	 * @param PrefixResolverInterface $resolver Prefix resolver.
+	 *
+	 * @return void
+	 */
+	public function register_prefix_resolver( PrefixResolverInterface $resolver ): void {
+		$this->prefix_resolvers[] = $resolver;
+		$resolver->set_attribute_resolver( $this );
+	}
+
+	/**
+	 * Registered prefix resolvers (constructor-injected engines excluded).
+	 *
+	 * @since 8.0.27
+	 *
+	 * @return PrefixResolverInterface[]
+	 */
+	public function get_prefix_resolvers(): array {
+		return $this->prefix_resolvers;
+	}
+
+	/**
+	 * Resolve a Pro-prefixed source attribute through the registered engines.
+	 *
+	 * Returns null when no resolver claims the name so the caller keeps its
+	 * ordinary fall-through; returns '' (logged once per prefix and request)
+	 * when the name carries a known Pro prefix that nothing handles — the
+	 * graceful-degradation contract for a free install (CBT-642).
+	 *
+	 * @since 8.0.27
+	 *
+	 * @param \WC_Product $product       WooCommerce product.
+	 * @param string      $attr          Source attribute name.
+	 * @param Config      $config        Feed configuration.
+	 * @param string      $merchant_attr Channel field name.
+	 *
+	 * @return string|null
+	 */
+	private function resolve_prefixed( \WC_Product $product, string $attr, Config $config, string $merchant_attr ): ?string {
+		foreach ( $this->prefix_resolvers as $resolver ) {
+			if ( $resolver->handles( $attr ) ) {
+				return $resolver->resolve( $product, $attr, $config, $merchant_attr );
+			}
+		}
+
+		foreach ( self::PRO_PREFIXES as $prefix ) {
+			if ( 0 === strpos( $attr, $prefix ) ) {
+				if ( ! isset( self::$unhandled_logged[ $prefix ] ) ) {
+					self::$unhandled_logged[ $prefix ] = true;
+					Logger::debug(
+						'Source attribute prefix has no resolver (CTX Feed Pro inactive?) — value left empty.',
+						array(
+							'prefix'    => $prefix,
+							'attribute' => $attr,
+						)
+					);
+				}
+				return '';
+			}
+		}
+
+		return null;
 	}
 
 	/**
@@ -333,7 +433,13 @@ class AttributeResolver {
 				break;
 
 			case 'custom_field':
-				$value = $this->custom_field->resolve( $product, $wc_attr, $config );
+				// A custom_field row may carry a Pro picker prefix (acf_fields_ /
+				// toolset_fields_): the registered prefix engine owns it, and an
+				// unclaimed Pro prefix ships '' (CBT-652).
+				$value = $this->resolve_prefixed( $product, (string) $wc_attr, $config, $merchant_attr );
+				if ( null === $value ) {
+					$value = $this->custom_field->resolve( $product, $wc_attr, $config );
+				}
 				break;
 
 			case 'pattern':
@@ -449,6 +555,23 @@ class AttributeResolver {
 	 * @return mixed Resolved attribute value.
 	 */
 	private function resolve_wc_attribute( \WC_Product $product, string $attr, Config $config, string $merchant_attr = '' ) {
+		/**
+		 * Short-circuit a WooCommerce source attribute before the built-in
+		 * accessor switch (CBT-642 extension seam — Pro engines answer the
+		 * subscription / installment value groups here).
+		 *
+		 * @since 8.0.27
+		 *
+		 * @param mixed       $pre     Null to continue; any other value is returned as-is.
+		 * @param string      $attr    Source attribute name.
+		 * @param \WC_Product $product WooCommerce product.
+		 * @param Config      $config  Feed configuration.
+		 */
+		$pre = apply_filters( 'ctxfeed_pre_resolve_wc_attribute', null, $attr, $product, $config );
+		if ( null !== $pre ) {
+			return $pre;
+		}
+
 		// AD-PROD-004: switch instead of match() for WPCS compatibility.
 		switch ( $attr ) {
 			case 'id':
@@ -981,75 +1104,10 @@ class AttributeResolver {
 			case 'tax':
 				return $this->tax->resolve( $product, $attr, $config );
 
-			// @implements G-07 — Google installment attributes.
-			// V5 parity: V5 sources these from WC Subscriptions plugin
-			// meta (`_subscription_length`) and the product price. If
-			// those are unavailable (Subscriptions inactive or the store
-			// doesn't use it) we still honor V8's flexible per-product
-			// `_ctxfeed_` meta and the feed-level config default so
-			// customers who configured V8-native values don't regress.
-			// V5 ProductInfo.php:1316-1332.
-			case 'installment_months':
-				// V5 6.6.x (CTX-924): the WC Subscriptions meta read
-				// moved to ctx-compatibility behind this filter. V8's
-				// per-product meta / config default seeds the value for
-				// stores without the plugin.
-				$meta_val = get_post_meta( $product->get_id(), '_ctxfeed_installment_months', true );
-				$native   = ! empty( $meta_val ) ? $meta_val : $config->get( 'installment_months', '' );
-				return apply_filters( 'woo_feed_filter_installment_months', $native, $product, $config );
-
-			case 'installment_amount':
-				// V5 returns the product price outright. Only fall back
-				// to V8's per-product/config override when the product
-				// has no price (rare — usually variable/grouped edge).
-				$price = $product->get_price();
-				if ( '' !== $price && null !== $price ) {
-					return (string) $price;
-				}
-				$meta_val = get_post_meta( $product->get_id(), '_ctxfeed_installment_amount', true );
-				return ! empty( $meta_val ) ? $meta_val : $config->get( 'installment_amount', '' );
-
-			// @implements G-08 — Google subscription_cost attributes.
-			// V5 sources from WC Subscriptions meta / product price:
-			// subscription_period          → `_subscription_period`
-			// subscription_period_length   → `_subscription_period_interval`
-			// (V5's method name is
-			// `subscription_period_interval`;
-			// V8 uses the Google-spec
-			// name `_length` externally
-			// but reads the same V5 meta)
-			// subscription_amount          → product price
-			// V5 ProductInfo.php:1278-1308.
-			case 'subscription_period':
-				// V5 6.6.x (CTX-924): WC Subscriptions read lives in
-				// ctx-compatibility behind the filter now.
-				$meta_val = get_post_meta( $product->get_id(), '_ctxfeed_subscription_period', true );
-				$native   = ! empty( $meta_val ) ? $meta_val : $config->get( 'subscription_period', '' );
-				return apply_filters( 'woo_feed_filter_subscription_period', $native, $product, $config );
-
-			case 'subscription_period_interval':
-				// V5-parity alias: the source-attribute dropdown
-				// (AttributeRegistry::get_subscription_attributes) still exposes
-				// V5's name `subscription_period_interval` for this field, while
-				// the Google merchant attribute is `subscription_period_length`.
-				// Resolve both names identically so a mapping built off either the
-				// legacy source key or the Google output key yields the same value
-				// instead of falling through to MetaResolver (which would read a
-				// non-existent meta and return empty).
-			case 'subscription_period_length':
-				// Compat hook name keeps V5's `_interval` wording even
-				// though the Google-facing attribute is `_length`.
-				$meta_val = get_post_meta( $product->get_id(), '_ctxfeed_subscription_period_length', true );
-				$native   = ! empty( $meta_val ) ? $meta_val : $config->get( 'subscription_period_length', '' );
-				return apply_filters( 'woo_feed_filter_subscription_period_interval', $native, $product, $config );
-
-			case 'subscription_amount':
-				$price = $product->get_price();
-				if ( '' !== $price && null !== $price ) {
-					return (string) $price;
-				}
-				$meta_val = get_post_meta( $product->get_id(), '_ctxfeed_subscription_amount', true );
-				return ! empty( $meta_val ) ? $meta_val : $config->get( 'subscription_amount', '' );
+			// @implements G-07 / G-08 — Google installment_* and subscription_*
+			// values are Pro picker groups: resolved by the Pro
+			// SubscriptionValues engine through ctxfeed_pre_resolve_wc_attribute
+			// (CBT-652); without it they fall through to the meta resolver.
 
 			// @implements S-05 — Excluded/included destination.
 			case 'excluded_destination':
@@ -1258,9 +1316,9 @@ class AttributeResolver {
 					return $this->wp_option->resolve( $product, $attr, $config );
 				}
 
-				// Attribute mapping (wp_attr_mapping_* prefix).
-				if ( $this->attr_mapping->is_attribute_mapping( $attr ) ) {
-					return $this->attr_mapping->resolve( $product, $attr, $config );
+				// Attribute mapping (wp_attr_mapping_* prefix) — Pro engine.
+				if ( null !== $this->attr_mapping && $this->attr_mapping->handles( $attr ) ) {
+					return $this->attr_mapping->resolve( $product, $attr, $config, $merchant_attr );
 				}
 
 				// Category mapping (wf_cmapping_* prefix). V5 dispatched
@@ -1283,20 +1341,23 @@ class AttributeResolver {
 				// the merchant attribute so V5's woo_feed_after_dynamic_
 				// attribute_value hook receives the channel field name as
 				// arg #4 (V5 line 288 signature). PROD-FRD-10.5.
-				if ( $this->dynamic_attr->is_dynamic_attribute( $attr ) ) {
+				if ( null !== $this->dynamic_attr && $this->dynamic_attr->handles( $attr ) ) {
 					return $this->dynamic_attr->resolve( $product, $attr, $config, $merchant_attr );
 				}
 
-				// Custom-field plugin prefixes (acf_fields_ / toolset_fields_)
-				// resolve through the custom-field resolver —
-				// which strips the prefix and calls the owning plugin's API —
-				// regardless of the mapping type the UI saved ('attribute' or
-				// 'custom_field'). Without this they fell through to bare
-				// get_post_meta( '{prefix}…' ) and shipped empty.
-				if ( 0 === strpos( $attr, 'acf_fields_' )
-					|| 0 === strpos( $attr, 'toolset_fields_' ) ) {
-					return $this->custom_field->resolve( $product, $attr, $config );
+				// Registered prefix engines (ctxfeed_attribute_prefix_resolvers),
+				// then the known Pro prefixes' graceful '' when nothing claims
+				// them (CBT-642).
+				$prefixed = $this->resolve_prefixed( $product, $attr, $config, $merchant_attr );
+				if ( null !== $prefixed ) {
+					return $prefixed;
 				}
+
+				// The custom-field plugin prefixes (acf_fields_ / toolset_fields_)
+				// are Pro picker groups: their resolution is the Pro
+				// CustomFieldPrefixResolver engine (CBT-652), registered
+				// through ctxfeed_attribute_prefix_resolvers and consulted by
+				// resolve_prefixed() above; unclaimed they resolve to ''.
 
 				// V5-compat custom-field identifier keys (woo_feed_* prefix).
 				// These are admin-saved meta from V5\CustomFields\InputCustomFiled

@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.26
+Stable tag: 8.0.27
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -13,7 +13,7 @@ Create WooCommerce product feeds for Google Shopping, Facebook, TikTok & 220+ ch
 
 == Description ==
 
-🏆 **The #1 WooCommerce Product Feed Manager Plugin trusted by 80,000+ online stores worldwide.**
+🏆 **The #1 WooCommerce Product Feed Manager Plugin trusted by 90,000+ online stores worldwide.**
 
 Stop losing sales to rejected product feeds. **CTXFeed** is the most powerful **product feed plugin for WooCommerce**, designed to generate optimized, error-free feeds for **Google Shopping**, **Facebook Catalog**, **Instagram Shopping**, **TikTok Shop**, Pinterest, Bing, and **220+ global marketing channels**.
 
@@ -23,7 +23,7 @@ Whether you're managing 100 products or 100,000+ SKUs, CTXFeed handles your enti
 
 **2026 Google Merchant Center Compliant** – Ready for the March 2026 multi-channel product ID requirements and subscription product support.
 
-== Why 80,000+ WooCommerce Stores Choose CTXFeed? ==
+== Why 90,000+ WooCommerce Stores Choose CTXFeed? ==
 
 * **95 Pre-Built Templates for 220+ channels** – Instant setup for Google Merchant Center, Meta (Facebook/Instagram), TikTok Shop, Amazon, eBay, Snapchat, Pinterest, and more
 * **6 Export Formats** – XML, CSV, TSV, XLS, TXT, JSON (more file format options than any competitor)
@@ -469,6 +469,18 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.27 =
+* Important: if you use CTX Feed Pro, update it to Pro 8.0.17 as well. This release and Pro 8.0.17 belong together: with an older Pro version active, the Pro features pause and an update notice shows in the CTX Feed admin until Pro is updated.
+* Fix: prices are exported exactly as WooCommerce stores them. The Price and Rounded Price output types write the number with 2 decimals, a dot and no thousands separator (for example 173427.98) unless a number format is set on the Filters tab in CTX Feed Pro. Feeds that used to ship "16,980.00 HUF" or "1,099.90 USD" now ship a clean number.
+* Fix: dynamic-attribute conditions such as "price >= 1000" compare the plain number, so a thousands separator in the store settings no longer flips a rule. The Integer output type reads "16980.5" as 16980, not 16.
+* Fix: on the Filters tab, the Product status hint now says that an empty list sends published products only.
+* Improved: on a new Google feed, picking the Shipping attribute maps it to Shipping (Google Format) and adds editable rows for min/max transit time and min/max handling time; picking Shipping Label maps it to the product's Shipping Class. Existing feeds are not changed.
+* Fix: category names containing "&" no longer show as "&amp;" in the Product categories filter and in the category mapping list.
+* Fix: after a plugin such as Yoast SEO, Rank Math, ACF, WPML or Polylang is activated or deactivated, the value picker in the feed editor shows the updated set of fields right away instead of after the cache expires. Clear Cache also refreshes the picker on an open screen.
+* Fix: a feed left on a minute-based update interval from CTX Feed Pro returns to its hourly or daily schedule when Pro is no longer active.
+* Fix: a run that cannot succeed as configured (for example a Custom Template 2 feed while CTX Feed Pro is inactive) is marked failed at once with a single log line instead of being retried five times with smaller batches.
+* Improved: the Composite product price option on the Filters tab now saves and applies: Base price, or Base + components (CTX Feed Pro).
+
 = Version 8.0.26 =
 * Fix: a scheduled run could publish an empty file over a good feed. On some stores every product in a background run failed with "Call to undefined function wc_get_chosen_shipping_method_ids()" — a WooCommerce cart helper that WooCommerce does not load for background or REST requests but still calls while working out tax — and the run then wrote a header-only file over the previous feed. CTX Feed now loads that helper itself before generating.
 * Fix: a run that writes nothing because its products failed no longer publishes. The previous feed is kept, the run shows as Failed on Manage Feeds, and the feed log says why. A feed you have filtered down to nothing still publishes as before.
@@ -477,9 +489,3 @@ If your feed fails to generate:
 * Fix: large, variation-heavy catalogs no longer stop with "Allowed memory size exhausted" during a scheduled run. Cache priming stops before the memory limit is reached, a batch hands its remaining products to the next batch when memory runs short, and a small feed that pauses itself continues in the background instead of publishing a partial file.
 * Fix: multilingual stores (WPML) — a feed in a non-default language no longer comes out empty, or ships the other language's links and category paths, when its product list has to be re-read during a background batch. Needs CTX Feed Pro 8.0.16.
 * Improved: multilingual stores — the category and product-ID filters and the product search in the feed editor now have hooks for translation plugins, so include/exclude filters saved in one language match the translated products. Used by CTX Feed Pro 8.0.16 with WPML.
-
-= Version 8.0.25 =
-* Added: the feed you just generated is easy to find again. When a generation finishes, its row on Manage Feeds turns light green and its Last Generated time shows in green for ten seconds.
-* Improved: feed names on Manage Feeds are real links, so right-click "Open in new tab", middle-click and copy link all work while a normal click still opens the editor in place.
-* Improved: when Save finds an empty required field (Country, Template, File name, File type or an incomplete mapping row), every missing field is outlined in a clearer red at once and the page scrolls to the first one; fix it, save again, and it moves to the next.
-* Fix: Clear Cache now also clears CTX Feed's cached data on sites that use a persistent object cache (Redis, Memcached), so a custom field or post meta you just added appears under Custom Fields & Post Metas right away instead of after the cache expires. Fields written directly to products by importers or bridge plugins refresh that list automatically as well.
