@@ -809,6 +809,29 @@ class GroupedAttributeBuilder {
 				'images_9',
 				'images_10',
 			),
+			// Repeatable destination controls (CBT-666, owner 2026-09-25):
+			// one element per non-empty numbered row, e.g. Shopping_ads and
+			// Display_ads. The base key keeps rendering a single element.
+			'g:excluded_destination'  => array(
+				'excluded_destination_1',
+				'excluded_destination_2',
+				'excluded_destination_3',
+				'excluded_destination_4',
+				'excluded_destination_5',
+				'excluded_destination_6',
+				'excluded_destination_7',
+				'excluded_destination_8',
+			),
+			'g:included_destination'  => array(
+				'included_destination_1',
+				'included_destination_2',
+				'included_destination_3',
+				'included_destination_4',
+				'included_destination_5',
+				'included_destination_6',
+				'included_destination_7',
+				'included_destination_8',
+			),
 		);
 
 		$this->repeating_groups['google_shopping_action'] = $this->repeating_groups['google'];

@@ -1,6 +1,15 @@
 CTX Feed — changelog archive
 The most recent releases are listed in readme.txt; this file carries the full history.
 
+= Version 8.0.26 =
+* Fix: a scheduled run could publish an empty file over a good feed. On some stores every product in a background run failed with "Call to undefined function wc_get_chosen_shipping_method_ids()" — a WooCommerce cart helper that WooCommerce does not load for background or REST requests but still calls while working out tax — and the run then wrote a header-only file over the previous feed. CTX Feed now loads that helper itself before generating.
+* Fix: a run that writes nothing because its products failed no longer publishes. The previous feed is kept, the run shows as Failed on Manage Feeds, and the feed log says why. A feed you have filtered down to nothing still publishes as before.
+* Fix: the feed log's closing line reports how many products were written, not how many were scanned.
+* Fix: an error while loading a product, or while a filter decides whether it belongs in the feed (including code from other plugins hooked into that decision), now skips that one product instead of failing the whole run.
+* Fix: large, variation-heavy catalogs no longer stop with "Allowed memory size exhausted" during a scheduled run. Cache priming stops before the memory limit is reached, a batch hands its remaining products to the next batch when memory runs short, and a small feed that pauses itself continues in the background instead of publishing a partial file.
+* Fix: multilingual stores (WPML) — a feed in a non-default language no longer comes out empty, or ships the other language's links and category paths, when its product list has to be re-read during a background batch. Needs CTX Feed Pro 8.0.16.
+* Improved: multilingual stores — the category and product-ID filters and the product search in the feed editor now have hooks for translation plugins, so include/exclude filters saved in one language match the translated products. Used by CTX Feed Pro 8.0.16 with WPML.
+
 = Version 8.0.25 =
 * Added: the feed you just generated is easy to find again. When a generation finishes, its row on Manage Feeds turns light green and its Last Generated time shows in green for ten seconds.
 * Improved: feed names on Manage Feeds are real links, so right-click "Open in new tab", middle-click and copy link all work while a normal click still opens the editor in place.

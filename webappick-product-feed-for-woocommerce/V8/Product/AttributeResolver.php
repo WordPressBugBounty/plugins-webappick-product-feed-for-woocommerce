@@ -358,24 +358,67 @@ class AttributeResolver {
 	}
 
 	/**
-	 * Resolve an SEO attribute exactly the way a feed ROW does: raw resolver
+	 * Source attributes whose Legacy Bridge hook is fired ONCE by
+	 * PriceResolver on the raw value (V5 timing). Firing it again on a
+	 * resolved value double-applies a multiplicative currency shim
+	 * (24 → 48 → 96) — the same list ProductRepository skips at row level.
+	 *
+	 * @since 8.0.28
+	 * @var array<string,true>
+	 */
+	private const PRICE_FAMILY = array(
+		'price'                  => true,
+		'regular_price'          => true,
+		'sale_price'             => true,
+		'current_price'          => true,
+		'price_with_tax'         => true,
+		'regular_price_with_tax' => true,
+		'sale_price_with_tax'    => true,
+		'current_price_with_tax' => true,
+	);
+
+	/**
+	 * Whether an attribute key belongs to the price family (bridge fired by
+	 * PriceResolver, never again downstream).
+	 *
+	 * @since 8.0.28
+	 *
+	 * @param string $attr Attribute key.
+	 * @return bool
+	 */
+	public static function is_price_family( string $attr ): bool {
+		return isset( self::PRICE_FAMILY[ $attr ] );
+	}
+
+	/**
+	 * Resolve an attribute exactly the way a feed ROW does: raw resolver
 	 * value, then the Legacy Bridge `woo_feed_filter_product_{attr}` filter
 	 * (same 4-arg signature as ProductRepository::resolve_with_filters,
-	 * variation parent included) so the SEO shims compute the real value.
+	 * variation parent included) so every V5 compat listener — the
+	 * TranslatePress / WPML / Polylang title shims, the SEO shims, customer
+	 * snippets — computes the value it computes for a row.
 	 *
-	 * Used by AttributeMappingResolver and DynamicAttributeResolver, whose
-	 * plain resolve() calls bypass the bridge. Deliberately NOT wired into
-	 * the row path — rows already fire the bridge once, and firing it twice
-	 * is the double-apply class of bug the price family documents.
+	 * Used by AttributeMappingResolver and DynamicAttributeResolver for the
+	 * PARTS they combine: their plain resolve() calls bypass the bridge, so a
+	 * German feed shipped the untranslated title inside an attribute mapping
+	 * while the same title translated as a direct row (#69269, CBT-662).
+	 * V5 resolved parts through the ProductInfo getters that fired the
+	 * filters, so this is parity restoration; 8.0.16 restored it for the
+	 * SEO keys only (#69018), this generalises it.
 	 *
-	 * @since 8.0.16
+	 * Price-family attributes are resolved WITHOUT the bridge — PriceResolver
+	 * fires their hook once on the raw value, and a second fire is the
+	 * double-apply currency bug (see PRICE_FAMILY). Deliberately NOT wired
+	 * into the row path either — rows already fire the bridge once.
+	 *
+	 * @since 8.0.28
 	 *
 	 * @param \WC_Product $product WooCommerce product.
-	 * @param string      $attr    SEO attribute key.
+	 * @param string      $attr    Source attribute key.
 	 * @param Config      $config  Feed configuration.
 	 * @return string
 	 */
-	public function resolve_seo_bridged( \WC_Product $product, string $attr, Config $config ): string {
+	public function resolve_bridged( \WC_Product $product, string $attr, Config $config ): string {
 		$value = $this->resolve(
 			$product,
 			array(
@@ -385,6 +428,10 @@ class AttributeResolver {
 			),
 			$config
 		);
+
+		if ( self::is_price_family( $attr ) ) {
+			return is_scalar( $value ) ? (string) $value : '';
+		}
 
 		$legacy_filter = "woo_feed_filter_product_{$attr}";
 
@@ -400,6 +447,23 @@ class AttributeResolver {
 		}
 
 		return is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/**
+	 * Resolve an SEO attribute through the Legacy Bridge (#69018).
+	 *
+	 * Kept as an alias of {@see resolve_bridged()} for callers written
+	 * against 8.0.16–8.0.27; the general method covers every attribute.
+	 *
+	 * @since 8.0.16
+	 *
+	 * @param \WC_Product $product WooCommerce product.
+	 * @param string      $attr    SEO attribute key.
+	 * @param Config      $config  Feed configuration.
+	 * @return string
+	 */
+	public function resolve_seo_bridged( \WC_Product $product, string $attr, Config $config ): string {
+		return $this->resolve_bridged( $product, $attr, $config );
 	}
 
 	/**
@@ -650,7 +714,12 @@ class AttributeResolver {
 					$parent = ProductMemo::get( (int) $product->get_parent_id() );
 					$title  = $parent instanceof \WC_Product ? $parent->get_name() : '';
 				} else {
-					$title = '';
+					// V5 parity (CBT-663, #69269): a simple/variable product
+					// has no parent, and V5's parent_title() fell back to the
+					// product's OWN title — V8 shipped '' and every mixed
+					// catalog mapping Title ← Parent Title lost its simple
+					// products' titles.
+					$title = (string) $product->get_name();
 				}
 				return apply_filters(
 					'woo_feed_filter_product_parent_title',

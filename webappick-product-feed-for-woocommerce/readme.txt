@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.27
+Stable tag: 8.0.28
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -469,6 +469,12 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.28 =
+* Added: Google feeds can send several destinations. Excluded Destination and Included Destination are now available as Excluded Destination 1–8 and Included Destination 1–8 on the Google Shopping, Google Local, Google Local Inventory and Google Shopping Action templates — one destination per row (for example Shopping_ads and Display_ads), each exported as its own tag. Existing feeds are unchanged.
+* Fix: Parent Title now falls back to the product's own title for simple and variable products instead of staying empty, so a feed that mixes variations and simple products can map Title to Parent Title.
+* Fix: multilingual stores (TranslatePress, WPML) — a title or any other product field used inside an attribute mapping or a dynamic attribute is now translated the same way as when it is mapped in its own row. Needs CTX Feed Pro 8.0.19.
+* Improved: on the Version Control page, updating CTX Feed Pro while the free plugin is also behind offers to update CTX Feed first and then Pro in one step.
+
 = Version 8.0.27 =
 * Important: if you use CTX Feed Pro, update it to Pro 8.0.17 as well. This release and Pro 8.0.17 belong together: with an older Pro version active, the Pro features pause and an update notice shows in the CTX Feed admin until Pro is updated.
 * Fix: prices are exported exactly as WooCommerce stores them. The Price and Rounded Price output types write the number with 2 decimals, a dot and no thousands separator (for example 173427.98) unless a number format is set on the Filters tab in CTX Feed Pro. Feeds that used to ship "16,980.00 HUF" or "1,099.90 USD" now ship a clean number.
@@ -480,12 +486,3 @@ If your feed fails to generate:
 * Fix: a feed left on a minute-based update interval from CTX Feed Pro returns to its hourly or daily schedule when Pro is no longer active.
 * Fix: a run that cannot succeed as configured (for example a Custom Template 2 feed while CTX Feed Pro is inactive) is marked failed at once with a single log line instead of being retried five times with smaller batches.
 * Improved: the Composite product price option on the Filters tab now saves and applies: Base price, or Base + components (CTX Feed Pro).
-
-= Version 8.0.26 =
-* Fix: a scheduled run could publish an empty file over a good feed. On some stores every product in a background run failed with "Call to undefined function wc_get_chosen_shipping_method_ids()" — a WooCommerce cart helper that WooCommerce does not load for background or REST requests but still calls while working out tax — and the run then wrote a header-only file over the previous feed. CTX Feed now loads that helper itself before generating.
-* Fix: a run that writes nothing because its products failed no longer publishes. The previous feed is kept, the run shows as Failed on Manage Feeds, and the feed log says why. A feed you have filtered down to nothing still publishes as before.
-* Fix: the feed log's closing line reports how many products were written, not how many were scanned.
-* Fix: an error while loading a product, or while a filter decides whether it belongs in the feed (including code from other plugins hooked into that decision), now skips that one product instead of failing the whole run.
-* Fix: large, variation-heavy catalogs no longer stop with "Allowed memory size exhausted" during a scheduled run. Cache priming stops before the memory limit is reached, a batch hands its remaining products to the next batch when memory runs short, and a small feed that pauses itself continues in the background instead of publishing a partial file.
-* Fix: multilingual stores (WPML) — a feed in a non-default language no longer comes out empty, or ships the other language's links and category paths, when its product list has to be re-read during a background batch. Needs CTX Feed Pro 8.0.16.
-* Improved: multilingual stores — the category and product-ID filters and the product search in the feed editor now have hooks for translation plugins, so include/exclude filters saved in one language match the translated products. Used by CTX Feed Pro 8.0.16 with WPML.
