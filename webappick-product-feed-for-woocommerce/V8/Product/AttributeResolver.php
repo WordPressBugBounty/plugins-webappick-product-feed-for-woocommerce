@@ -1465,6 +1465,116 @@ class AttributeResolver {
 	}
 
 	/**
+	 * Let extensions narrow a variable parent's attribute option list.
+	 *
+	 * Builds the parent's options in WooCommerce's own order — the same list
+	 * `get_attribute()` joined — as `{ name, slug }` items and passes them
+	 * through `ctxfeed_variable_parent_attribute_items`. The joined value is
+	 * rebuilt only when a callback REMOVED items, so an unhooked or no-op
+	 * callback can never change the exported string (CBT-639: the Pro stock
+	 * filters keep only the options that still have a sellable variation).
+	 *
+	 * @since 8.0.29
+	 *
+	 * @param \WC_Product $parent_product Variable parent product.
+	 * @param string      $attr_name Bare attribute name (no wf_attr_ / pa_ prefix).
+	 * @param string      $value     Value from get_attribute().
+	 * @param Config      $config    Feed configuration.
+	 * @return string
+	 */
+	private function variable_parent_value( \WC_Product $parent_product, string $attr_name, string $value, Config $config ): string {
+		if ( ! has_filter( 'ctxfeed_variable_parent_attribute_items' ) ) {
+			return $value;
+		}
+
+		$attributes = $parent_product->get_attributes();
+		$key        = sanitize_title( $attr_name );
+		$attribute  = $attributes[ $key ] ?? ( $attributes[ 'pa_' . $key ] ?? null );
+		if ( ! $attribute instanceof \WC_Product_Attribute ) {
+			return $value;
+		}
+
+		$items = array();
+		if ( $attribute->is_taxonomy() ) {
+			$terms = wc_get_product_terms( $parent_product->get_id(), $attribute->get_name(), array( 'fields' => 'all' ) );
+			foreach ( (array) $terms as $term ) {
+				if ( $term instanceof \WP_Term ) {
+					$items[] = array(
+						'name' => $term->name,
+						'slug' => $term->slug,
+					);
+				}
+			}
+		} else {
+			foreach ( $attribute->get_options() as $option ) {
+				$items[] = array(
+					'name' => (string) $option,
+					'slug' => sanitize_title( (string) $option ),
+				);
+			}
+		}
+
+		$kept = self::filter_parent_items( $items, $parent_product, $attribute->get_name(), $config );
+		if ( null === $kept ) {
+			return $value;
+		}
+
+		// Join exactly as get_attribute() does: ', ' for global attributes,
+		// WooCommerce's text-attribute delimiter (' | ') for custom ones.
+		return $attribute->is_taxonomy() || ! function_exists( 'wc_implode_text_attributes' )
+			? implode( ', ', $kept )
+			: wc_implode_text_attributes( $kept );
+	}
+
+	/**
+	 * Run the `ctxfeed_variable_parent_attribute_items` filter.
+	 *
+	 * Shared by the product-attribute path here and the taxonomy path in
+	 * TaxonomyResolver so both mean the same thing.
+	 *
+	 * @since 8.0.29
+	 *
+	 * @param array       $items     Ordered `{ name, slug }` option items.
+	 * @param \WC_Product $parent_product Variable parent product.
+	 * @param string      $attribute Attribute name as WooCommerce stores it (`pa_size`, `size`).
+	 * @param Config      $config    Feed configuration.
+	 * @return string[]|null Names of the kept items, or null when nothing was removed.
+	 */
+	public static function filter_parent_items( array $items, \WC_Product $parent_product, string $attribute, Config $config ): ?array {
+		if ( empty( $items ) || ! has_filter( 'ctxfeed_variable_parent_attribute_items' ) ) {
+			return null;
+		}
+
+		/**
+		 * Filter a variable parent's attribute options before they are joined.
+		 *
+		 * Return the items to keep, in order. Removing nothing leaves the
+		 * exported value untouched. Used by CTX Feed Pro to drop options
+		 * whose variations are out of stock when the feed removes
+		 * out-of-stock products (CBT-639).
+		 *
+		 * @since 8.0.29
+		 *
+		 * @param array       $items     `{ name, slug }` items in export order.
+		 * @param \WC_Product $parent_product Variable parent product.
+		 * @param string      $attribute Attribute name (`pa_size` or a custom attribute name).
+		 * @param Config      $config    Feed configuration.
+		 */
+		$kept = apply_filters( 'ctxfeed_variable_parent_attribute_items', $items, $parent_product, $attribute, $config );
+		if ( ! is_array( $kept ) || count( $kept ) >= count( $items ) ) {
+			return null;
+		}
+
+		$names = array();
+		foreach ( $kept as $item ) {
+			if ( is_array( $item ) && isset( $item['name'] ) ) {
+				$names[] = (string) $item['name'];
+			}
+		}
+		return $names;
+	}
+
+	/**
 	 * Resolve WooCommerce product attribute (wf_attr_* prefix).
 	 *
 	 * Handles both global attributes (taxonomy-based, e.g., pa_color, pa_size)
@@ -1499,6 +1609,13 @@ class AttributeResolver {
 		// WC's get_attribute() handles both global (taxonomy) and product-level attributes.
 		$value = $product->get_attribute( $attr_name );
 
+		// A variable parent's value lists every option of the attribute; the
+		// Pro stock filters may narrow it to the options that still have a
+		// sellable variation (CBT-639).
+		if ( '' !== $value && $product->is_type( 'variable' ) ) {
+			$value = $this->variable_parent_value( $product, $attr_name, $value, $config );
+		}
+
 		// Same display-translation seam as the variation-title path (BUG-0101 /
 		// CBT-592): a variation's CUSTOM attribute meta keeps the original
 		// language — WPML/WCML translate it only via WooCommerce's display
@@ -1515,6 +1632,9 @@ class AttributeResolver {
 			$parent = ProductMemo::get( (int) $product->get_parent_id() );
 			if ( $parent instanceof \WC_Product ) {
 				$value = $parent->get_attribute( $attr_name );
+				if ( '' !== $value && $parent->is_type( 'variable' ) ) {
+					$value = $this->variable_parent_value( $parent, $attr_name, $value, $config );
+				}
 			}
 		}
 

@@ -123,6 +123,16 @@ class MerchantAttributes {
 						'images_10'          => 'Additional Image 10 [additional_image_link]',
 						'lifestyle_image'    => 'Lifestyle Image Link[lifestyle_image_link]',
 						'video_link'         => 'Video link[video_link]',
+						'video_link_1'       => 'Video Link 1 [video_link]',
+						'video_link_2'       => 'Video Link 2 [video_link]',
+						'video_link_3'       => 'Video Link 3 [video_link]',
+						'video_link_4'       => 'Video Link 4 [video_link]',
+						'video_link_5'       => 'Video Link 5 [video_link]',
+						'video_link_6'       => 'Video Link 6 [video_link]',
+						'video_link_7'       => 'Video Link 7 [video_link]',
+						'video_link_8'       => 'Video Link 8 [video_link]',
+						'video_link_9'       => 'Video Link 9 [video_link]',
+						'video_link_10'      => 'Video Link 10 [video_link]',
 						'virtual_model_link' => 'Virtual Model Link[virtual_model_link]',
 						'document_link'      => 'Document Link[document_link]',
 						'condition'          => 'Condition[condition]',
@@ -1741,11 +1751,22 @@ class MerchantAttributes {
 				),
 			),
 			'googlereview'           => array(
+				// Product Title / URL: the template's default rows (V5
+				// listed both; CBT-676 — without them the rows showed
+				// "Select Attribute").
 				1 => array(
+					'optionGroup' => 'Reviewed Product',
+					'options'     => array(
+						'product_name' => 'Product Title [product_name]',
+						'product_url'  => 'Product URL [product_url]',
+					),
+				),
+				2 => array(
 					'optionGroup' => 'Reviewed Product Identifiers',
 					'options'     => array(
 						'review_temp_sku'   => 'Product SKU [sku]',
 						'review_temp_gtin'  => 'Product GTIN [gtin]',
+						'review_temp_mpn'   => 'Product MPN [mpn]',
 						'review_temp_brand' => 'Product Brand [brand]',
 					),
 				),

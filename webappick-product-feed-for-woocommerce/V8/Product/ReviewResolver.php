@@ -8,9 +8,11 @@
  * approved review with content and a star rating becomes one <review>
  * entry.
  *
- * Only the product IDENTIFIERS that link a review to a product in Merchant
- * Center are merchant-mappable (SKU / GTIN / brand — which field holds each
- * varies per store). Everything else is auto-configured in the backend:
+ * Product Title / Product URL rows fill <product_name>/<product_url>
+ * (falling back to the product's name / permalink). Only those and the
+ * product IDENTIFIERS that link a review to a product in Merchant
+ * Center are merchant-mappable (GTIN / MPN / SKU / brand — which field holds
+ * each varies per store). Everything else is auto-configured in the backend:
  *   • review id / reviewer / timestamp / rating / content — from the comment;
  *   • is_verified_purchase — from WooCommerce's "verified owner" flag;
  *   • review_language / review_country — from the feed's configured locale;
@@ -49,7 +51,10 @@ class ReviewResolver {
 	 * Mapping of review_temp_* merchant rows to product_ids sub-elements.
 	 *
 	 * Only the identifiers that match a review to a product are mappable —
-	 * SKU, GTIN and brand (the store decides which field holds each).
+	 * GTIN, MPN, SKU and brand (the store decides which field holds each).
+	 * Google matches on a valid GTIN or a Brand + MPN pair (SKU is only a
+	 * fallback), so MPN is mappable again as in V5 (CBT-675, #69311): an
+	 * own-brand store without barcodes maps MPN to its SKU plus a brand.
 	 *
 	 * @since 8.0.0
 	 * @var array<string,array{wrapper:string,tag:string}>
@@ -58,6 +63,10 @@ class ReviewResolver {
 		'review_temp_gtin'  => array(
 			'wrapper' => 'gtins',
 			'tag'     => 'gtin',
+		),
+		'review_temp_mpn'   => array(
+			'wrapper' => 'mpns',
+			'tag'     => 'mpn',
 		),
 		'review_temp_sku'   => array(
 			'wrapper' => 'skus',
@@ -140,7 +149,11 @@ class ReviewResolver {
 
 		$product_url = (string) $product->get_permalink();
 		$product_ids = $this->resolve_product_ids( $product, $config );
-		$entries     = array();
+		// <product_name>/<product_url> follow their mapping rows (CBT-676);
+		// review_url stays the product page the review is shown on.
+		$product_name_out = $this->resolve_product_row( $product, $config, 'product_name', (string) $product->get_name() );
+		$product_url_out  = $this->resolve_product_row( $product, $config, 'product_url', $product_url );
+		$entries          = array();
 
 		/**
 		 * Filter the review rating scale (Google requires min/max on <overall>).
@@ -204,7 +217,7 @@ class ReviewResolver {
 			$rating_value = (string) max( $rating_min, min( $rating_max, (int) $rating ) );
 
 			// Auto-configured optional fields (locale + enrichment filters).
-			$fields = $this->auto_fields( $comment, $product, $config );
+			$fields = $this->auto_fields( $comment, $product, $config, $content );
 
 			// Assemble in strict XSD 2.4 sequence order (verified against
 			// product_reviews.xsd 2.4; the full sequence is listed on this
@@ -264,8 +277,8 @@ class ReviewResolver {
 				'product' => array_merge(
 					empty( $product_ids ) ? array() : array( 'product_ids' => $product_ids ),
 					array(
-						'product_name' => (string) $product->get_name(),
-						'product_url'  => $product_url,
+						'product_name' => $product_name_out,
+						'product_url'  => $product_url_out,
 					)
 				),
 			);
@@ -303,6 +316,59 @@ class ReviewResolver {
 	}
 
 	/**
+	 * Derive a review title from the review text (CBT-460).
+	 *
+	 * Whitespace is collapsed; the first sentence is used when it fits the
+	 * limit, otherwise the text is cut at the last word boundary within the
+	 * limit and ends with "…". Text that already fits is returned whole.
+	 *
+	 * @since 8.0.29
+	 *
+	 * @param string $content Review text (HTML already stripped).
+	 * @return string Title, or '' for empty text.
+	 */
+	public static function title_from_content( string $content ): string {
+		$text = trim( (string) preg_replace( '/\s+/u', ' ', $content ) );
+		if ( '' === $text ) {
+			return '';
+		}
+
+		/**
+		 * Maximum length (characters) of a title derived from the review text.
+		 *
+		 * @since 8.0.29
+		 *
+		 * @param int $max Default 70.
+		 */
+		$max = max( 10, (int) apply_filters( 'ctxfeed_review_title_max_length', 70 ) );
+
+		$len    = function_exists( 'mb_strlen' ) ? 'mb_strlen' : 'strlen';
+		$substr = function_exists( 'mb_substr' ) ? 'mb_substr' : 'substr';
+
+		// First sentence, when it ends within the limit.
+		if ( preg_match( '/^(.+?[.!?])(?:\s|$)/u', $text, $match ) && $len( $match[1] ) <= $max ) {
+			return $match[1];
+		}
+
+		if ( $len( $text ) <= $max ) {
+			return $text;
+		}
+
+		$cut = $substr( $text, 0, $max );
+		// Back up to the last space only when the cut splits a word.
+		if ( ' ' !== $substr( $text, $max, 1 ) ) {
+			$space = function_exists( 'mb_strrpos' ) ? mb_strrpos( $cut, ' ' ) : strrpos( $cut, ' ' );
+			if ( false !== $space && $space > 0 ) {
+				$cut = $substr( $cut, 0, $space );
+			}
+		}
+
+		// Unicode-aware trim of trailing separators (rtrim() is byte-wise and
+		// would corrupt multi-byte characters).
+		return (string) preg_replace( '/[\s,;:\-–—]+$/u', '', $cut ) . '…';
+	}
+
+	/**
 	 * Build the auto-configured optional review fields for one comment.
 	 *
 	 * `review_language`/`review_country` default to the feed's configured
@@ -317,10 +383,11 @@ class ReviewResolver {
 	 * @param object      $comment Review comment.
 	 * @param \WC_Product $product Reviewed product.
 	 * @param Config      $config  Feed configuration.
+	 * @param string      $content Review body as exported in <content> (HTML stripped).
 	 *
 	 * @return array<string,mixed> Tag => rendered value/structure.
 	 */
-	private function auto_fields( $comment, \WC_Product $product, Config $config ): array {
+	private function auto_fields( $comment, \WC_Product $product, Config $config, string $content = '' ): array {
 		$out = array();
 
 		// Locale — every review carries the store's language/country by
@@ -337,8 +404,11 @@ class ReviewResolver {
 			$out['review_country'] = $country;
 		}
 
-		// Review title — no WooCommerce equivalent; opt-in via filter.
-		$title = trim( (string) apply_filters( 'ctxfeed_review_title', '', $comment, $config ) );
+		// Review title — WooCommerce reviews have none, and Google flags a
+		// missing <title> (CBT-460, #69311). Default: the start of the review
+		// text (first sentence, or a word-boundary crop). A review plugin can
+		// supply its own title through the filter; returning '' omits it.
+		$title = trim( (string) apply_filters( 'ctxfeed_review_title', self::title_from_content( $content ), $comment, $config ) );
 		if ( '' !== $title ) {
 			$out['title'] = $title;
 		}
@@ -553,6 +623,56 @@ class ReviewResolver {
 		}
 
 		return $ordered;
+	}
+
+	/**
+	 * Value of the product_name / product_url mapping row, or the fallback.
+	 *
+	 * The first row mapped to $merchant_attr wins. An unmapped or empty row
+	 * keeps the historic value (product name / permalink), so the template
+	 * default (Title / URL) renders exactly as before (CBT-676).
+	 *
+	 * @since 8.0.29
+	 *
+	 * @param \WC_Product $product       WooCommerce product.
+	 * @param Config      $config        Feed configuration.
+	 * @param string      $merchant_attr product_name | product_url.
+	 * @param string      $fallback      Value when no row resolves.
+	 *
+	 * @return string
+	 */
+	private function resolve_product_row( \WC_Product $product, Config $config, string $merchant_attr, string $fallback ): string {
+		$index = array_search( $merchant_attr, (array) $config->get_merchant_attributes(), true );
+		if ( false === $index ) {
+			return $fallback;
+		}
+
+		$types    = $config->get_type();
+		$wc_attrs = $config->get_attributes();
+		$defaults = $config->get_default();
+		$prefixes = $config->get_prefix();
+		$suffixes = $config->get_suffix();
+
+		$row = array(
+			'type'          => isset( $types[ $index ] ) ? $types[ $index ] : 'attribute',
+			'wc_attr'       => isset( $wc_attrs[ $index ] ) ? $wc_attrs[ $index ] : '',
+			'default'       => isset( $defaults[ $index ] ) ? $defaults[ $index ] : '',
+			'merchant_attr' => $merchant_attr,
+			'index'         => (int) $index,
+		);
+		if ( 'pattern' !== $row['type'] && '' === (string) $row['wc_attr'] ) {
+			return $fallback;
+		}
+
+		$value = $this->resolve_row_value(
+			$product,
+			$row,
+			$config,
+			isset( $prefixes[ $index ] ) ? (string) $prefixes[ $index ] : '',
+			isset( $suffixes[ $index ] ) ? (string) $suffixes[ $index ] : ''
+		);
+
+		return '' === $value ? $fallback : $value;
 	}
 
 	/**

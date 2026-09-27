@@ -496,6 +496,24 @@ class TaxonomyResolver {
 		foreach ( $terms as $term ) {
 			$names[] = $term->name;
 		}
+
+		// A variable parent's global attribute (pa_*) may be narrowed to the
+		// options that still have a sellable variation — same seam as the
+		// product-attribute path (CBT-639).
+		if ( 0 === strpos( $taxonomy, 'pa_' ) && $product->is_type( 'variable' ) ) {
+			$items = array();
+			foreach ( $terms as $term ) {
+				$items[] = array(
+					'name' => $term->name,
+					'slug' => $term->slug,
+				);
+			}
+			$kept = AttributeResolver::filter_parent_items( $items, $product, $taxonomy, $config );
+			if ( null !== $kept ) {
+				$names = $kept;
+			}
+		}
+
 		return implode( $separator, $names );
 	}
 

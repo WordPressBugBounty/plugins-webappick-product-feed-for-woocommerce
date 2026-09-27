@@ -142,6 +142,22 @@ class GroupedAttributeBuilder {
 	);
 
 	/**
+	 * Shipping extras Google ALSO accepts as standalone product attributes.
+	 *
+	 * Handling time exists both as a `shipping` sub-attribute and as the
+	 * top-level `min_handling_time` / `max_handling_time` attributes (Google
+	 * Merchant Center help 7388496: the sub-attributes win when both are
+	 * sent). Transit time and location ids exist ONLY as sub-attributes, so
+	 * they are never emitted on their own. When no shipping block receives
+	 * the extras, these rows render top-level instead of being dropped
+	 * (CBT-636, HelpScout #69238).
+	 *
+	 * @since 8.0.29
+	 * @var string[]
+	 */
+	private const SHIPPING_STANDALONE_EXTRAS = array( 'min_handling_time', 'max_handling_time' );
+
+	/**
 	 * Constructor — initializes group definitions for all supported channels.
 	 *
 	 * @since 8.0.0
@@ -199,18 +215,24 @@ class GroupedAttributeBuilder {
 		// stripped from the top level and nested into every aggregate
 		// shipping block instead (GoogleStructure removes them from
 		// mattributes; GoogleShipping::get_xml() re-emits them inside
-		// each <g:shipping>). Without an aggregate shipping mapping they
-		// simply don't render — same as V5.
+		// each <g:shipping>). Without a shipping block, transit/location
+		// don't render (V5 parity — Google has no standalone form) while
+		// handling time renders top-level (CBT-636, see below).
 		// Only for g:-namespaced channels — bing's raw unprefixed blocks
 		// can't host the g:-named extras, so those render flat (V5
 		// BingStructure parity).
-		$shipping_extras = array();
+		$shipping_extras    = array();
+		$standalone_extras  = array();
+		$shipping_block_set = false;
 		if ( isset( $aggregates['shipping'] ) && 0 === strpos( $aggregates['shipping']['wrapper'], 'g:' ) ) {
 			foreach ( $product_data as $attr => $value ) {
 				$base = ProductRepository::strip_dup_suffix( (string) $attr );
 				if ( isset( self::SHIPPING_NESTED_EXTRAS[ $base ] ) ) {
 					if ( '' !== $value && null !== $value ) {
 						$shipping_extras[ self::SHIPPING_NESTED_EXTRAS[ $base ] ] = $value;
+						if ( in_array( $base, self::SHIPPING_STANDALONE_EXTRAS, true ) ) {
+							$standalone_extras[ $base ] = $value;
+						}
 					}
 					unset( $product_data[ $attr ] );
 				}
@@ -357,7 +379,8 @@ class GroupedAttributeBuilder {
 					// g:-namespaced wrappers (google/facebook/pinterest),
 					// never bing's raw unprefixed blocks.
 					if ( 'shipping' === $base_attr && ! empty( $shipping_extras ) && 0 === strpos( $wrapper, 'g:' ) ) {
-						$block = array_merge( $block, $shipping_extras );
+						$block              = array_merge( $block, $shipping_extras );
+						$shipping_block_set = true;
 					}
 
 					if ( ! empty( $block ) ) {
@@ -378,6 +401,16 @@ class GroupedAttributeBuilder {
 		// get rendered as a wrapper containing whichever subs were set).
 		foreach ( array_keys( $group_buckets ) as $wrapper ) {
 			$flush_bucket( $wrapper );
+		}
+
+		// No shipping block took the extras (Shipping not mapped, mapped to
+		// a plain value, or no zone survived): handling time is still a valid
+		// standalone Google attribute — keep it instead of dropping it.
+		// Transit time / location ids have no standalone form and stay out.
+		if ( ! $shipping_block_set ) {
+			foreach ( $standalone_extras as $attr => $value ) {
+				$result[ $attr ] = $value;
+			}
 		}
 
 		return $result;
@@ -808,6 +841,22 @@ class GroupedAttributeBuilder {
 				'images_8',
 				'images_9',
 				'images_10',
+			),
+			// Repeatable video links (CBT-572): Google accepts up to 10
+			// video_link values. Video Link 1–10 work like Additional Image
+			// 1–10 — one element per non-empty numbered row; the base key keeps
+			// rendering a single element.
+			'g:video_link'            => array(
+				'video_link_1',
+				'video_link_2',
+				'video_link_3',
+				'video_link_4',
+				'video_link_5',
+				'video_link_6',
+				'video_link_7',
+				'video_link_8',
+				'video_link_9',
+				'video_link_10',
 			),
 			// Repeatable destination controls (CBT-666, owner 2026-09-25):
 			// one element per non-empty numbered row, e.g. Shopping_ads and

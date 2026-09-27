@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.28
+Stable tag: 8.0.29
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -469,20 +469,19 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.29 =
+* Added: Google Product Review feed — every review gets a title taken from the start of the review text (the first sentence, or about 70 characters cut at a word), because WooCommerce reviews have no title of their own. Merchant Center no longer reports the title as missing.
+* Added: Google Product Review feed — a Product MPN row. Google matches reviews to products by GTIN or by brand + MPN, so stores without barcodes (for example their own brand) can map MPN to the SKU together with the brand.
+* Fix: Google Product Review feed — the Product Title and Product URL rows show their names in the feed editor instead of "Select Attribute", and the values mapped to them are used in the feed.
+* Added: Google feeds can send up to 10 product videos. Video Link 1–10 work like Additional Image 1–10: one video URL per row, each exported as its own video_link.
+* Fix: Google feeds — Min/Max Handling Time are exported on their own when the feed has no Shipping block, instead of being left out. With a Shipping block they stay inside it.
+* Improved: with Remove out-of-stock products (CTX Feed Pro) on, a variable product exported as one row lists only the attribute options that still have a sellable variation — for example Sizes "Toddler, Small, Medium" when Large is sold out. Needs CTX Feed Pro 8.0.20.
+* Fix: editing a feed that was saved without an update interval now shows "Every 24 Hours", the schedule it actually runs on, instead of "Select interval".
+* Fix: the License screen asks you to paste your API key and points to My Account > License keys on webappick.com, and "Manage license key" opens that page.
+* Improved: the Import feed drop zone can be used with the keyboard.
+
 = Version 8.0.28 =
 * Added: Google feeds can send several destinations. Excluded Destination and Included Destination are now available as Excluded Destination 1–8 and Included Destination 1–8 on the Google Shopping, Google Local, Google Local Inventory and Google Shopping Action templates — one destination per row (for example Shopping_ads and Display_ads), each exported as its own tag. Existing feeds are unchanged.
 * Fix: Parent Title now falls back to the product's own title for simple and variable products instead of staying empty, so a feed that mixes variations and simple products can map Title to Parent Title.
 * Fix: multilingual stores (TranslatePress, WPML) — a title or any other product field used inside an attribute mapping or a dynamic attribute is now translated the same way as when it is mapped in its own row. Needs CTX Feed Pro 8.0.19.
 * Improved: on the Version Control page, updating CTX Feed Pro while the free plugin is also behind offers to update CTX Feed first and then Pro in one step.
-
-= Version 8.0.27 =
-* Important: if you use CTX Feed Pro, update it to Pro 8.0.17 as well. This release and Pro 8.0.17 belong together: with an older Pro version active, the Pro features pause and an update notice shows in the CTX Feed admin until Pro is updated.
-* Fix: prices are exported exactly as WooCommerce stores them. The Price and Rounded Price output types write the number with 2 decimals, a dot and no thousands separator (for example 173427.98) unless a number format is set on the Filters tab in CTX Feed Pro. Feeds that used to ship "16,980.00 HUF" or "1,099.90 USD" now ship a clean number.
-* Fix: dynamic-attribute conditions such as "price >= 1000" compare the plain number, so a thousands separator in the store settings no longer flips a rule. The Integer output type reads "16980.5" as 16980, not 16.
-* Fix: on the Filters tab, the Product status hint now says that an empty list sends published products only.
-* Improved: on a new Google feed, picking the Shipping attribute maps it to Shipping (Google Format) and adds editable rows for min/max transit time and min/max handling time; picking Shipping Label maps it to the product's Shipping Class. Existing feeds are not changed.
-* Fix: category names containing "&" no longer show as "&amp;" in the Product categories filter and in the category mapping list.
-* Fix: after a plugin such as Yoast SEO, Rank Math, ACF, WPML or Polylang is activated or deactivated, the value picker in the feed editor shows the updated set of fields right away instead of after the cache expires. Clear Cache also refreshes the picker on an open screen.
-* Fix: a feed left on a minute-based update interval from CTX Feed Pro returns to its hourly or daily schedule when Pro is no longer active.
-* Fix: a run that cannot succeed as configured (for example a Custom Template 2 feed while CTX Feed Pro is inactive) is marked failed at once with a single log line instead of being retried five times with smaller batches.
-* Improved: the Composite product price option on the Filters tab now saves and applies: Base price, or Base + components (CTX Feed Pro).
