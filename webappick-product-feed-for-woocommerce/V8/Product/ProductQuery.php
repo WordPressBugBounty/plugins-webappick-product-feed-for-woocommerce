@@ -220,14 +220,50 @@ class ProductQuery {
 			add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_exclude );
 		}
 
+		// Products with NO product type saved (imports, supplier syncs,
+		// migrations) load in WooCommerce as simple products, but the type
+		// argument above becomes a product_type tax_query that never matches
+		// them — so they silently vanished from every feed, and WooCommerce's
+		// own export skips them too. V5's "wp" query mode exported them as
+		// simple products (CBT-683, #69315: 3,064 of 4,346 products). When the
+		// feed includes simple products, widen the type clause to "one of the
+		// feed's types OR no type at all". Same single query: status, sort,
+		// language and category clauses are untouched. Each such product is
+		// then checked by Filter\TypelessProductFilter on the object the
+		// generation loop loads anyway.
+		// Only when the store HAS such products (an O(1) count check, below):
+		// every other store runs exactly the query it always ran, so feed
+		// generation time does not change for them.
+		$inject_typeless = null;
+		if ( in_array( 'simple', (array) ( $args['type'] ?? array() ), true )
+			&& TypelessProducts::exist( $args['status'] ?? 'publish' ) ) {
+			/**
+			 * Whether a feed that includes simple products also includes
+			 * products that have no product type saved (they load as simple
+			 * products in WooCommerce). Return false to skip them.
+			 *
+			 * @since 8.0.30
+			 *
+			 * @param bool   $include Include products without a product type. Default true.
+			 * @param Config $config  Feed configuration.
+			 */
+			if ( apply_filters( 'ctxfeed_include_typeless_products', true, $config ) ) {
+				$inject_typeless = array( __CLASS__, 'include_typeless_products' );
+				add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_typeless );
+			}
+		}
+
 		try {
 			$query       = new \WC_Product_Query( $args );
 			$product_ids = $query->get_products();
 		} finally {
-			// NEVER leak the closure into unrelated product queries — remove
-			// it even when the query throws.
+			// NEVER leak the closures into unrelated product queries — remove
+			// them even when the query throws.
 			if ( null !== $inject_exclude ) {
 				remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_exclude );
+			}
+			if ( null !== $inject_typeless ) {
+				remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_typeless );
 			}
 		}
 
@@ -291,6 +327,48 @@ class ProductQuery {
 
 		// @hook ctxfeed_product_ids
 		return apply_filters( 'ctxfeed_product_ids', $product_ids, $config );
+	}
+
+	/**
+	 * Widen WooCommerce's product_type clause to also match products that
+	 * have no product type saved (CBT-683).
+	 *
+	 * Hooked on `woocommerce_product_data_store_cpt_get_products_query` only
+	 * for the duration of {@see get_ids()}'s query. WooCommerce turns the
+	 * `type` argument into `{taxonomy: product_type, terms: [...]}`; each
+	 * such clause becomes `( that clause OR product_type NOT EXISTS )`.
+	 * Everything else in the query is left as it is.
+	 *
+	 * @since 8.0.30
+	 *
+	 * @param array $wp_query_args WP_Query args built by WooCommerce.
+	 * @return array
+	 */
+	public static function include_typeless_products( $wp_query_args ) {
+		if ( ! is_array( $wp_query_args ) || empty( $wp_query_args['tax_query'] ) || ! is_array( $wp_query_args['tax_query'] ) ) {
+			return $wp_query_args;
+		}
+
+		foreach ( $wp_query_args['tax_query'] as $key => $clause ) {
+			if ( ! is_array( $clause ) || ! isset( $clause['taxonomy'] ) || 'product_type' !== $clause['taxonomy'] ) {
+				continue;
+			}
+			$operator = isset( $clause['operator'] ) ? strtoupper( (string) $clause['operator'] ) : 'IN';
+			if ( 'IN' !== $operator ) {
+				continue;
+			}
+			// phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- Same product_type clause WooCommerce's data store builds, OR-ed with a NOT EXISTS on the same taxonomy.
+			$wp_query_args['tax_query'][ $key ] = array(
+				'relation' => 'OR',
+				$clause,
+				array(
+					'taxonomy' => 'product_type',
+					'operator' => 'NOT EXISTS',
+				),
+			);
+		}
+
+		return $wp_query_args;
 	}
 
 	/**
@@ -736,7 +814,7 @@ class ProductQuery {
 	 *
 	 * @return array|string Post status list or single status string.
 	 */
-	private function resolve_post_status( Config $config ) {
+	public static function resolve_post_status( Config $config ) {
 		$all_statuses    = array( 'publish', 'draft', 'pending', 'private' );
 		$selected        = (array) $config->get( 'post_status', array() );
 		$filter_mode_all = (array) $config->get( 'filter_mode', array() );

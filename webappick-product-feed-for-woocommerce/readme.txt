@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.29
+Stable tag: 8.0.30
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -469,6 +469,12 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.30 =
+* Fix: products that have no product type saved — often added by an import, a supplier sync or a migration — are included in feeds again as simple products, as they were in version 6. WooCommerce shows these products normally, but feeds (and WooCommerce's own product export) skipped them. A product WooCommerce cannot read properly is left out instead of breaking the feed. Stores without such products are not affected.
+* Improved: on the Version Control page, updating CTX Feed while a newer CTX Feed Pro is available offers to update both in one step, CTX Feed first and then Pro.
+* Fix: the performance dashboard REST API routes (/ctxfeed/v8/dashboard/…) no longer return a server error.
+* Fix: no PHP deprecation notice from the feed upload (FTP/SFTP) code on PHP 8.4 and newer.
+
 = Version 8.0.29 =
 * Added: Google Product Review feed — every review gets a title taken from the start of the review text (the first sentence, or about 70 characters cut at a word), because WooCommerce reviews have no title of their own. Merchant Center no longer reports the title as missing.
 * Added: Google Product Review feed — a Product MPN row. Google matches reviews to products by GTIN or by brand + MPN, so stores without barcodes (for example their own brand) can map MPN to the SKU together with the brand.
@@ -479,9 +485,3 @@ If your feed fails to generate:
 * Fix: editing a feed that was saved without an update interval now shows "Every 24 Hours", the schedule it actually runs on, instead of "Select interval".
 * Fix: the License screen asks you to paste your API key and points to My Account > License keys on webappick.com, and "Manage license key" opens that page.
 * Improved: the Import feed drop zone can be used with the keyboard.
-
-= Version 8.0.28 =
-* Added: Google feeds can send several destinations. Excluded Destination and Included Destination are now available as Excluded Destination 1–8 and Included Destination 1–8 on the Google Shopping, Google Local, Google Local Inventory and Google Shopping Action templates — one destination per row (for example Shopping_ads and Display_ads), each exported as its own tag. Existing feeds are unchanged.
-* Fix: Parent Title now falls back to the product's own title for simple and variable products instead of staying empty, so a feed that mixes variations and simple products can map Title to Parent Title.
-* Fix: multilingual stores (TranslatePress, WPML) — a title or any other product field used inside an attribute mapping or a dynamic attribute is now translated the same way as when it is mapped in its own row. Needs CTX Feed Pro 8.0.19.
-* Improved: on the Version Control page, updating CTX Feed Pro while the free plugin is also behind offers to update CTX Feed first and then Pro in one step.

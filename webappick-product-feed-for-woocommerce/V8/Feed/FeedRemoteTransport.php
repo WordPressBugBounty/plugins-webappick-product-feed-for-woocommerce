@@ -74,7 +74,7 @@ class FeedRemoteTransport {
 	 *
 	 * @return bool True on successful upload, false on skip / failure.
 	 */
-	public function export( string $feed_id, string $filepath, Config $config = null ): bool {
+	public function export( string $feed_id, string $filepath, ?Config $config = null ): bool {
 		if ( null === $config ) {
 			return false;
 		}

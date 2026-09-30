@@ -1,6 +1,12 @@
 CTX Feed — changelog archive
 The most recent releases are listed in readme.txt; this file carries the full history.
 
+= Version 8.0.28 =
+* Added: Google feeds can send several destinations. Excluded Destination and Included Destination are now available as Excluded Destination 1–8 and Included Destination 1–8 on the Google Shopping, Google Local, Google Local Inventory and Google Shopping Action templates — one destination per row (for example Shopping_ads and Display_ads), each exported as its own tag. Existing feeds are unchanged.
+* Fix: Parent Title now falls back to the product's own title for simple and variable products instead of staying empty, so a feed that mixes variations and simple products can map Title to Parent Title.
+* Fix: multilingual stores (TranslatePress, WPML) — a title or any other product field used inside an attribute mapping or a dynamic attribute is now translated the same way as when it is mapped in its own row. Needs CTX Feed Pro 8.0.19.
+* Improved: on the Version Control page, updating CTX Feed Pro while the free plugin is also behind offers to update CTX Feed first and then Pro in one step.
+
 = Version 8.0.27 =
 * Important: if you use CTX Feed Pro, update it to Pro 8.0.17 as well. This release and Pro 8.0.17 belong together: with an older Pro version active, the Pro features pause and an update notice shows in the CTX Feed admin until Pro is updated.
 * Fix: prices are exported exactly as WooCommerce stores them. The Price and Rounded Price output types write the number with 2 decimals, a dot and no thousands separator (for example 173427.98) unless a number format is set on the Filters tab in CTX Feed Pro. Feeds that used to ship "16,980.00 HUF" or "1,099.90 USD" now ship a clean number.

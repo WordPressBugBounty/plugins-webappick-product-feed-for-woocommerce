@@ -73,7 +73,7 @@ class DashboardEndpoint extends RestController {
 			array(
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'getOverview' ),
-				'permission_callback' => array( $this, 'permissionCheck' ),
+				'permission_callback' => array( $this, 'permission_check' ),
 			) 
 		);
 
@@ -84,7 +84,7 @@ class DashboardEndpoint extends RestController {
 			array(
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'getChannels' ),
-				'permission_callback' => array( $this, 'permissionCheck' ),
+				'permission_callback' => array( $this, 'permission_check' ),
 			) 
 		);
 
@@ -95,12 +95,15 @@ class DashboardEndpoint extends RestController {
 			array(
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'getChannelDetail' ),
-				'permission_callback' => array( $this, 'permissionCheck' ),
+				'permission_callback' => array( $this, 'permission_check' ),
 				'args'                => array(
 					'slug' => array(
 						'required'          => true,
 						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_title',
+						// WP_REST_Controller::sanitize_slug() takes the value only; passing
+						// sanitize_title directly handed it the request as the fallback
+						// title, so an empty value became the WP_REST_Request (CBT-677).
+						'sanitize_callback' => array( $this, 'sanitize_slug' ),
 					),
 				),
 			) 
@@ -113,7 +116,7 @@ class DashboardEndpoint extends RestController {
 			array(
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'getActivity' ),
-				'permission_callback' => array( $this, 'permissionCheck' ),
+				'permission_callback' => array( $this, 'permission_check' ),
 				'args'                => array(
 					'limit'   => array(
 						'default'           => 20,
@@ -128,7 +131,10 @@ class DashboardEndpoint extends RestController {
 					'channel' => array(
 						'default'           => '',
 						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_title',
+						// WP_REST_Controller::sanitize_slug() takes the value only; passing
+						// sanitize_title directly handed it the request as the fallback
+						// title, so an empty value became the WP_REST_Request (CBT-677).
+						'sanitize_callback' => array( $this, 'sanitize_slug' ),
 					),
 					'status'  => array(
 						'default' => '',
@@ -146,7 +152,7 @@ class DashboardEndpoint extends RestController {
 			array(
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'getMetrics' ),
-				'permission_callback' => array( $this, 'permissionCheck' ),
+				'permission_callback' => array( $this, 'permission_check' ),
 				'args'                => array(
 					'start_date'  => array(
 						'required'          => true,
@@ -161,7 +167,10 @@ class DashboardEndpoint extends RestController {
 					'channel'     => array(
 						'default'           => '',
 						'type'              => 'string',
-						'sanitize_callback' => 'sanitize_title',
+						// WP_REST_Controller::sanitize_slug() takes the value only; passing
+						// sanitize_title directly handed it the request as the fallback
+						// title, so an empty value became the WP_REST_Request (CBT-677).
+						'sanitize_callback' => array( $this, 'sanitize_slug' ),
 					),
 					'granularity' => array(
 						'default' => 'daily',
@@ -179,7 +188,7 @@ class DashboardEndpoint extends RestController {
 			array(
 				'methods'             => \WP_REST_Server::READABLE,
 				'callback'            => array( $this, 'getAlerts' ),
-				'permission_callback' => array( $this, 'permissionCheck' ),
+				'permission_callback' => array( $this, 'permission_check' ),
 			) 
 		);
 
@@ -191,7 +200,7 @@ class DashboardEndpoint extends RestController {
 			array(
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'generateAllFeeds' ),
-				'permission_callback' => array( $this, 'permissionCheck' ),
+				'permission_callback' => array( $this, 'permission_check' ),
 			) 
 		);
 
@@ -203,7 +212,7 @@ class DashboardEndpoint extends RestController {
 			array(
 				'methods'             => \WP_REST_Server::CREATABLE,
 				'callback'            => array( $this, 'dismissAlert' ),
-				'permission_callback' => array( $this, 'permissionCheck' ),
+				'permission_callback' => array( $this, 'permission_check' ),
 				'args'                => array(
 					'id' => array(
 						'required'          => true,
@@ -222,7 +231,7 @@ class DashboardEndpoint extends RestController {
 			array(
 				'methods'             => \WP_REST_Server::DELETABLE,
 				'callback'            => array( $this, 'refreshDashboard' ),
-				'permission_callback' => array( $this, 'permissionCheck' ),
+				'permission_callback' => array( $this, 'permission_check' ),
 			) 
 		);
 	}

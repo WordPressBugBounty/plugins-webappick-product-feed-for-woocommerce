@@ -63,6 +63,13 @@ class FilterServiceProvider extends ServiceProvider {
 		);
 
 		$container->register(
+			'filter.typeless',
+			function () {
+				return new TypelessProductFilter();
+			}
+		);
+
+		$container->register(
 			'filter.price',
 			function () {
 				return new PriceFilter();
@@ -105,6 +112,8 @@ class FilterServiceProvider extends ServiceProvider {
 	 * FilterManager with the final filter array.
 	 *
 	 * Filter order (cheap checks first) once the Pro engines are hooked:
+	 * 0. TypelessProductFilter (free, CBT-683 — no-op unless the store has
+	 *    products without a product type)
 	 * 1. ProductIdFilter    [Pro, before VisibilityFilter]
 	 * 2. StockFilter        [Pro, before VisibilityFilter]
 	 * 3. VisibilityFilter   (free defaults + Pro toggles)
@@ -116,7 +125,7 @@ class FilterServiceProvider extends ServiceProvider {
 	 * 9. ProductTypeFilter  [Pro plugin, via ctxfeed_product_filters]
 	 * 10. CustomFilter      [Pro plugin, via ctxfeed_product_filters]
 	 * 11. AdvanceFilter     [Pro plugin, appended last]
-	 * Free without Pro runs 3, 5, 7, 8 only.
+	 * Free without Pro runs 0, 3, 5, 7, 8 only.
 	 *
 	 * @since 8.0.0
 	 * @implements FLTR-FRD-10.2
@@ -138,6 +147,11 @@ class FilterServiceProvider extends ServiceProvider {
 			// the Pro Filters engine appends ProductTypeFilter, CustomFilter
 			// and — last, it resolves attribute values per row — AdvanceFilter
 			// (CBT-645). All through the ctxfeed_product_filters filter below.
+			// Products with no product type (CBT-683): a memoised boolean for
+			// every product on stores without them, a check on the loaded
+			// object for typeless ones — first, so a half-written import is
+			// out before any other filter calls its getters.
+			$container->resolve( 'filter.typeless' ),
 			$container->resolve( 'filter.visibility' ),
 			$container->resolve( 'filter.price' ),
 			$container->resolve( 'filter.tag' ),
