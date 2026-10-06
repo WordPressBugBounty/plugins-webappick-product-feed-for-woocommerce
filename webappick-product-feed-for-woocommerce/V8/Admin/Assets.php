@@ -148,6 +148,13 @@ class Assets {
 				'woocommerceActive' => class_exists( 'WooCommerce' ),
 				'canInstallPlugins' => current_user_can( 'install_plugins' ),
 			),
+			// Pro plugin active / installed-but-inactive / missing, with the
+			// activation and upload links the License page offers (CBT-686).
+			'pro_plugin'   => ProPlugin::state(),
+			// CTX Feed Pro prices known without a remote call (fresh copy,
+			// last webappick.com answer, or bundled); GET /pricing refreshes
+			// them (CBT-688).
+			'pro_pricing'  => ProPricing::snapshot(),
 		);
 
 		/**

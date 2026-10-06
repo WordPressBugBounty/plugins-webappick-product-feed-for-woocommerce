@@ -543,7 +543,10 @@ class StatusEndpoint extends RestController {
 			|| class_exists( 'WC_Aelia_CurrencySwitcher' )
 			|| class_exists( 'WOOMULTI_CURRENCY_F' )
 			|| class_exists( 'WOOMULTI_CURRENCY' )
-			|| function_exists( 'alg_get_current_currency_code' );
+			|| function_exists( 'alg_get_current_currency_code' )
+			|| class_exists( 'Yay_Currency\Helpers\Helper' )
+			|| function_exists( 'x_currency_singleton' )
+			|| $this->wcpay_multi_currency_in_use();
 		$items[]          = $this->item( 'Multi Currency Site', 'success', $is_multicurrency ? 'Yes' : 'No' );
 
 		// Active page-caching plugin. Green when CTX Feed auto-excludes the
@@ -970,6 +973,32 @@ class StatusEndpoint extends RestController {
 		}
 
 		return $out;
+	}
+
+	/**
+	 * WooPayments Multi-Currency switched on with a currency besides the
+	 * store currency (CBT-702). Options only — WooPayments active as a plain
+	 * payment gateway is not a multi-currency site.
+	 *
+	 * @since 8.0.31
+	 *
+	 * @return bool
+	 */
+	private function wcpay_multi_currency_in_use(): bool {
+		$feature = get_option( '_wcpay_feature_customer_multi_currency', '1' );
+		if ( ! function_exists( 'WC_Payments_Multi_Currency' ) || ! is_scalar( $feature ) || '1' !== (string) $feature ) {
+			return false;
+		}
+
+		$enabled = get_option( 'wcpay_multi_currency_enabled_currencies', array() );
+		$store   = function_exists( 'get_woocommerce_currency' ) ? strtoupper( (string) get_woocommerce_currency() ) : '';
+		foreach ( is_array( $enabled ) ? $enabled : array() as $code ) {
+			if ( is_string( $code ) && '' !== $code && strtoupper( $code ) !== $store ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**

@@ -8,6 +8,8 @@
 
 namespace CTXFeed\V8\Status;
 
+use CTXFeed\V8\Admin\PluginActionUrl;
+
 /**
  * An OLD CTX Feed Pro (< 8.0.0) beside this V8 Free bundles its own V5 engine,
  * so both engines hook feed generation at once and the site can break until
@@ -163,10 +165,9 @@ final class LegacyPro {
 
 			return array(
 				'label'  => __( 'Update CTX Feed Pro now', 'woo-feed' ),
-				'url'    => wp_nonce_url(
-					self_admin_url( 'update.php?action=upgrade-plugin&plugin=' . rawurlencode( $basename ) ),
-					'upgrade-plugin_' . $basename
-				),
+				// Raw URL — the notice and System status render it with React
+				// (wp_nonce_url()'s "&amp;" broke the link, CBT-687).
+				'url'    => PluginActionUrl::upgrade( $basename ),
 				'target' => '_self',
 			);
 		}

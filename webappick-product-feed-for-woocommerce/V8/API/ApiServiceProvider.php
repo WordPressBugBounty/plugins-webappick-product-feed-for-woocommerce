@@ -149,6 +149,13 @@ class ApiServiceProvider extends ServiceProvider {
 				return new OurPluginsEndpoint();
 			}
 		);
+
+		$container->register(
+			'api.pricing',
+			function () {
+				return new PricingEndpoint();
+			}
+		);
 	}
 
 	/**
@@ -181,6 +188,7 @@ class ApiServiceProvider extends ServiceProvider {
 		$ftp_test         = $container->resolve( 'api.ftp_test' );
 		$setup            = $container->resolve( 'api.setup' );
 		$our_plugins      = $container->resolve( 'api.our_plugins' );
+		$pricing          = $container->resolve( 'api.pricing' );
 
 		$endpoints = array(
 			'feed'             => $feed,
@@ -198,6 +206,7 @@ class ApiServiceProvider extends ServiceProvider {
 			'ftp_test'         => $ftp_test,
 			'setup'            => $setup,
 			'our_plugins'      => $our_plugins,
+			'pricing'          => $pricing,
 		);
 
 		add_action(

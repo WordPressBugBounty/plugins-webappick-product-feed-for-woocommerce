@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.30
+Stable tag: 8.0.31
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -314,6 +314,30 @@ Upgrade to [CTXFeed Pro](https://webappick.com/plugin/woocommerce-product-feed-p
 * <strong>[Disco – Dynamic Pricing & Discount Rules for WooCommerce](https://wordpress.org/plugins/disco/)
 * <strong>[Challan – PDF Invoice & Packing Slip for WooCommerce](https://wordpress.org/plugins/webappick-pdf-invoice-for-woocommerce/)
 
+== External services ==
+
+CTX Feed builds feeds on your own server; your products and feed files are not sent to WebAppick. The plugin contacts the services below only in the situations described. Like every WordPress HTTP request, each one also carries your site's address in the user-agent header.
+
+WebAppick (webappick.com), the plugin author — [Terms and conditions](https://webappick.com/terms-and-conditions/), [Privacy policy](https://webappick.com/privacy-policy/):
+
+* CTX Feed Pro prices: the Premium page, the CTX Feed Pro card in the side panel and the "Upgrade to Pro" buttons show current prices from webappick.com's WooCommerce Store API (https://webappick.com/wp-json/wc/store/v1/products). Requested only while an administrator has one of those CTX Feed screens open, at most once every 12 hours, and cached on your site. No data is sent.
+* News widget: the "CTX Feed" widget on the WordPress Dashboard lists the latest WebAppick blog posts (https://webappick.com/wp-json/wp/v2/posts). Requested when the Dashboard is shown, at most once a day. No data is sent.
+* Usage data (opt-in only): if an administrator allows it (the setup wizard, or CTX Feed → Settings → "Share anonymous diagnostics with CTX Feed"), the plugin sends usage data to https://track.webappick.com/api/ once a week — site name and address, the admin email addresses, the administrator's name, the store country, WordPress, PHP and server details, the lists of active and inactive plugins, the theme, the plugin version, the server's IP address, product, variation and category counts, and the saved feed configurations (feed settings including any FTP/SFTP host and user name; passwords are stored encrypted). Nothing is sent unless tracking is allowed, and it can be turned off in Settings at any time.
+* Deactivation feedback: when you deactivate CTX Feed or CTX Feed Pro from the Plugins page and choose a reason, the feedback form sends that reason and anything you type to https://track.webappick.com/api/ with the plugin, WordPress and PHP versions; "I'd rather not say" sends nothing. Only if usage data is allowed does it also include the site name and address, the admin email, your name and email, server details, the server's IP address, and the same product counts and saved feed configurations as the usage data (passwords removed).
+* Support requests: the Contact support form, the discount claim form and the contact form in the deactivation dialog email what you enter to WebAppick (support@webappick.com or sales@webappick.com) through your site's own mailer, with your site address and admin email. Contact support also attaches the system status report and, for the feed you select, its configuration and file.
+
+IP address lookup (icanhazip.com, operated by Cloudflare) — [Terms](https://www.cloudflare.com/website-terms/), [Privacy policy](https://www.cloudflare.com/privacypolicy/): used only while sending usage data or deactivation feedback, to read the server's public IP address. The request itself reveals that address to the service.
+
+Promotional notices (Bitbucket, api.bitbucket.org, operated by Atlassian) — [Terms](https://www.atlassian.com/legal/atlassian-customer-agreement), [Privacy policy](https://www.atlassian.com/legal/privacy-policy): the plugin reads a small list of WebAppick offers from https://api.bitbucket.org/2.0/snippets/woofeed/RLbyop/files/woo-feed-notice.json to show dismissible admin notices. Requested on wp-admin pages at most twice a day and cached. No data is sent.
+
+WordPress.org (api.wordpress.org, downloads.wordpress.org) — [Privacy policy](https://wordpress.org/about/privacy/): the "Our plugins" page and the plugin suggestions on Plugins → Add New read plugin details from the WordPress.org Plugins API; installing a suggested plugin, installing WooCommerce from the setup wizard, and installing another CTX Feed version from Version control download the plugin from downloads.wordpress.org. Only when you open those screens or click those buttons.
+
+Google and Meta product categories — Google: [Terms](https://policies.google.com/terms), [Privacy policy](https://policies.google.com/privacy); Meta: [Terms](https://www.facebook.com/terms.php), [Privacy policy](https://www.facebook.com/privacy/policy/): the category lists for category mapping ship with the plugin. They are downloaded again only when you click to update them: Google's product taxonomy from https://www.google.com/basepages/producttype/ (or a Google taxonomy URL you enter), and Meta's from https://www.facebook.com/products/categories/. No data is sent.
+
+Connection checks on System status — PayPal: [Terms](https://www.paypal.com/us/legalhub/paypal/useragreement-full), [Privacy policy](https://www.paypal.com/us/legalhub/paypal/privacy-full); WooCommerce.com (Automattic): [Terms](https://woocommerce.com/terms-conditions/), [Privacy policy](https://automattic.com/privacy/): when you open CTX Feed → System status, the plugin tests whether your server can make outgoing requests, like WooCommerce's own status report: a POST to https://www.paypal.com/cgi-bin/webscr (body cmd=_notify-validate) and a GET to https://woocommerce.com/wc-api/product-key-api?request=ping. No store data is sent.
+
+Your own FTP/SFTP server: if you turn on FTP or SFTP upload for a feed, the feed file is uploaded to the server and account you enter, after each generation.
+
 == Installation ==
 
 = Automatic Installation =
@@ -468,6 +492,18 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.31 =
+* Fix: no fatal error when Action Scheduler or Rank Math's settings API is not loaded — feed generation and scheduling check that they are available first, and a feed that cannot be scheduled is marked failed instead of breaking the page.
+* Added: stores using WooPayments Multi-Currency, YayCurrency or X-Currency get the Feed Currency field in the feed editor, and System Status reports them as a multi-currency site. Converting prices to the feed currency needs CTX Feed Pro 8.0.22.
+* Fix: when a feed currency is selected before choosing a template, the template's price rows use that currency (for example EUR) instead of the store currency.
+* Fix: Google category mappings saved by version 6 as full text paths are converted to Google category IDs once on update, and older untouched rows no longer block saving a mapping.
+* Security: FTP/SFTP passwords are never sent inside feed configurations.
+* Fix: the deactivation feedback form sends only what you agree to share.
+* Added: the License menu is always shown, with a page explaining how to get CTX Feed Pro when it is not installed.
+* Improved: the "Pro features" menu is now "Premium", with current CTX Feed Pro prices.
+* Fix: the "Activate" links on the Our Plugins page and the "Update CTX Feed Pro now" link for old Pro versions work again.
+* Improved: the External services section of this readme lists every remote service the plugin contacts.
 
 = Version 8.0.30 =
 * Fix: products that have no product type saved — often added by an import, a supplier sync or a migration — are included in feeds again as simple products, as they were in version 6. WooCommerce shows these products normally, but feeds (and WooCommerce's own product export) skipped them. A product WooCommerce cannot read properly is left out instead of breaking the feed. Stores without such products are not affected.

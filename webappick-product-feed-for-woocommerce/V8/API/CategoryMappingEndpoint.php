@@ -738,10 +738,26 @@ class CategoryMappingEndpoint extends RestController {
 
 		// Convert to V5 format for storage.
 		// Taxonomy channels only accept values from their list (CBT-609):
-		// validate the rows this request sent (existing rows were validated
-		// when they were saved; '' is the editor's clear marker).
+		// validate only the rows this request CHANGES ('' is the editor's
+		// clear marker). The editor sends every row, and a V5 mapping can
+		// still hold text the ID conversion could not match — re-sending an
+		// untouched legacy row must never block the save (CBT-693). A row
+		// moved to a different template is new to that list, so a template
+		// change re-validates everything.
 		if ( null !== $new_mappings ) {
-			$invalid = $this->invalid_taxonomy_values( $final_template, $new_mappings );
+			$to_validate = $new_mappings;
+			if ( $final_template === $current['template'] ) {
+				$stored      = (array) $current['mappings'];
+				$to_validate = array_filter(
+					$new_mappings,
+					static function ( $value, $cat_id ) use ( $stored ) {
+						return ! isset( $stored[ $cat_id ] ) || trim( (string) $stored[ $cat_id ] ) !== trim( (string) $value );
+					},
+					ARRAY_FILTER_USE_BOTH
+				);
+			}
+
+			$invalid = $this->invalid_taxonomy_values( $final_template, $to_validate );
 			if ( ! empty( $invalid ) ) {
 				return $this->invalid_taxonomy_error( $final_template, $invalid );
 			}
@@ -1322,6 +1338,21 @@ class CategoryMappingEndpoint extends RestController {
 	 */
 	public static function taxonomy_parse_cache_key( string $file_path ): string {
 		return self::TAXONOMY_PARSE_CACHE_PREFIX . sanitize_key( pathinfo( $file_path, PATHINFO_FILENAME ) );
+	}
+
+	/**
+	 * The active Google taxonomy (uploads override first, then the bundled
+	 * list), parsed and cached exactly as the category-mapping UI sees it.
+	 *
+	 * @since 8.0.31
+	 *
+	 * @return array Rows of [ 'id' => int, 'name' => string, 'label' => string ].
+	 */
+	public static function google_taxonomy_categories(): array {
+		$endpoint = new self();
+		$file     = $endpoint->google_taxonomy_path();
+
+		return file_exists( $file ) ? $endpoint->parse_taxonomy_file( $file, 'google' ) : array();
 	}
 
 	/**

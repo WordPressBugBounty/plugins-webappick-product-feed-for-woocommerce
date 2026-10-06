@@ -29,6 +29,7 @@
 namespace CTXFeed\V8\Status;
 
 use CTXFeed\V8\Admin\Notices;
+use CTXFeed\V8\Admin\ProPlugin;
 use CTXFeed\V8\Core\FeatureGate;
 use CTXFeed\V8\Product\ProductTypeSupport;
 
@@ -528,26 +529,29 @@ class NoticeProvider {
 			return array();
 		}
 
-		$activate_url = wp_nonce_url(
-			self_admin_url( 'plugins.php?action=activate&plugin=' . rawurlencode( self::PRO_BASENAME ) ),
-			'activate-plugin_' . self::PRO_BASENAME
-		);
+		// A raw (not HTML-escaped) URL: the notice slider puts it into the
+		// href as-is, and wp_nonce_url()'s "&amp;" made the link fail with
+		// "The link you followed has expired" (CBT-686). '' when the user
+		// may not activate plugins — the notice then has no button.
+		$activate_url = ProPlugin::activate_url( self::PRO_BASENAME );
 
-		return array(
-			array(
-				'id'          => 'ctxfeed_pro_inactive',
-				'severity'    => 'warning',
-				'priority'    => 20,
-				'title'       => __( 'Activate CTX Feed Pro', 'woo-feed' ),
-				'message'     => __( 'CTX Feed Pro is installed but not active. Activate it to unlock Pro features and channel integrations.', 'woo-feed' ),
-				'action'      => array(
-					'label'  => __( 'Activate CTX Feed Pro', 'woo-feed' ),
-					'url'    => $activate_url,
-					'target' => '_self',
-				),
-				'dismissible' => false,
-			),
+		$notice = array(
+			'id'          => 'ctxfeed_pro_inactive',
+			'severity'    => 'warning',
+			'priority'    => 20,
+			'title'       => __( 'Activate CTX Feed Pro', 'woo-feed' ),
+			'message'     => __( 'CTX Feed Pro is installed but not active. Activate it to unlock Pro features and channel integrations.', 'woo-feed' ),
+			'dismissible' => false,
 		);
+		if ( '' !== $activate_url ) {
+			$notice['action'] = array(
+				'label'  => __( 'Activate CTX Feed Pro', 'woo-feed' ),
+				'url'    => $activate_url,
+				'target' => '_self',
+			);
+		}
+
+		return array( $notice );
 	}
 
 	/**

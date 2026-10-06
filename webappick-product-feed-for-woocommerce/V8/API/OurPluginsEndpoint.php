@@ -17,6 +17,8 @@
 
 namespace CTXFeed\V8\API;
 
+use CTXFeed\V8\Admin\PluginActionUrl;
+
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -279,10 +281,9 @@ class OurPluginsEndpoint extends RestController {
 
 			$activate_url = '';
 			if ( $is_installed && ! $is_active ) {
-				$activate_url = wp_nonce_url(
-					self_admin_url( 'plugins.php?action=activate&plugin=' . rawurlencode( $file ) ),
-					'activate-plugin_' . $file
-				);
+				// Raw URL — the card's href (wp_nonce_url()'s "&amp;" broke
+				// the Activate button, CBT-687).
+				$activate_url = PluginActionUrl::activate( $file );
 			}
 
 			$state[ $slug ] = array(

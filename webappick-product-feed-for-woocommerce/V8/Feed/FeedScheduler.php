@@ -407,6 +407,7 @@ class FeedScheduler {
 	 * @return bool True once generation has run (sync) or been scheduled (async).
 	 * @throws \Throwable On any product-resolution or synchronous-generation
 	 *                    failure; the caller releases the lock and re-throws.
+	 * @throws \RuntimeException When the Action Scheduler API is not loaded (CBT-699).
 	 */
 	private function run_generation( string $feed_name, Config $config, string $trigger = 'manual' ): bool {
 		$query = new ProductQuery();
@@ -591,6 +592,10 @@ class FeedScheduler {
 
 		// Async path: schedule via Action Scheduler for large catalogs.
 		// @implements FEED-FRD-3.1.
+		if ( ! $this->scheduler_has( 'as_schedule_single_action' ) ) {
+			// The wrapping catch marks the feed failed and releases the lock.
+			throw new \RuntimeException( 'Action Scheduler is not available — is WooCommerce active?' );
+		}
 		as_schedule_single_action(
 			time(),
 			self::GENERATE_ACTION,
@@ -630,6 +635,10 @@ class FeedScheduler {
 	 * @return void
 	 */
 	public function schedule_next_or_finalize( string $feed_name, int $offset, int $batch_size, int $total, int $next_batch_size = 0 ): void {
+		if ( ! $this->scheduler_has( 'as_schedule_single_action' ) ) {
+			return;
+		}
+
 		$next_offset = $offset + $batch_size;
 
 		// Use adaptive size if provided, otherwise keep current. @implements FEED-FRD-11.3.
@@ -695,6 +704,10 @@ class FeedScheduler {
 	 * @return void
 	 */
 	public function schedule_recurring( string $feed_name, int $interval ): void {
+		if ( ! $this->scheduler_has( 'as_unschedule_all_actions', 'as_schedule_recurring_action' ) ) {
+			return;
+		}
+
 		// Cancel any existing recurring schedule for this feed first.
 		as_unschedule_all_actions( self::RECURRING_ACTION, array( 'feed_name' => $feed_name ), self::GROUP );
 
@@ -740,9 +753,11 @@ class FeedScheduler {
 	 * @return void
 	 */
 	public function cancel( string $feed_name ): void {
-		as_unschedule_all_actions( self::GENERATE_ACTION, array( 'feed_name' => $feed_name ), self::GROUP );
-		as_unschedule_all_actions( self::FINALIZE_ACTION, array( 'feed_name' => $feed_name ), self::GROUP );
-		as_unschedule_all_actions( self::RECURRING_ACTION, array( 'feed_name' => $feed_name ), self::GROUP );
+		if ( $this->scheduler_has( 'as_unschedule_all_actions' ) ) {
+			as_unschedule_all_actions( self::GENERATE_ACTION, array( 'feed_name' => $feed_name ), self::GROUP );
+			as_unschedule_all_actions( self::FINALIZE_ACTION, array( 'feed_name' => $feed_name ), self::GROUP );
+			as_unschedule_all_actions( self::RECURRING_ACTION, array( 'feed_name' => $feed_name ), self::GROUP );
+		}
 
 		// Release generation lock and clear batch history.
 		if ( $this->batch_calculator ) {
@@ -756,6 +771,28 @@ class FeedScheduler {
 		// FeedGenerator (e.g. delete_feed before any generation).
 		$query = new ProductQuery();
 		$query->clear_snapshot( $feed_name );
+	}
+
+	/**
+	 * Whether the given Action Scheduler functions are loaded (CBT-699).
+	 *
+	 * Action Scheduler ships with WooCommerce; with no provider loaded an
+	 * unguarded as_*() call is a site fatal. Owner rule: every third-party
+	 * call is existence-checked in its own code path.
+	 *
+	 * @since 8.0.31
+	 *
+	 * @param string ...$functions Function names the caller is about to use.
+	 * @return bool
+	 */
+	private function scheduler_has( string ...$functions ): bool {
+		foreach ( $functions as $function ) {
+			if ( ! function_exists( $function ) ) {
+				Logger::error( "Action Scheduler is not available ({$function} missing) — is WooCommerce active? Feed scheduling skipped." );
+				return false;
+			}
+		}
+		return true;
 	}
 
 	/**
@@ -839,6 +876,9 @@ class FeedScheduler {
 	 * @return void
 	 */
 	public function cancel_recurring( string $feed_name ): void {
+		if ( ! $this->scheduler_has( 'as_unschedule_all_actions' ) ) {
+			return;
+		}
 		as_unschedule_all_actions( self::RECURRING_ACTION, array( 'feed_name' => $feed_name ), self::GROUP );
 	}
 
@@ -1578,6 +1618,10 @@ class FeedScheduler {
 				$lock_holder = $this->batch_calculator->get_lock_holder();
 				Logger::info( "Generation queued — lock held by {$lock_holder}: {$feed_name}" );
 
+				if ( ! $this->scheduler_has( 'as_schedule_single_action' ) ) {
+					return;
+				}
+
 				// Re-queue: try again in 60 seconds.
 				as_schedule_single_action(
 					time() + 60,
@@ -1865,6 +1909,10 @@ class FeedScheduler {
 			$this->feed_logger->flush( $feed_name );
 		}
 
+		if ( ! $this->scheduler_has( 'as_schedule_single_action' ) ) {
+			return false; // No retry possible — the caller fails the run and releases the lock.
+		}
+
 		// Refresh the lock so it survives until the retry runs, then schedule the
 		// SAME offset with the smaller size in a fresh request.
 		if ( $this->batch_calculator ) {
@@ -2081,6 +2129,9 @@ class FeedScheduler {
 	 * @return bool
 	 */
 	protected function feed_has_live_actions( string $feed_name ): bool {
+		if ( ! $this->scheduler_has( 'as_get_scheduled_actions' ) ) {
+			return true; // Cannot tell — assume alive rather than double-schedule.
+		}
 		foreach ( array( self::GENERATE_ACTION, self::FINALIZE_ACTION ) as $hook ) {
 			foreach ( array( 'pending', 'in-progress' ) as $status ) {
 				try {
@@ -2196,6 +2247,9 @@ class FeedScheduler {
 	 * @return int Action id, or 0 when none pending for this feed.
 	 */
 	private function next_pending_action_id( string $feed_name ): int {
+		if ( ! $this->scheduler_has( 'as_get_scheduled_actions' ) || ! class_exists( '\ActionScheduler_Store' ) ) {
+			return 0;
+		}
 		foreach ( array( self::GENERATE_ACTION, self::FINALIZE_ACTION ) as $hook ) {
 			$ids = as_get_scheduled_actions(
 				array(

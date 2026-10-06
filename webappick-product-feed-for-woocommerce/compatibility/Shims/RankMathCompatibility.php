@@ -109,6 +109,18 @@ class RankMathCompatibility {
 	}
 
 	/**
+	 * Whether Rank Math's settings API (RankMath\Helper::get_settings) is
+	 * loaded — never assume it from the RankMath class alone (CBT-699).
+	 *
+	 * @since 8.0.31
+	 *
+	 * @return bool
+	 */
+	private static function has_settings_api(): bool {
+		return class_exists( Helper::class ) && method_exists( Helper::class, 'get_settings' );
+	}
+
+	/**
 	 * Get RankMath SEO title.
 	 *
 	 * @param string      $title   Current title value.
@@ -129,9 +141,9 @@ class RankMathCompatibility {
 		$rank_title = get_post_meta( $product->get_id(), 'rank_math_title', true );
 
 		if ( empty( $rank_title ) ) {
-			$title_format = Helper::get_settings( 'titles.pt_product_title' );
+			$title_format = self::has_settings_api() ? Helper::get_settings( 'titles.pt_product_title' ) : '';
 			$title_format = $title_format ? $title_format : '%title%';
-			$sep          = Helper::get_settings( 'titles.title_separator' );
+			$sep          = self::has_settings_api() ? Helper::get_settings( 'titles.title_separator' ) : '';
 
 			$rank_title = str_replace( '%title%', $product->get_title(), $title_format );
 			$rank_title = str_replace( '%sep%', $sep, $rank_title );
@@ -161,7 +173,7 @@ class RankMathCompatibility {
 		}
 
 		$rank_description = get_post_meta( $product->get_id(), 'rank_math_description', true );
-		$desc_format      = Helper::get_settings( 'titles.pt_post_description' );
+		$desc_format      = self::has_settings_api() ? Helper::get_settings( 'titles.pt_post_description' ) : '';
 
 		if ( empty( $rank_description ) ) {
 			if ( ! empty( $desc_format ) && strpos( (string) $desc_format, 'excerpt' ) !== false ) {

@@ -149,6 +149,18 @@ class MigrationServiceProvider extends ServiceProvider {
 			} 
 		);
 
+		// One-time upgrade sweep (CBT-693): V5 full-text Google category
+		// paths in saved category mappings → Google taxonomy IDs. Fired by
+		// CTXFeed_Installer::check_version on the first request after an
+		// update (or first install over V5 data); the converter flags itself
+		// done so later updates skip it.
+		add_action(
+			'woo_feed_plugin_updated',
+			static function () {
+				( new CategoryMappingIdConverter() )->run();
+			}
+		);
+
 		/**
 		 * Fires after all migration services have been booted and wired.
 		 *

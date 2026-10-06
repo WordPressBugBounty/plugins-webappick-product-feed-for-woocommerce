@@ -144,6 +144,126 @@ class CurrencyCompatibilityProvider {
 			return $currencies;
 		}
 
+		// YayCurrency (CBT-703).
+		$currencies = $this->yay_currencies();
+		if ( ! empty( $currencies ) ) {
+			return $currencies;
+		}
+
+		// X-Currency (CBT-703).
+		$currencies = $this->x_currency_currencies();
+		if ( ! empty( $currencies ) ) {
+			return $currencies;
+		}
+
+		// WooPayments Multi-Currency (CBT-702) — last, so a dedicated switcher wins.
+		return $this->wcpay_currencies();
+	}
+
+	/**
+	 * YayCurrency currencies (code => code), store default first.
+	 *
+	 * Reads Yay's own `yay-currency-manage` posts (title = currency code)
+	 * READ-ONLY. Yay's Helper::get_currencies_post_type() is deliberately not
+	 * used: it deletes duplicate currency posts as a side effect, which an
+	 * admin dropdown must never trigger (CBT-703).
+	 *
+	 * @since 8.0.31
+	 *
+	 * @return array
+	 */
+	private function yay_currencies(): array {
+		if ( ! class_exists( 'Yay_Currency\Helpers\Helper' ) || ! function_exists( 'get_posts' ) ) {
+			return array();
+		}
+
+		// phpcs:disable WordPressVIPMinimum.Functions.RestrictedFunctions.get_posts_get_posts, WordPressVIPMinimum.Performance.NoPaging.posts_per_page_posts_per_page -- Enumerates the handful of YayCurrency definition posts (never product data) for the admin currency dropdown; paginating would drop currencies. Admin-only, off the feed batch path.
+		$posts = get_posts(
+			array(
+				'posts_per_page' => -1,
+				'post_type'      => 'yay-currency-manage',
+				'post_status'    => 'publish',
+				'orderby'        => 'menu_order',
+				'order'          => 'ASC',
+			)
+		);
+		// phpcs:enable WordPressVIPMinimum.Functions.RestrictedFunctions.get_posts_get_posts, WordPressVIPMinimum.Performance.NoPaging.posts_per_page_posts_per_page
+
+		$currencies = array();
+		foreach ( is_array( $posts ) ? $posts : array() as $post ) {
+			$code = isset( $post->post_title ) ? strtoupper( trim( (string) $post->post_title ) ) : '';
+			if ( '' !== $code ) {
+				$currencies[ $code ] = $code;
+			}
+		}
+
 		return $currencies;
+	}
+
+	/**
+	 * X-Currency active currencies (code => code), base currency first.
+	 *
+	 * @since 8.0.31
+	 *
+	 * @return array
+	 */
+	private function x_currency_currencies(): array {
+		if ( ! function_exists( 'x_currency_singleton' ) || ! class_exists( 'XCurrency\App\Repositories\CurrencyRepository' ) ) {
+			return array();
+		}
+
+		$currencies = array();
+		try {
+			if ( function_exists( 'x_currency_base_code' ) ) {
+				$base = strtoupper( trim( (string) x_currency_base_code() ) );
+				if ( '' !== $base ) {
+					$currencies[ $base ] = $base;
+				}
+			}
+
+			$repository = x_currency_singleton( 'XCurrency\App\Repositories\CurrencyRepository' );
+			$active     = is_object( $repository ) && method_exists( $repository, 'get' ) ? $repository->get() : array();
+			foreach ( is_iterable( $active ) ? $active : array() as $currency ) {
+				$code = is_object( $currency ) && isset( $currency->code ) ? strtoupper( trim( (string) $currency->code ) ) : '';
+				if ( '' !== $code ) {
+					$currencies[ $code ] = $code;
+				}
+			}
+		} catch ( \Throwable $e ) {
+			return array();
+		}
+
+		return $currencies;
+	}
+
+	/**
+	 * Enabled WooPayments Multi-Currency currencies (code => code), or an
+	 * empty array when its Multi-Currency feature is off or only the store
+	 * currency is enabled (WooPayments active as a payment gateway only).
+	 *
+	 * @since 8.0.31
+	 *
+	 * @return array
+	 */
+	private function wcpay_currencies(): array {
+		$feature = get_option( '_wcpay_feature_customer_multi_currency', '1' );
+		if ( ! function_exists( 'WC_Payments_Multi_Currency' ) || ! is_scalar( $feature ) || '1' !== (string) $feature ) {
+			return array();
+		}
+
+		try {
+			$mc      = \WC_Payments_Multi_Currency();
+			$enabled = is_object( $mc ) && method_exists( $mc, 'get_enabled_currencies' ) ? $mc->get_enabled_currencies() : array();
+		} catch ( \Throwable $e ) {
+			return array();
+		}
+
+		if ( ! is_array( $enabled ) || count( $enabled ) < 2 ) {
+			return array();
+		}
+
+		$codes = array_map( 'strval', array_keys( $enabled ) );
+
+		return array_combine( $codes, $codes );
 	}
 }

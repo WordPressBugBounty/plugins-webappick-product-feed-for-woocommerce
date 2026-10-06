@@ -14,6 +14,8 @@
 
 namespace CTXFeed\V8\API;
 
+use CTXFeed\V8\Utility\Redactor;
+
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -539,7 +541,8 @@ class SupportEndpoint extends RestController {
 
 	/**
 	 * Recursively blank credential-carrying keys before a config leaves the
-	 * site (FTP/SFTP passwords live inside feedrules).
+	 * site (FTP/SFTP passwords live inside feedrules). Shared with the usage
+	 * data / deactivation feedback via Utility\Redactor (CBT-690).
 	 *
 	 * @since 8.0.14
 	 *
@@ -547,17 +550,7 @@ class SupportEndpoint extends RestController {
 	 * @return array
 	 */
 	private function redact_credentials( array $data ): array {
-		foreach ( $data as $key => $value ) {
-			if ( is_array( $value ) ) {
-				$data[ $key ] = $this->redact_credentials( $value );
-				continue;
-			}
-			if ( is_string( $key ) && preg_match( '/password|secret|api_key|apikey/i', $key ) && '' !== (string) $value ) {
-				$data[ $key ] = '(redacted)';
-			}
-		}
-
-		return $data;
+		return Redactor::credentials( $data );
 	}
 
 	/**

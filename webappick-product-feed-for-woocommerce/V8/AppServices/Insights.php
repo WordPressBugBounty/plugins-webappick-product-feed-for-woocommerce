@@ -16,6 +16,7 @@ namespace CTXFeed\AppServices;
 use Exception;
 use WP_Theme;
 use WP_User;
+use CTXFeed\V8\Utility\Redactor;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	die();
@@ -354,6 +355,13 @@ class Insights {
 		$result = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $wpdb->options WHERE option_name LIKE %s;", 'wf_feed_%' ), 'ARRAY_A' );
 		if ( ! is_array( $result ) ) {
 			$result = array();
+		}
+		// Never send FTP/SFTP passwords (or other credentials) inside the
+		// feed configurations — the row shape is kept (CBT-690).
+		foreach ( $result as $i => $row ) {
+			if ( is_array( $row ) && isset( $row['option_value'] ) ) {
+				$result[ $i ]['option_value'] = Redactor::stored_value( $row['option_value'] );
+			}
 		}
 		$catCount = wp_count_terms(
 			array(
@@ -945,14 +953,64 @@ class Insights {
 			wp_send_json_error( esc_html__( 'Invalid Request', 'woo-feed' ) );
 			wp_die();
 		}
+
+		$reason_id   = isset( $_REQUEST['reason_id'] ) && ! empty( $_REQUEST['reason_id'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['reason_id'] ) ) : '';
+		$reason_info = isset( $_REQUEST['reason_info'] ) ? trim( sanitize_textarea_field( wp_unslash( $_REQUEST['reason_info'] ) ) ) : '';
+		$plugin_name = $this->resolve_submission_plugin_name( isset( $_REQUEST['which_plugin'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['which_plugin'] ) ) : '' );
+
+		// "I'd rather not say": nothing leaves the site (CBT-691). The dialog
+		// no longer submits it; this also covers an older cached dialog.
+		if ( 'no-comment' === $reason_id ) {
+			wp_send_json_success();
+			wp_die();
+		}
+
+		// Without the usage-data opt-in, only the answer is sent — no site,
+		// person, IP or feed data, and no IP lookup (CBT-691, wordpress.org
+		// guideline 7). Every field of the full payload is still present,
+		// empty, so the tracking server sees the same shape (owner request).
+		// Empty strings, not empty arrays: a form-encoded body drops `[]`.
+		// Opted-in sites send the full set below (owner choice).
+		if ( ! $this->is_tracking_allowed() ) {
+			$this->client->send_request(
+				array(
+					'hash'          => $this->client->getHash(),
+					'reason_id'     => $reason_id,
+					'reason_info'   => $reason_info,
+					'plugin'        => $plugin_name,
+					'site'          => '',
+					'url'           => '',
+					'admin_email'   => '',
+					'user_email'    => '',
+					'user_name'     => '',
+					'first_name'    => '',
+					'last_name'     => '',
+					'server'        => '',
+					'software'      => '',
+					'php_version'   => phpversion(),
+					'mysql_version' => '',
+					'wp'            => '',
+					'wp_version'    => get_bloginfo( 'version' ),
+					'locale'        => '',
+					'multisite'     => '',
+					'ip_address'    => '',
+					'version'       => $this->client->getProjectVersion(),
+					'extra'         => '',
+				),
+				'reason'
+			);
+			wp_send_json_success();
+			wp_die();
+		}
+
 		$current_user = wp_get_current_user();
 		global $wpdb;
 		// @TODO remove deprecated data after server update
 		$data = array(
 			'hash'          => $this->client->getHash(),
-			'reason_id'     => isset( $_REQUEST['reason_id'] ) && ! empty( $_REQUEST['reason_id'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['reason_id'] ) ) : '',
-			'reason_info'   => isset( $_REQUEST['reason_info'] ) ? trim( sanitize_textarea_field( wp_unslash( $_REQUEST['reason_info'] ) ) ) : '',
-			'plugin'        => $this->resolve_submission_plugin_name( isset( $_REQUEST['which_plugin'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['which_plugin'] ) ) : '' ),
+			'reason_id'     => $reason_id,
+			'reason_info'   => $reason_info,
+			'plugin'        => $plugin_name,
 			'site'          => $this->__get_site_name(),
 			'url'           => esc_url( home_url() ),
 			'admin_email'   => get_option( 'admin_email' ),
@@ -1133,7 +1191,7 @@ class Insights {
 				<div class="ctxf-head">
 					<div class="ctxf-head-tx">
 						<h3 class="ctxf-title"><?php esc_html_e( 'If you have a moment, please let us know why you are deactivating', 'woo-feed' ); ?></h3>
-						<p class="ctxf-sub"><?php esc_html_e( 'Anonymous, and it takes one click.', 'woo-feed' ); ?></p>
+						<p class="ctxf-sub"><?php esc_html_e( 'Takes one click. Only your answer is sent, unless you share diagnostics with CTX Feed.', 'woo-feed' ); ?></p>
 					</div>
 					<button type="button" class="ctxf-x" data-close aria-label="<?php esc_attr_e( 'Close', 'woo-feed' ); ?>"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg></button>
 				</div>
@@ -1363,8 +1421,9 @@ class Insights {
 							$modal.find('.ctxf-submit-deact').prop('disabled', !$modal.find('input[name="ctxf-reason"]:checked').length);
 						})
 						.on('click', '.ctxf-skip', function (e) {
+							// "I'd rather not say" sends nothing — just deactivate (CBT-691).
 							e.preventDefault();
-							ajaxSubmit({ reason_id: 'no-comment', reason_info: '<?php echo esc_js( __( 'I rather wouldn\'t say', 'woo-feed' ) ); ?>' }, $(this), deactivateLink);
+							window.location.href = deactivateLink;
 						})
 						.on('click', '.ctxf-submit-deact', function (e) {
 							e.preventDefault();
