@@ -108,8 +108,8 @@ class Cache {
 		$deleted = $wpdb->query(
 			$wpdb->prepare(
 				"DELETE FROM {$wpdb->options} WHERE option_name LIKE %s OR option_name LIKE %s",
-				'_transient_' . self::PREFIX . '%',
-				'_transient_timeout_' . self::PREFIX . '%'
+				$wpdb->esc_like( '_transient_' . self::PREFIX ) . '%',
+				$wpdb->esc_like( '_transient_timeout_' . self::PREFIX ) . '%'
 			)
 		);
 

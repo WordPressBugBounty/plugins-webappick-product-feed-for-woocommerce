@@ -97,12 +97,15 @@ class FeedRemoteTransport {
 			return false;
 		}
 
-		// Decrypt stored password.
+		// Read the stored password. A value that no longer decrypts (site
+		// moved, security keys changed) used to become '' and the upload
+		// logged in with an EMPTY password; a V5 plaintext value did the
+		// same after the update (CBT-708).
 		$encrypted_password = (string) $config->get( 'ftppassword', '' );
-		$password           = '';
-		if ( '' !== $encrypted_password ) {
-			$encryptor = new Encryptor();
-			$password  = $encryptor->decrypt( $encrypted_password );
+		$password           = ( new Encryptor() )->reveal_password( $encrypted_password );
+		if ( null === $password ) {
+			$this->log_error( $feed_id, 'FTP export skipped — the saved FTP/SFTP password can no longer be read on this site (the site moved or its security keys changed). Re-enter it in Edit feed → FTP / SFTP and save.' );
+			return false;
 		}
 
 		$protocol = 'sftp' === $config->get( 'ftporsftp', 'ftp' ) ? 'sftp' : 'ftp';
@@ -139,7 +142,8 @@ class FeedRemoteTransport {
 			}
 			return $this->upload_sftp( $feed_id, $host, $user, $password, $port, $filepath, $remote_file, $path );
 		} catch ( \Throwable $e ) {
-			$message = sprintf( 'FTP upload error (%s): %s', $protocol, $e->getMessage() );
+			// Never let the password reach a log, whatever produced the text (CBT-708).
+			$message = sprintf( 'FTP upload error (%s): %s', $protocol, self::mask( $e->getMessage(), array( $password, $encrypted_password ) ) );
 			Logger::error(
 				$message,
 				array(
@@ -333,9 +337,15 @@ class FeedRemoteTransport {
 		$ok        = false;
 		$exception = null;
 		try {
-			$sftp_conn = new SFTPConnection( $host, $port );
+			// Trust on first use (CBT-711): a remembered server key must
+			// match before the password is sent.
+			$known     = \CTXFeed\V8\Utility\FTP\SftpHostKeys::get( $host, $port );
+			$sftp_conn = new SFTPConnection( $host, $port, '' !== $known ? $known : false );
 			$sftp_conn->login( $user, $password );
 			$ok = $sftp_conn->upload_file( $local_file, $remote_file, $path );
+			if ( $ok && '' === $known ) {
+				\CTXFeed\V8\Utility\FTP\SftpHostKeys::remember( $host, $port, $sftp_conn->get_fingerprint() );
+			}
 		} catch ( \Throwable $e ) {
 			$exception = $e;
 		} finally {
@@ -494,5 +504,25 @@ class FeedRemoteTransport {
 		if ( $this->feed_logger ) {
 			$this->feed_logger->error( $feed_id, $message );
 		}
+	}
+
+	/**
+	 * Replace every occurrence of the given secrets in a message.
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string   $message Message.
+	 * @param string[] $secrets Secrets ('' entries ignored).
+	 * @return string
+	 */
+	public static function mask( string $message, array $secrets ): string {
+		foreach ( $secrets as $secret ) {
+			$secret = (string) $secret;
+			if ( strlen( $secret ) >= 3 ) {
+				$message = str_replace( array_unique( array( $secret, function_exists( 'esc_attr' ) ? esc_attr( $secret ) : $secret ) ), '[redacted]', $message );
+			}
+		}
+
+		return $message;
 	}
 }

@@ -53,26 +53,39 @@ class TXTTemplate implements TemplateInterface {
 	public function render_header( Config $config ): string {
 		$attributes = $config->get( 'attributes', array() );
 
-		$delimiter = $this->effective_delimiter( $config );
+		return $this->render_columns( array_keys( $attributes ), $config );
+	}
+
+	/**
+	 * Render header column names exactly like a data row: the CONFIGURED
+	 * delimiter and enclosure (CBT-696 — the generator's header used the
+	 * hardcoded tab of get_delimiter(), so a ";" feed got a tab header over
+	 * ";" rows). Raw join, never fputcsv quoting (TMPL-FRD-4.5).
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string[] $columns Column names.
+	 * @param Config   $config  Feed configuration.
+	 * @return string Header line (no line terminator).
+	 */
+	public function render_columns( array $columns, Config $config ): string {
 		$enclosure = $this->effective_enclosure( $config );
 
 		return implode(
-			$delimiter,
+			$this->effective_delimiter( $config ),
 			array_map(
 				function ( $name ) use ( $enclosure ) {
 					return $this->enclose( (string) $name, $enclosure );
 				},
-				array_keys( $attributes )
+				$columns
 			)
 		);
 	}
 
 	/**
-	 * Get the delimiter for header assembly.
-	 *
-	 * FeedGenerator::build_csv_header probes get_delimiter() to join
-	 * the mapped header names — without this, TXT headers fell back to
-	 * COMMA-join while rows are tab-joined, misaligning every column.
+	 * Legacy tab delimiter. Not used for the TXT header since CBT-696 —
+	 * FeedGenerator::build_csv_header() renders it via render_columns() so
+	 * it follows the configured delimiter like the rows.
 	 *
 	 * @since 8.0.0
 	 *

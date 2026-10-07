@@ -352,7 +352,7 @@ class CSVTemplate implements TemplateInterface {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Intentional use of php://temp for CSV formatting.
 		$stream = fopen( 'php://temp', 'r+' );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fputcsv, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fputcsv -- php://temp stream (no filesystem write); produces the feed file's CSV escaping, which is the product.
-		fputcsv( $stream, $fields, $delimiter, $enclosure );
+		fputcsv( $stream, $fields, $delimiter, $enclosure, '\\' ); // Explicit escape: PHP 8.4 deprecates relying on the default (CBT-719); same output.
 		rewind( $stream );
 		$line = rtrim( stream_get_contents( $stream ), "\r\n" );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closing php://temp stream.

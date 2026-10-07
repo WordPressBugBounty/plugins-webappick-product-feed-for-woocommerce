@@ -3561,7 +3561,6 @@ class TemplateDefaults {
 			),
 			'google_local'           => array(
 				'mattributes' => array(
-					'store_code',
 					'id',
 					'title',
 					'description',
@@ -3576,9 +3575,8 @@ class TemplateDefaults {
 					'min_energy_efficiency_class',
 					'max_energy_efficiency_class',
 				),
-				'prefix'      => array( '', '', '', '', '', '', '', '', '', '', '', '', '', '' ),
+				'prefix'      => array( '', '', '', '', '', '', '', '', '', '', '', '', '' ),
 				'type'        => array(
-					'pattern',
 					'attribute',
 					'attribute',
 					'attribute',
@@ -3594,12 +3592,12 @@ class TemplateDefaults {
 					'pattern',
 				),
 				'attributes'  => array(
-					'',
 					'id',
 					'title',
 					'description',
 					'image',
-					'sku',
+					// GTIN, not the SKU: a SKU in g:gtin is an invalid GTIN on every product (CBT-713).
+					'gtin_upc_ean_isbn',
 					'',
 					'',
 					'price',
@@ -3609,9 +3607,8 @@ class TemplateDefaults {
 					'',
 					'',
 				),
-				'default'     => array( '', '', '', '', '', '', self::$brand, 'new', '', '', '', '', '', '' ),
+				'default'     => array( '', '', '', '', '', self::$brand, 'new', '', '', '', '', '', '' ),
 				'suffix'      => array(
-					'',
 					'',
 					'',
 					'',
@@ -3626,8 +3623,8 @@ class TemplateDefaults {
 					'',
 					'',
 				),
-				'output_type' => array( '1', '1', '1', '11', '1', '1', '1', '1', '6', '6', '1', '1', '1', '1' ),
-				'limit'       => array( '', '', '', '', '', '', '', '', '', '', '', '', '', '' ),
+				'output_type' => array( '1', '1', '11', '1', '1', '1', '1', '6', '6', '1', '1', '1', '1' ),
+				'limit'       => array( '', '', '', '', '', '', '', '', '', '', '', '', '' ),
 			),
 			'google_promotions'      => array(
 				'mattributes' => array(
@@ -3652,7 +3649,10 @@ class TemplateDefaults {
 					'pattern',
 				),
 				'attributes'  => array( '', '', '', '', '', '', '', '' ),
-				'default'     => array( '', '', '', '', '', '', '', '' ),
+				// Valid Google Promotions enums where one value fits most
+				// stores; id, title, dates and amount are the merchant's
+				// (CBT-716). The feed writes ONE row per promotion_id.
+				'default'     => array( '', 'ALL_PRODUCTS', 'NO_CODE', '', '', 'ONLINE', 'Shopping_ads', '' ),
 				'suffix'      => array( '', '', '', '', '', '', '', '' ),
 				'output_type' => array( '1', '1', '1', '1', '1', '1', '1', '1' ),
 				'limit'       => array( '', '', '', '', '', '', '', '' ),

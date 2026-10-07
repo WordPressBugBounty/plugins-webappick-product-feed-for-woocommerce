@@ -60,7 +60,8 @@ class ChatGpt extends AbstractChannel {
 	 * @return string[] Supported format identifiers.
 	 */
 	public function get_supported_formats(): array {
-		return array( 'csv', 'tsv', 'json' );
+		// CSV/TSV only (CBT-712): OpenAI takes JSON Lines, not a JSON array.
+		return array( 'csv', 'tsv' );
 	}
 
 	/**

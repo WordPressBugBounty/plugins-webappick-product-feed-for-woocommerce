@@ -67,11 +67,25 @@ class SFTPConnection {
 
 		// Security: Man in the middle attack protection.
 		if ( $f_print ) {
-			$fingerprint = ssh2_fingerprint( $this->connection, SSH2_FINGERPRINT_MD5 | SSH2_FINGERPRINT_HEX );
-			if ( $fingerprint !== $f_print ) {
-				throw new \Exception( sprintf( 'Known host fingerprint "%s" does not match %s:%s fingerprint "%s". Possible man-in-the-middle attack ?', esc_attr( $f_print ), esc_attr( $host ), esc_attr( $port ), esc_attr( $fingerprint ) ) );
+			$fingerprint = $this->get_fingerprint();
+			if ( '' !== $fingerprint && strtolower( $fingerprint ) !== strtolower( (string) $f_print ) ) {
+				throw new \Exception( sprintf( 'The SFTP server at %1$s:%2$s presented a different identity (host key) than on earlier uploads, so the upload was stopped to protect your password. If you moved or reinstalled that server, open Edit feed → FTP / SFTP and click Save to accept the new key; otherwise contact your host.', esc_attr( $host ), esc_attr( $port ) ) );
 			}
 		}
+	}
+
+	/**
+	 * The server's host-key fingerprint (MD5, hex), or '' when unavailable.
+	 *
+	 * @since 8.0.32
+	 * @return string
+	 */
+	public function get_fingerprint(): string {
+		if ( ! $this->connection || ! function_exists( 'ssh2_fingerprint' ) || ! defined( 'SSH2_FINGERPRINT_MD5' ) || ! defined( 'SSH2_FINGERPRINT_HEX' ) ) {
+			return '';
+		}
+
+		return (string) ssh2_fingerprint( $this->connection, SSH2_FINGERPRINT_MD5 | SSH2_FINGERPRINT_HEX );
 	}
 
 	/**
@@ -87,7 +101,9 @@ class SFTPConnection {
 	 */
 	public function login( $username, $password ) {
 		if ( ! ssh2_auth_password( $this->connection, $username, $password ) ) {
-			throw new \Exception( 'Could not authenticate with username ' . esc_attr( $username ) . ' and password ' . esc_attr( $password ) . ' .' );
+			// Never put the password in the message: it is written to the
+			// feed log, the WooCommerce log and support bundles (CBT-708).
+			throw new \Exception( 'Could not authenticate with username ' . esc_attr( $username ) . '. Check the username and password.' );
 		}
 
 		$this->sftp = ssh2_sftp( $this->connection );
@@ -113,11 +129,7 @@ class SFTPConnection {
 		if ( ! file_exists( $local_file ) ) {
 			throw new \Exception( "Local file does't exists.: " . esc_attr( $local_file ) . '.' );
 		}
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents, WordPressVIPMinimum.Performance.FetchingRemoteData.FileGetContentsUnknown -- Local read only: $local_file is the feed file this plugin just generated under wp-content/uploads. It must be shipped byte-for-byte, and WP_Filesystem is not initialised on the Action Scheduler cron request that performs the upload.
-		$data_to_send = file_get_contents( $local_file );
-		if ( false === $data_to_send ) {
-			throw new \Exception( 'Could not open local file: ' . esc_attr( $local_file ) . '.' );
-		}
+		$local_size = (int) filesize( $local_file );
 
 		$sftp = $this->sftp;
 		if ( ! is_dir( "ssh2.sftp://$sftp$path" ) ) {
@@ -138,20 +150,105 @@ class SFTPConnection {
 
 		}
 
+		// CBT-711: stream the file (never the whole feed in memory), write
+		// it under a hidden temporary name, confirm every byte arrived, then
+		// rename it over the live remote file — a partial upload can never
+		// replace a good one, and readers never see a half-written feed.
+		$final_remote = $path . $remote_file;
+		$temp_remote  = $path . '.' . $remote_file . '.part';
+
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Local read of the feed file this plugin just generated; streamed, never loaded whole.
+		$local = fopen( $local_file, 'rb' );
+		if ( ! $local ) {
+			throw new \Exception( 'Could not open local file: ' . esc_attr( $local_file ) . '.' );
+		}
+
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Opens the ssh2.sftp:// stream wrapper for the remote feed file; WP_Filesystem cannot address an SFTP stream resource.
-		$stream = fopen( "ssh2.sftp://$sftp$path$remote_file", 'w' );
+		$stream = fopen( "ssh2.sftp://$sftp$temp_remote", 'w' );
 		if ( ! $stream ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the local handle opened above.
+			fclose( $local );
 			throw new \Exception( 'Could not open file: ' . esc_attr( $path ) . '.' );
 		}
 
-		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fwrite, WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Writing the feed file to the merchant's own remote server IS the product feature; the bytes must land unmodified.
-		if ( false === fwrite( $stream, $data_to_send ) ) {
-			throw new \Exception( 'Could not send data from file: ' . esc_attr( $local_file ) . '.' );
+		$copied = stream_copy_to_stream( $local, $stream );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the local handle opened above.
+		fclose( $local );
+		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the ssh2.sftp:// stream; its result is the last chance to see a failed flush.
+		$closed = fclose( $stream );
+
+		if ( false === $copied || (int) $copied !== $local_size || false === $closed ) {
+			$this->remove_remote( $temp_remote );
+			throw new \Exception( sprintf( 'Upload incomplete: %1$d of %2$d bytes reached the server (connection dropped or remote disk/quota full). The previous remote file was left unchanged.', absint( $copied ), absint( $local_size ) ) );
 		}
 
-		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the ssh2.sftp:// stream opened above.
-		fclose( $stream );
+		$remote_size = $this->remote_size( $temp_remote );
+		if ( null !== $remote_size && $remote_size !== $local_size ) {
+			$this->remove_remote( $temp_remote );
+			throw new \Exception( sprintf( 'Upload incomplete: the server holds %1$d of %2$d bytes. The previous remote file was left unchanged.', absint( $remote_size ), absint( $local_size ) ) );
+		}
+
+		if ( ! $this->replace_remote( $temp_remote, $final_remote ) ) {
+			$this->remove_remote( $temp_remote );
+			throw new \Exception( 'The uploaded file could not be renamed to ' . esc_attr( $final_remote ) . ' on the server (permissions).' );
+		}
+
 		return true;
+	}
+
+	/**
+	 * Remote file size via SFTP stat, or null when unavailable.
+	 *
+	 * @param string $remote Remote path.
+	 * @return int|null
+	 */
+	private function remote_size( string $remote ): ?int {
+		if ( ! function_exists( 'ssh2_sftp_stat' ) ) {
+			return null;
+		}
+		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- A missing stat is a question, not an error; the null return is handled.
+		$stat = @ssh2_sftp_stat( $this->sftp, $remote );
+
+		return is_array( $stat ) && isset( $stat['size'] ) ? (int) $stat['size'] : null;
+	}
+
+	/**
+	 * Move the uploaded temp file over the live remote file. SFTP v3 rename
+	 * does not overwrite on most servers, so the old file is removed first
+	 * when the plain rename is refused.
+	 *
+	 * @param string $from Temp remote path.
+	 * @param string $to   Final remote path.
+	 * @return bool
+	 */
+	private function replace_remote( string $from, string $to ): bool {
+		if ( ! function_exists( 'ssh2_sftp_rename' ) ) {
+			return false;
+		}
+		// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- Expected refusals (target exists) are handled by the retry below.
+		if ( @ssh2_sftp_rename( $this->sftp, $from, $to ) ) {
+			return true;
+		}
+		if ( function_exists( 'ssh2_sftp_unlink' ) ) {
+			@ssh2_sftp_unlink( $this->sftp, $to );
+		}
+		$ok = @ssh2_sftp_rename( $this->sftp, $from, $to );
+		// phpcs:enable WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden
+
+		return (bool) $ok;
+	}
+
+	/**
+	 * Remove a remote file, silently.
+	 *
+	 * @param string $remote Remote path.
+	 * @return void
+	 */
+	private function remove_remote( string $remote ): void {
+		if ( function_exists( 'ssh2_sftp_unlink' ) ) {
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- Cleanup of our own temp file; failure is non-fatal.
+			@ssh2_sftp_unlink( $this->sftp, $remote );
+		}
 	}
 
 	/**

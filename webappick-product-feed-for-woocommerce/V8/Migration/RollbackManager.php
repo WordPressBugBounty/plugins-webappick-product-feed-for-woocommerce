@@ -72,7 +72,10 @@ class RollbackManager {
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Enumerating options by LIKE pattern has no WP API equivalent; one-off migration backup, caching would risk a stale snapshot.
 		$results = $wpdb->get_results(
-			"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE 'wf_feed_%'",
+			$wpdb->prepare(
+				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s",
+				$wpdb->esc_like( 'wf_feed_' ) . '%'
+			),
 			ARRAY_A
 		);
 

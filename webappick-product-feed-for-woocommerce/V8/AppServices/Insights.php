@@ -352,7 +352,7 @@ class Insights {
 
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One-off roll-up of the wf_feed_* option rows for the weekly telemetry payload; WordPress has no API for a LIKE query over wp_options and caching a once-a-week read would only add a stale copy.
-		$result = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $wpdb->options WHERE option_name LIKE %s;", 'wf_feed_%' ), 'ARRAY_A' );
+		$result = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM $wpdb->options WHERE option_name LIKE %s;", $wpdb->esc_like( 'wf_feed_' ) . '%' ), 'ARRAY_A' );
 		if ( ! is_array( $result ) ) {
 			$result = array();
 		}

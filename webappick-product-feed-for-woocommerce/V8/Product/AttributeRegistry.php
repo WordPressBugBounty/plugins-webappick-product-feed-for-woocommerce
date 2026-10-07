@@ -821,7 +821,7 @@ class AttributeRegistry {
 		$data = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s",
-				self::PREFIX_CAT_MAPPING . '%'
+				$wpdb->esc_like( self::PREFIX_CAT_MAPPING ) . '%'
 			)
 		);
 
@@ -1074,7 +1074,7 @@ class AttributeRegistry {
 		$data = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s",
-				self::PREFIX_DYN_ATTRIBUTE . '%'
+				$wpdb->esc_like( self::PREFIX_DYN_ATTRIBUTE ) . '%'
 			)
 		);
 
@@ -1108,7 +1108,7 @@ class AttributeRegistry {
 		$data = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s",
-				self::PREFIX_ATTR_MAPPING . '%'
+				$wpdb->esc_like( self::PREFIX_ATTR_MAPPING ) . '%'
 			)
 		);
 

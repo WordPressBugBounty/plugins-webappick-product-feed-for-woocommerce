@@ -32,6 +32,34 @@ if ( ! defined( 'ABSPATH' ) ) {
 class FeedEndpoint extends RestController {
 
 	/**
+	 * Longest feed slug. Per-feed transients add up to 44 characters
+	 * (`_transient_timeout_ctxfeed_product_snapshot_`) and WordPress caps
+	 * transient names at 172 — a longer slug silently lost its progress and
+	 * snapshot state (CBT-720). 100 leaves room for a `-N` uniqueness suffix.
+	 *
+	 * @since 8.0.32
+	 * @var int
+	 */
+	const MAX_SLUG_LENGTH = 100;
+
+	/**
+	 * Cut a slug base so it plus a `-N` suffix stays within MAX_SLUG_LENGTH.
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string $slug Slug base.
+	 * @return string
+	 */
+	public static function cap_slug( string $slug ): string {
+		$max = self::MAX_SLUG_LENGTH - 6;
+		if ( strlen( $slug ) <= $max ) {
+			return $slug;
+		}
+
+		return rtrim( substr( $slug, 0, $max ), '-_.' );
+	}
+
+	/**
 	 * Register feed routes.
 	 *
 	 * @since 8.0.0
@@ -433,7 +461,7 @@ class FeedEndpoint extends RestController {
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT option_id, option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_id DESC",
-				'wf_feed_%'
+				$wpdb->esc_like( 'wf_feed_' ) . '%'
 			),
 			ARRAY_A
 		);
@@ -675,7 +703,7 @@ class FeedEndpoint extends RestController {
 
 		// Generate unique slug from file name.
 		$slug = sanitize_title( $form['fileName'], '', 'save' );
-		$slug = sanitize_file_name( $slug );
+		$slug = self::cap_slug( sanitize_file_name( $slug ) );
 
 		// Ensure unique option name.
 		$base_slug = $slug;
@@ -911,11 +939,28 @@ class FeedEndpoint extends RestController {
 
 		// Delete generated feed file if it exists.
 		$config = \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( $feed_data['option_value'] ) );
-		if ( is_array( $config ) && ! empty( $config['url'] ) ) {
-			$upload_dir = wp_upload_dir();
-			$file_path  = str_replace( $upload_dir['baseurl'], $upload_dir['basedir'], $config['url'] );
-			if ( file_exists( $file_path ) ) {
-				wp_delete_file( $file_path );
+		// The path comes from the feed's own rules, not its stored URL: after a
+		// domain or http→https change the URL no longer maps to uploads and
+		// the file was left behind (CBT-720). The URL mapping stays as a
+		// fallback for files written by older layouts.
+		if ( is_array( $config ) ) {
+			$paths = array();
+			$rules = isset( $config['feedrules'] ) && is_array( $config['feedrules'] ) ? $config['feedrules'] : array();
+			$ext   = isset( $rules['feedType'] ) ? (string) $rules['feedType'] : '';
+			if ( '' !== $ext ) {
+				// The generator names the file after the feed slug.
+				$paths[] = ( new \CTXFeed\V8\Utility\Filesystem() )->get_feed_path( $feed_slug, $ext, (string) ( $rules['provider'] ?? '' ) );
+			}
+			if ( ! empty( $config['url'] ) ) {
+				$upload_dir = wp_upload_dir();
+				$paths[]    = str_replace( $upload_dir['baseurl'], $upload_dir['basedir'], (string) $config['url'] );
+			}
+			foreach ( array_unique( $paths ) as $file_path ) {
+				foreach ( array( $file_path, $file_path . '.tmp' ) as $file ) {
+					if ( '' !== $file && is_file( $file ) ) {
+						wp_delete_file( $file );
+					}
+				}
 			}
 		}
 
@@ -1146,6 +1191,14 @@ class FeedEndpoint extends RestController {
 			return $this->error( __( 'Invalid or corrupted feed configuration.', 'woo-feed' ), 400 );
 		}
 
+		// Custom Template 2 `{(…)}` blocks run PHP when the feed generates.
+		// A file from elsewhere may only bring them in through an
+		// administrator; for anyone else they are removed (CBT-718).
+		$eval_removed = 0;
+		if ( ! current_user_can( 'manage_options' ) ) {
+			$eval_removed = self::strip_ct2_eval( $feed_rules );
+		}
+
 		// Determine feed name.
 		$custom_name = sanitize_text_field( $request->get_param( 'feed_name' ) );
 		$custom_name = trim( $custom_name );
@@ -1178,8 +1231,29 @@ class FeedEndpoint extends RestController {
 			}
 		}
 
+		if ( strlen( (string) $new_slug ) > self::MAX_SLUG_LENGTH - 6 ) {
+			$base     = self::cap_slug( (string) $new_slug );
+			$new_slug = $base;
+			$counter  = 1;
+			while ( false !== get_option( 'wf_feed_' . $new_slug ) ) {
+				$new_slug = $base . '-' . $counter;
+				++$counter;
+			}
+		}
+
 		if ( empty( $new_slug ) ) {
 			return $this->error( __( 'Could not generate a valid feed name.', 'woo-feed' ), 500 );
+		}
+
+		// An older .wpf may still carry an FTP/SFTP password: a V5 plaintext
+		// one is encrypted at rest here; another site's ciphertext (which
+		// this site cannot read) is dropped so the user re-enters it instead
+		// of uploads silently logging in with nothing (CBT-708).
+		if ( is_array( $feed_rules ) && ! empty( $feed_rules['ftppassword'] ) ) {
+			$ctx_crypto = new \CTXFeed\V8\Utility\Encryptor();
+			$ctx_plain  = $ctx_crypto->reveal_password( (string) $feed_rules['ftppassword'] );
+
+			$feed_rules['ftppassword'] = ( null === $ctx_plain || '' === $ctx_plain ) ? '' : $ctx_crypto->encrypt( $ctx_plain );
 		}
 
 		// Save config to wp_options.
@@ -1196,11 +1270,36 @@ class FeedEndpoint extends RestController {
 		// Retrieve the new feed's full data.
 		$new_feed = $this->find_feed( $new_slug );
 
-		return $this->success(
-			array(
-				'feed' => $new_feed,
-			) 
+		$data = array(
+			'feed' => $new_feed,
 		);
+		if ( $eval_removed > 0 ) {
+			$data['eval_removed'] = $eval_removed;
+			$data['notice']       = __( 'Code blocks {( … )} were removed from the imported Custom Template 2. Only an administrator can import feeds that run code.', 'woo-feed' );
+		}
+
+		return $this->success( $data );
+	}
+
+	/**
+	 * Remove Custom Template 2 code blocks — `{(return …)}`, `{(php …)}` and
+	 * any other `{( … )}` — that the Pro engine evaluates with eval().
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param array $feed_rules Feed rules (modified in place).
+	 * @return int Blocks removed.
+	 */
+	public static function strip_ct2_eval( array &$feed_rules ): int {
+		$template = $feed_rules['feed_config_custom2'] ?? '';
+		if ( ! is_string( $template ) || false === strpos( $template, '{(' ) ) {
+			return 0;
+		}
+
+		$count                             = 0;
+		$feed_rules['feed_config_custom2'] = (string) preg_replace( '/\{\(.*?\)\}/s', '', $template, -1, $count );
+
+		return (int) $count;
 	}
 
 	/**
@@ -1330,9 +1429,9 @@ class FeedEndpoint extends RestController {
 		if ( '' !== $custom_name ) {
 			// Named duplicate — the display name is the entered name; the slug
 			// is a URL-safe form of it, made unique with a numeric suffix.
-			$base = sanitize_title( $custom_name, '', 'save' );
+			$base = self::cap_slug( sanitize_title( $custom_name, '', 'save' ) );
 			if ( '' === $base ) {
-				$base = $orig_slug . '-copy';
+				$base = self::cap_slug( $orig_slug . '-copy' );
 			}
 			$slug    = $base;
 			$counter = 1;
@@ -1348,11 +1447,12 @@ class FeedEndpoint extends RestController {
 
 		// Default (no name) — V5 parity: orig-copy, orig-copy-2, … with a
 		// matching "-copy(-N)" display name.
-		$slug    = $orig_slug . '-copy';
-		$counter = 1;
+		$copy_base = self::cap_slug( $orig_slug . '-copy' );
+		$slug      = $copy_base;
+		$counter   = 1;
 		while ( $slug_exists( $slug ) ) {
 			++$counter;
-			$slug = $orig_slug . '-copy-' . $counter;
+			$slug = $copy_base . '-' . $counter;
 		}
 		$base_name = '' !== $orig_filename ? $orig_filename : $orig_slug;
 		$filename  = $base_name . '-copy' . ( $counter > 1 ? '-' . $counter : '' );
@@ -1431,6 +1531,12 @@ class FeedEndpoint extends RestController {
 	 * @return string Raw gzdeflate-compressed .wpf bytes.
 	 */
 	protected function build_wpf_binary( array $feedrules, string $file_name ): string {
+		// A .wpf is a file people email and attach to tickets: never ship
+		// the FTP/SFTP password (encrypted, or V5 plaintext) in it (CBT-708).
+		// The importing site re-enters it; host/user/path stay.
+		if ( isset( $feedrules['ftppassword'] ) ) {
+			$feedrules['ftppassword'] = '';
+		}
 		$feed_json = wp_json_encode( $feedrules );
 		$meta_json = wp_json_encode(
 			array(
@@ -2520,6 +2626,14 @@ class FeedEndpoint extends RestController {
 		$feedrules['ftpuser']    = isset( $ftp['username'] ) ? sanitize_text_field( $ftp['username'] ) : '';
 		$feedrules['ftppath']    = isset( $ftp['path'] ) ? sanitize_text_field( $ftp['path'] ) : '';
 
+		// Saving SFTP settings accepts the server's current host key — the
+		// way a merchant confirms a legitimately reinstalled server after an
+		// upload stopped on a key change (CBT-711). A network attacker can't
+		// save feeds, so trust-on-first-use still protects the password.
+		if ( 'sftp' === $feedrules['ftporsftp'] && '' !== $feedrules['ftphost'] && class_exists( '\\CTXFeed\\V8\\Utility\\FTP\\SftpHostKeys' ) ) {
+			\CTXFeed\V8\Utility\FTP\SftpHostKeys::forget( (string) preg_replace( '#^[a-z][a-z0-9+.\-]*://#i', '', $feedrules['ftphost'] ), (int) $feedrules['ftpport'] );
+		}
+
 		$incoming_password = isset( $ftp['password'] ) ? (string) $ftp['password'] : '';
 		if ( '' !== $incoming_password ) {
 			$encryptor                = new \CTXFeed\V8\Utility\Encryptor();
@@ -3098,12 +3212,16 @@ class FeedEndpoint extends RestController {
 		$feed_name = str_replace( 'wf_feed_', '', $raw['option_name'] );
 		$provider  = isset( $rules['provider'] ) ? $rules['provider'] : '';
 
-		// Decrypt FTP password for the edit form. Plaintext passwords never
-		// leave this method's output path otherwise — stored encrypted, and
-		// only decrypted when the frontend explicitly loads the feed.
-		if ( ! empty( $rules['ftppassword'] ) ) {
-			$encryptor            = new \CTXFeed\V8\Utility\Encryptor();
-			$rules['ftppassword'] = $encryptor->decrypt( $rules['ftppassword'] );
+		// The FTP/SFTP password never leaves the server (CBT-708): this array
+		// is what GET/create/update/import/duplicate return over REST and
+		// what the AI `get-feed` ability hands to the client's model
+		// provider. The edit form gets only "a password is saved"; an empty
+		// password on save keeps the stored one, and the connection test
+		// reads the stored one server-side.
+		$rules['ftppassword_set'] = ! empty( $rules['ftppassword'] );
+		$rules['ftppassword']     = '';
+		if ( isset( $config['feedrules']['ftppassword'] ) ) {
+			$config['feedrules']['ftppassword'] = '';
 		}
 
 		return array(
@@ -3162,7 +3280,14 @@ class FeedEndpoint extends RestController {
 			);
 		}
 
-		return $row ? $row : null;
+		// A numeric id is an option_id; only a wf_feed_ row is a feed. A stale
+		// id from the list can belong to another plugin's option by now —
+		// never generate, edit or DELETE that row (CBT-695).
+		if ( ! $row || 0 !== strpos( (string) $row['option_name'], 'wf_feed_' ) ) {
+			return null;
+		}
+
+		return $row;
 	}
 
 	/**

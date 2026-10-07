@@ -337,7 +337,7 @@ class FeedScheduler {
 	 * @since 8.0.10
 	 *
 	 * @param array    $progress Progress record from FeedManager::get_progress().
-	 * @param int|null $now      Current WP-local timestamp (tests); defaults to the WP-local clock, the same one update_progress() stamps with.
+	 * @param int|null $now      Current timestamp (tests); see seconds_since_touched().
 	 * @return bool
 	 */
 	public static function is_run_in_progress( array $progress, ?int $now = null ): bool {
@@ -346,19 +346,39 @@ class FeedScheduler {
 			return false;
 		}
 
+		$age = self::seconds_since_touched( $progress, $now );
+
+		return null !== $age && $age <= BatchCalculator::LOCK_TTL;
+	}
+
+	/**
+	 * Seconds since a run's progress record was last written, or null when
+	 * it never was.
+	 *
+	 * Prefers the UTC epoch `updated_ts` (8.0.32+): the WP-local
+	 * `updated_at` wall clock jumps an hour at a DST change, which made a
+	 * live run look dead (a second chain started) or a dead one look alive.
+	 * Records written by older builds fall back to `updated_at` (CBT-720).
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param array    $progress Progress record.
+	 * @param int|null $now      Current timestamp (tests): UTC epoch when the record has updated_ts, else WP-local.
+	 * @return int|null
+	 */
+	public static function seconds_since_touched( array $progress, ?int $now = null ): ?int {
+		$stamp = isset( $progress['updated_ts'] ) ? (int) $progress['updated_ts'] : 0;
+		if ( $stamp > 0 ) {
+			return ( null === $now ? time() : $now ) - $stamp;
+		}
+
 		$updated_at = isset( $progress['updated_at'] ) ? (string) $progress['updated_at'] : '';
-		if ( '' === $updated_at ) {
-			return false;
-		}
-
-		$touched = strtotime( $updated_at );
+		$touched    = '' === $updated_at ? false : strtotime( $updated_at );
 		if ( false === $touched ) {
-			return false;
+			return null;
 		}
 
-		$now = null === $now ? (int) strtotime( current_time( 'mysql' ) ) : $now;
-
-		return ( $now - $touched ) <= BatchCalculator::LOCK_TTL;
+		return ( null === $now ? (int) strtotime( current_time( 'mysql' ) ) : $now ) - $touched;
 	}
 
 	/**
@@ -2009,12 +2029,8 @@ class FeedScheduler {
 			return false;
 		}
 
-		$touched = strtotime( (string) ( $progress['updated_at'] ?? '' ) );
-		if ( false === $touched ) {
-			return false;
-		}
-		$now = (int) strtotime( current_time( 'mysql' ) );
-		if ( ( $now - $touched ) < self::REVIVE_SILENCE_SECONDS ) {
+		$age = self::seconds_since_touched( $progress );
+		if ( null === $age || $age < self::REVIVE_SILENCE_SECONDS ) {
 			return false;
 		}
 

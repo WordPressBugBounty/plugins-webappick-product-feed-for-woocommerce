@@ -4,7 +4,7 @@
     <title><![CDATA[ {BlogName} ]]></title>
     <link><![CDATA[ {BlogURL} ]]></link>
     <description>Pinterest RSS</description>
-    <lastBuildDate>{DateTimeNow}</lastBuildDate>
+    <lastBuildDate>{DateTimeRFC822}</lastBuildDate>
     <generator><![CDATA[ {BlogDescription} ]]></generator>
     {separator}
 

@@ -147,4 +147,55 @@ class Encryptor {
 
 		return self::FALLBACK_KEY;
 	}
+
+	/**
+	 * Read a stored FTP/SFTP password (CBT-708).
+	 *
+	 * - Our ciphertext → the plain password.
+	 * - Our ciphertext that no longer decrypts (site moved, security keys
+	 *   changed) → null, so the caller stops with a clear message instead
+	 *   of logging in with an empty password.
+	 * - Anything else is a V5-era plaintext password (V5 stored it raw) →
+	 *   returned as-is, so V5 FTP feeds keep uploading after the update.
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string $stored Stored value.
+	 * @return string|null Plain password ('' when none), or null when unreadable.
+	 */
+	public function reveal_password( string $stored ): ?string {
+		if ( '' === $stored ) {
+			return '';
+		}
+
+		$plain = $this->decrypt( $stored );
+		if ( '' !== $plain ) {
+			return $plain;
+		}
+
+		return self::looks_encrypted( $stored ) ? null : $stored;
+	}
+
+	/**
+	 * Whether a value has this class's ciphertext shape:
+	 * base64( IV . base64-ciphertext ).
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string $value Stored value.
+	 * @return bool
+	 */
+	public static function looks_encrypted( string $value ): bool {
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Shape check of our own stored ciphertext, not obfuscation.
+		$data      = base64_decode( $value, true );
+		$iv_length = function_exists( 'openssl_cipher_iv_length' ) ? (int) openssl_cipher_iv_length( self::CIPHER ) : 16;
+		if ( false === $data || strlen( $data ) <= $iv_length ) {
+			return false;
+		}
+
+		$body = substr( $data, $iv_length );
+
+		// phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- Shape check of our own stored ciphertext, not obfuscation.
+		return '' !== $body && false !== base64_decode( $body, true ) && 1 === preg_match( '#^[A-Za-z0-9+/]+={0,2}$#', $body );
+	}
 }

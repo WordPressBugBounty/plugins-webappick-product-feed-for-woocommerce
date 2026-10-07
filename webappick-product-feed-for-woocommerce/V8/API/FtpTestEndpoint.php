@@ -106,9 +106,17 @@ class FtpTestEndpoint extends RestController {
 			// value is used for the connection only; never stored,
 			// logged, or echoed (see scrub()).
 			'password' => array(
-				'required'          => true,
+				'required'          => false,
 				'type'              => 'string',
 				'validate_callback' => 'rest_validate_request_arg',
+				'description'       => __( 'Password. Empty with `feed` set: the feed\'s saved password is used when host and username match the saved ones.', 'woo-feed' ),
+			),
+			'feed'     => array(
+				'required'          => false,
+				'type'              => 'string',
+				'validate_callback' => 'rest_validate_request_arg',
+				'sanitize_callback' => 'sanitize_text_field',
+				'description'       => __( 'Slug of the feed being edited — lets the test use its saved password, which the edit form never receives (CBT-708).', 'woo-feed' ),
 			),
 			'protocol' => array(
 				'required'          => false,
@@ -192,6 +200,9 @@ class FtpTestEndpoint extends RestController {
 
 		$password = (string) $request->get_param( 'password' );
 		if ( '' === $password ) {
+			$password = $this->saved_password( (string) $request->get_param( 'feed' ), $host, $username );
+		}
+		if ( '' === $password ) {
 			return $this->error( __( 'Please enter the password.', 'woo-feed' ), 400 );
 		}
 
@@ -222,6 +233,14 @@ class FtpTestEndpoint extends RestController {
 		// Reachability first, with a short timeout: an unreachable host or a
 		// blocked outgoing port used to sit inside ssh2_connect()/ftp_connect()
 		// for up to 90 s and then surface as a generic "check the credentials".
+		// The test reports whether a host:port answers — pointed at the
+		// store's own network it maps internal services for anyone with
+		// manage_woocommerce (CBT-717). Feed servers are on the internet; a
+		// LAN FTP server can be allowed with the filter.
+		if ( $this->is_private_host( $host ) ) {
+			return $this->error( __( 'This address is on a private or local network, so the connection test does not check it. Use the server\'s public host name or IP.', 'woo-feed' ), 400 );
+		}
+
 		$unreachable = $this->reach_host( $host, $port );
 		if ( null !== $unreachable ) {
 			return $this->error(
@@ -564,5 +583,77 @@ class FtpTestEndpoint extends RestController {
 		);
 
 		return str_replace( $needles, '•••', $message );
+	}
+
+	/**
+	 * The saved, decrypted password of the feed being edited (CBT-708).
+	 *
+	 * The edit form never receives the password, so a test from an edited
+	 * feed with an empty password field uses the stored one — but only for
+	 * the SAME host and username it was saved for, so the test can never
+	 * send a saved password to a different server.
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string $feed     Feed slug (with or without the wf_feed_ prefix).
+	 * @param string $host     Host from the form (scheme already stripped).
+	 * @param string $username Username from the form.
+	 * @return string Plain password, or '' when unavailable.
+	 */
+	private function saved_password( string $feed, string $host, string $username ): string {
+		$slug = (string) preg_replace( '/^wf_feed_/', '', trim( $feed ) );
+		if ( '' === $slug ) {
+			return '';
+		}
+
+		$config = \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( get_option( 'wf_feed_' . $slug ) );
+		$rules  = is_array( $config ) && isset( $config['feedrules'] ) && is_array( $config['feedrules'] ) ? $config['feedrules'] : array();
+		if ( empty( $rules['ftppassword'] ) ) {
+			return '';
+		}
+
+		$saved_host = trim( (string) preg_replace( '#^[a-z][a-z0-9+.\-]*://#i', '', (string) ( $rules['ftphost'] ?? '' ) ), "/ \t" );
+		if ( 0 !== strcasecmp( $saved_host, $host ) || (string) ( $rules['ftpuser'] ?? '' ) !== $username ) {
+			return '';
+		}
+
+		return (string) ( new \CTXFeed\V8\Utility\Encryptor() )->reveal_password( (string) $rules['ftppassword'] );
+	}
+
+	/**
+	 * Whether a host resolves to a loopback, private, link-local or reserved
+	 * address (CBT-717).
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string $host Host name or IP.
+	 * @return bool
+	 */
+	protected function is_private_host( string $host ): bool {
+		/**
+		 * Allow the connection test to reach private / local addresses (a
+		 * feed server on the store's own network).
+		 *
+		 * @since 8.0.32
+		 *
+		 * @param bool   $allow Whether private hosts are allowed. Default false.
+		 * @param string $host  Host being tested.
+		 */
+		if ( apply_filters( 'ctxfeed_ftp_test_allow_private_hosts', false, $host ) ) {
+			return false;
+		}
+
+		$bare = trim( $host, '[]' );
+		$ips  = filter_var( $bare, FILTER_VALIDATE_IP ) ? array( $bare ) : (array) gethostbynamel( $bare );
+		if ( 'localhost' === strtolower( $bare ) ) {
+			return true;
+		}
+		foreach ( $ips as $ip ) {
+			if ( ! filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

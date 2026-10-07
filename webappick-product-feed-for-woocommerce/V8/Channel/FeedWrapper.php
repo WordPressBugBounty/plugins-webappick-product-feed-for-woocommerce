@@ -57,6 +57,8 @@ class FeedWrapper {
 		'google'                 => array( 'item', 'items' ),
 		'google_local'           => array( 'item', 'items' ),
 		'google_local_inventory' => array( 'item', 'items' ),
+		// Google Promotions XML: RSS 2.0 <item> with g: elements (CBT-716).
+		'google_promotions'      => array( 'item', 'items' ),
 		'google_shopping_action' => array( 'item', 'items' ),
 		'facebook'               => array( 'item', 'items' ),
 		'pinterest'              => array( 'item', 'items' ),

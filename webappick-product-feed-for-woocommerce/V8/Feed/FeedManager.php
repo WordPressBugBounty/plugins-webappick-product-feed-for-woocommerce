@@ -115,7 +115,7 @@ class FeedManager {
 		$names = $wpdb->get_col(
 			$wpdb->prepare(
 				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
-				'wf_feed_%'
+				$wpdb->esc_like( 'wf_feed_' ) . '%'
 			)
 		);
 
@@ -168,8 +168,7 @@ class FeedManager {
 	 */
 	public function promote_feed( string $feed_id, string $file_path ): bool {
 		// Build the public URL from the file path.
-		$upload_dir = wp_upload_dir();
-		$url        = str_replace( $upload_dir['basedir'], $upload_dir['baseurl'], $file_path );
+		$url = \CTXFeed\V8\Utility\Filesystem::path_to_url( $file_path );
 
 		// Read existing wf_feed_ data (created during create_feed).
 		$existing = \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( get_option( 'wf_feed_' . $feed_id ) );
@@ -310,6 +309,10 @@ class FeedManager {
 			'batches_total'   => isset( $data['batches_total'] ) ? (int) $data['batches_total'] : $existing['batches_total'],
 			'started_at'      => $existing['started_at'] ? $existing['started_at'] : $now,
 			'updated_at'      => $now,
+			// UTC epoch twin of updated_at: liveness checks compare this, so a
+			// DST jump in the WP-local wall clock never makes a live run look
+			// dead (or a dead one live) — CBT-720.
+			'updated_ts'      => time(),
 			'eta_seconds'     => isset( $data['eta_seconds'] ) ? (int) $data['eta_seconds'] : $existing['eta_seconds'],
 			'avg_batch_time'  => isset( $data['avg_batch_time'] ) ? (float) $data['avg_batch_time'] : $existing['avg_batch_time'],
 			// End-of-batch stamp (microtime float) — the next batch reports
@@ -323,6 +326,9 @@ class FeedManager {
 			'invalid_reasons' => isset( $data['invalid_reasons'] )
 				? array_map( 'strval', (array) $data['invalid_reasons'] )
 				: (array) ( $existing['invalid_reasons'] ?? array() ),
+			// CBT-710: a batch hit a short write — finalize must not publish.
+			// Listed here or the fixed-key merge drops it.
+			'write_failed'    => isset( $data['write_failed'] ) ? (bool) $data['write_failed'] : ! empty( $existing['write_failed'] ),
 		);
 
 		// Per-batch counters for the live generation console. These were

@@ -156,6 +156,13 @@ class WpOptionsEndpoint extends RestController {
 			$option_name = isset( $item['option_id'] ) ? $item['option_id'] : $key;
 			$value       = get_option( $option_name, '' );
 
+			// A credential is never returned, even if an older version let
+			// it onto the list (CBT-709).
+			if ( \CTXFeed\V8\Utility\SensitiveOptions::is_sensitive( (string) $option_name, $value ) ) {
+				$result[ $option_name ] = __( '(hidden — holds credentials, not usable in feeds)', 'woo-feed' );
+				continue;
+			}
+
 			// Arrays/objects are flattened to comma-separated string for display.
 			if ( is_array( $value ) ) {
 				$value = implode( ', ', $value );
@@ -184,6 +191,13 @@ class WpOptionsEndpoint extends RestController {
 
 		if ( empty( $option_name ) ) {
 			return $this->error( __( 'Option name is required.', 'woo-feed' ), 400 );
+		}
+
+		// The list is also the feed allowlist: a Shop Manager must not be
+		// able to add — and then read — secrets, salts, licence or API keys
+		// (e.g. mcp_jwt_secret) (CBT-709).
+		if ( \CTXFeed\V8\Utility\SensitiveOptions::is_sensitive( $option_name ) ) {
+			return $this->error( __( 'This option holds credentials (a password, key or secret) and cannot be used in feeds.', 'woo-feed' ), 400 );
 		}
 
 		$tracked = $this->get_tracked_options();
@@ -262,9 +276,11 @@ class WpOptionsEndpoint extends RestController {
 		$names = array_values(
 			array_filter(
 				$names,
-				static function ( $name ) {
+				static function ( $name ) use ( $all_options ) {
 					return 0 !== strpos( $name, '_transient_' )
-					&& 0 !== strpos( $name, '_site_transient_' );
+					&& 0 !== strpos( $name, '_site_transient_' )
+					// Never offer credentials in the picker (CBT-709).
+					&& ! \CTXFeed\V8\Utility\SensitiveOptions::is_sensitive( (string) $name, $all_options[ $name ] ?? '' );
 				} 
 			) 
 		);

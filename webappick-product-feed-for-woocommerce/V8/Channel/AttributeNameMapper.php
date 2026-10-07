@@ -87,6 +87,12 @@ class AttributeNameMapper {
 			$mapped_name = $lookup_attr;
 		}
 
+		// Google Promotions XML: every element is in the g: namespace; the
+		// tab-delimited file keeps the raw attribute names (CBT-716).
+		if ( 'google_promotions' === $provider && 'XML' === $normalized_type && false === strpos( (string) $mapped_name, ':' ) && '' !== (string) $mapped_name ) {
+			$mapped_name = 'g:' . $mapped_name;
+		}
+
 		// Apply filter for extensibility.
 		$mapped_name = apply_filters(
 			'ctxfeed_attribute_name_map',
@@ -591,7 +597,7 @@ class AttributeNameMapper {
 					'link_template'                       => 'link template',
 					'mobile_link_template'                => 'mobile link template',
 					'mobile_pickup_link_template'         => 'mobile pickup link template',
-					'local_shipping_label'                => 'g:local_shipping_label',
+					'local_shipping_label'                => 'local shipping label', // CBT-713: text header, not the XML name 'g:local_shipping_label'.
 					'google_funded_promotion_eligibility' => 'google funded promotion eligibility',
 				),
 				'JSON' => array(),

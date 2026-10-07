@@ -253,6 +253,21 @@ class FTPConnection {
 			}
 		}
 
+		// Binary uploads must arrive byte-for-byte: a dropped connection or a
+		// full remote disk can leave a short file that ftp_put still reports
+		// as sent (CBT-711). ASCII mode legitimately changes line endings, so
+		// sizes are only compared for binary transfers.
+		if ( $upload && FTP_BINARY === $mode && function_exists( 'ftp_size' ) ) {
+			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- SIZE is optional on some servers; -1 / false means "unknown" and is not treated as a failure.
+			$remote_size = @ftp_size( $this->connection_id, $this->last_remote_path );
+			$local_size  = (int) filesize( $file_from );
+			if ( is_int( $remote_size ) && $remote_size >= 0 && $remote_size !== $local_size ) {
+				/* translators: 1: bytes on the server, 2: bytes of the local file */
+				$this->log_message( sprintf( esc_html__( 'Upload incomplete: the server holds %1$d of %2$d bytes.', 'woo-feed' ), $remote_size, $local_size ) );
+				$upload = false;
+			}
+		}
+
 		// *** Check upload status
 		if ( ! $upload ) {
 			$this->log_message( 'FTP upload has failed!' );

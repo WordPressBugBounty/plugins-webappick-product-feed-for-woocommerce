@@ -51,6 +51,16 @@ class StreamWriter {
 	private $format = '';
 
 	/**
+	 * Whether any write since the last open() / open_append() fell short
+	 * (disk full, quota, I/O error) — CBT-710. Callers must not publish a
+	 * file with this set: it is truncated or damaged.
+	 *
+	 * @since 8.0.32
+	 * @var bool
+	 */
+	private $write_failed = false;
+
+	/**
 	 * Open a file for writing.
 	 *
 	 * @since 8.0.0
@@ -64,8 +74,9 @@ class StreamWriter {
 	 * @throws \RuntimeException If the file cannot be opened.
 	 */
 	public function open( $file_path, $format = 'xml' ) {
-		$this->file_path = $file_path;
-		$this->format    = $format;
+		$this->file_path    = $file_path;
+		$this->format       = $format;
+		$this->write_failed = false;
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Intentional direct file I/O for feed streaming.
 		$this->handle = fopen( $file_path, 'w' );
@@ -98,8 +109,9 @@ class StreamWriter {
 	 * @throws \RuntimeException If the file cannot be opened.
 	 */
 	public function open_append( $file_path, $format = 'xml' ) {
-		$this->file_path = $file_path;
-		$this->format    = $format;
+		$this->file_path    = $file_path;
+		$this->format       = $format;
+		$this->write_failed = false;
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Intentional direct file I/O for feed streaming.
 		$this->handle = fopen( $file_path, 'a' );
@@ -238,7 +250,7 @@ class StreamWriter {
 			return;
 		}
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fwrite -- Writing the feed file to uploads IS the product; the UTF-8 BOM must be the file's first raw bytes (no trailing EOL).
-		fwrite( $this->handle, "\xEF\xBB\xBF" );
+		$this->check_write( fwrite( $this->handle, "\xEF\xBB\xBF" ), 3 );
 	}
 
 	/**
@@ -252,8 +264,9 @@ class StreamWriter {
 	 * @return void
 	 */
 	public function write_header( $header ) {
+		$data = $header . PHP_EOL;
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fwrite -- Writing the feed file to uploads IS the product; intentional direct file I/O for feed streaming.
-		fwrite( $this->handle, $header . PHP_EOL );
+		$this->check_write( fwrite( $this->handle, $data ), strlen( $data ) );
 	}
 
 	/**
@@ -267,8 +280,9 @@ class StreamWriter {
 	 * @return void
 	 */
 	public function write_row( $row ) {
+		$data = $row . PHP_EOL;
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fwrite -- Writing the feed file to uploads IS the product; intentional direct file I/O for feed streaming.
-		fwrite( $this->handle, $row . PHP_EOL );
+		$this->check_write( fwrite( $this->handle, $data ), strlen( $data ) );
 	}
 
 	/**
@@ -285,7 +299,7 @@ class StreamWriter {
 	 */
 	public function write_csv_row( $fields, $delimiter = ',', $enclosure = '"' ) {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fputcsv, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fputcsv -- Writing the feed file to uploads IS the product; intentional direct file I/O for feed streaming.
-		fputcsv( $this->handle, $fields, $delimiter, $enclosure );
+		$this->check_write( fputcsv( $this->handle, $fields, $delimiter, $enclosure, '\\' ), 1 ); // Explicit escape (PHP 8.4 deprecation, CBT-719).
 	}
 
 	/**
@@ -299,8 +313,9 @@ class StreamWriter {
 	 * @return void
 	 */
 	public function write_footer( $footer ) {
+		$data = $footer . PHP_EOL;
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fwrite -- Writing the feed file to uploads IS the product; intentional direct file I/O for feed streaming.
-		fwrite( $this->handle, $footer . PHP_EOL );
+		$this->check_write( fwrite( $this->handle, $data ), strlen( $data ) );
 	}
 
 	/**
@@ -315,8 +330,35 @@ class StreamWriter {
 	 */
 	public function close() {
 		if ( is_resource( $this->handle ) ) {
+			// fclose flushes the buffer — on a full disk THAT is where the
+			// final bytes are lost (CBT-710).
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Intentional direct file I/O for feed streaming.
-			fclose( $this->handle );
+			if ( false === fclose( $this->handle ) ) {
+				$this->write_failed = true;
+			}
+		}
+	}
+
+	/**
+	 * Whether a write since the last open fell short (CBT-710).
+	 *
+	 * @since 8.0.32
+	 * @return bool
+	 */
+	public function has_write_error(): bool {
+		return $this->write_failed;
+	}
+
+	/**
+	 * Record a short or failed write.
+	 *
+	 * @param int|false $written  fwrite/fputcsv result.
+	 * @param int       $expected Minimum bytes expected.
+	 * @return void
+	 */
+	private function check_write( $written, int $expected ): void {
+		if ( false === $written || (int) $written < $expected ) {
+			$this->write_failed = true;
 		}
 	}
 

@@ -492,7 +492,7 @@ class CategoryMappingEndpoint extends RestController {
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT option_id, option_name, option_value FROM {$wpdb->options} WHERE option_name LIKE %s ORDER BY option_id DESC",
-				self::PREFIX . '%'
+				$wpdb->esc_like( self::PREFIX ) . '%'
 			),
 			ARRAY_A
 		);

@@ -495,6 +495,12 @@ class FeedGenerator {
 		$provider     = $config->get_provider();
 		$is_xml       = ( 'xml' === $format_lower );
 
+		// A run's first batch starts a fresh promotion set (CBT-716).
+		if ( 0 === $offset ) {
+			unset( $this->promotions_seen[ $feed_name ] );
+			delete_transient( 'ctxfeed_promotions_seen_' . $feed_name );
+		}
+
 		// NOTE: the canonical per-channel XML item/items wrapper (Google →
 		// <item>, googlereview → <review>, …) is resolved inside XMLTemplate
 		// from the provider (see Channel\FeedWrapper), so header, rows AND
@@ -773,11 +779,19 @@ class FeedGenerator {
 					$q4                    = $track_q ? (int) $wpdb->num_queries : 0;
 					$stage_s['transform'] += $p4 - $p3;
 					$stage_q['transform'] += $q4 - $q3;
-					$row                   = $this->template_engine->render_row( $transformed, $config, $product );
-					$p5                    = microtime( true );
-					$q5                    = $track_q ? (int) $wpdb->num_queries : 0;
-					$stage_s['render']    += $p5 - $p4;
-					$stage_q['render']    += $q5 - $q4;
+					// Google Promotions: one row per promotion, not per product
+					// (CBT-716). A static promotion mapped on every product
+					// collapses to a single row; per-product promotion ids stay.
+					if ( 'google_promotions' === $provider && ! $this->is_new_promotion( $feed_name, $transformed ) ) {
+						$excluded_by['duplicate promotion_id'] = ( $excluded_by['duplicate promotion_id'] ?? 0 ) + 1;
+						continue;
+					}
+
+					$row                = $this->template_engine->render_row( $transformed, $config, $product );
+					$p5                 = microtime( true );
+					$q5                 = $track_q ? (int) $wpdb->num_queries : 0;
+					$stage_s['render'] += $p5 - $p4;
+					$stage_q['render'] += $q5 - $q4;
 
 					// JSON: rows stream with a trailing comma (a streaming writer
 					// cannot know which row is last); finalize() trims the final
@@ -949,6 +963,12 @@ class FeedGenerator {
 				// finalize), so the UI can warn when a run ends with 0
 				// products — the silently-empty-filter class (#69014).
 				'written_total'       => (int) ( $progress['written_total'] ?? 0 ) + $count,
+				// A short write (disk full / quota / I/O error) damages the
+				// working file; it is sticky for the run so finalize never
+				// publishes it (CBT-710).
+				// The first batch starts the run clean, so an earlier failed
+				// run can never block later ones.
+				'write_failed'        => ( $offset > 0 && ! empty( $progress['write_failed'] ) ) || $this->stream_writer->has_write_error(),
 				// End-of-batch stamp: the NEXT batch reports the scheduler
 				// gap (its start minus this) as gap_ms in the [PERF] trace.
 				'batch_ended_at'      => microtime( true ),
@@ -1158,6 +1178,7 @@ class FeedGenerator {
 
 		$this->stream_writer->write_footer( $template->render_footer( $config ) );
 		$this->stream_writer->close();
+		$footer_write_failed = $this->stream_writer->has_write_error();
 		$this->clear_batch_marker( $feed_name );
 
 		// Atomic delivery: the whole run streamed into $working_path, so the
@@ -1179,7 +1200,30 @@ class FeedGenerator {
 		// this never catches a feed that is legitimately empty.
 		$run_failed = $product_total > 0 && $written_total < 1 && $skipped_total > 0;
 
-		if ( $run_failed ) {
+		// A file whose rows could not all be written (disk full, quota, I/O
+		// error) is truncated: publishing it replaced the good live feed with
+		// a broken one while reporting "N products exported" (CBT-710).
+		$write_failed = ! empty( $progress['write_failed'] ) || $footer_write_failed;
+
+		if ( $write_failed ) {
+			$kept = file_exists( $file_path ) && (int) filesize( $file_path ) > 0;
+			if ( file_exists( $working_path ) ) {
+				wp_delete_file( $working_path );
+			}
+			if ( $this->logger ) {
+				$this->logger->error( "The feed file could not be written completely; it was not published: {$feed_name}", array( 'kept' => $kept ? $file_path : 'none' ) );
+			}
+			if ( $this->feed_logger ) {
+				$this->feed_logger->error(
+					$feed_name,
+					$kept
+						? 'The feed file could not be written completely (the server disk or storage quota may be full) — the previous feed file was kept. Free up space and generate again.'
+						: 'The feed file could not be written completely (the server disk or storage quota may be full) and there is no previous feed to fall back on. Free up space and generate again.'
+				);
+				$this->feed_logger->flush( $feed_name );
+			}
+			$run_failed = true;
+		} elseif ( $run_failed ) {
 			$kept = file_exists( $file_path ) && (int) filesize( $file_path ) > 0;
 
 			if ( file_exists( $working_path ) ) {
@@ -1206,8 +1250,21 @@ class FeedGenerator {
 				);
 				$this->feed_logger->flush( $feed_name );
 			}
-		} else {
-			$this->promote_working_file( $working_path, $file_path, $product_total, $feed_name );
+		} elseif ( 'rename_failed' === $this->promote_working_file( $working_path, $file_path, $product_total, $feed_name ) ) {
+			// The finished file could not replace the live one: the live
+			// feed is the PREVIOUS run's, so this run must not be stamped
+			// as freshly updated (CBT-710). The orphaned working file goes too.
+			if ( file_exists( $working_path ) ) {
+				wp_delete_file( $working_path );
+			}
+			if ( $this->logger ) {
+				$this->logger->error( "The finished feed could not replace the live file (rename failed): {$feed_name}", array( 'feed' => $file_path ) );
+			}
+			if ( $this->feed_logger ) {
+				$this->feed_logger->error( $feed_name, 'The new feed file could not replace the live one (file permissions or storage) — the previous feed file is still served. Check the uploads folder permissions and generate again.' );
+				$this->feed_logger->flush( $feed_name );
+			}
+			$run_failed = true;
 		}
 
 		// Self-heal the #68989 directory fork: while sanitize_file_name was
@@ -1428,13 +1485,13 @@ class FeedGenerator {
 			$delimiter = $template->get_delimiter();
 		}
 
-		// TXT rows are RAW tab-joined (TXTTemplate::render_row never
-		// quotes), so the header must match — fputcsv would wrap any
-		// header containing a space (e.g. the auto-added "identifier
-		// exists") in quotes the rows never carry. V5 parity: TXT is
-		// plain text, not CSV. TMPL-FRD-4.5.
+		// TXT rows are RAW-joined with the CONFIGURED delimiter/enclosure
+		// (TXTTemplate::render_row never fputcsv-quotes), so the header is
+		// rendered by the same template code — never get_delimiter()'s
+		// hardcoded tab (CBT-696). V5 parity: TXT is plain text, not CSV.
+		// TMPL-FRD-4.5.
 		if ( $template instanceof \CTXFeed\V8\Template\TXTTemplate ) {
-			return implode( $delimiter, $headers );
+			return $template->render_columns( $headers, $config );
 		}
 
 		// CSV/TSV: render the header through the template's OWN formatter, so it
@@ -1450,7 +1507,7 @@ class FeedGenerator {
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Intentional use of php://temp for CSV formatting.
 		$stream = fopen( 'php://temp', 'r+' );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fputcsv, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fputcsv -- Formats a CSV header line into an in-memory php://temp stream (no filesystem write); needed for proper CSV escaping.
-		fputcsv( $stream, $headers, $delimiter, '"' );
+		fputcsv( $stream, $headers, $delimiter, '"', '\\' ); // Explicit escape (PHP 8.4 deprecation, CBT-719).
 		rewind( $stream );
 		// CR/LF only — a bare rtrim() would eat the trailing tab of an empty
 		// last header column in a tab-delimited feed (see CSVTemplate).
@@ -1544,6 +1601,52 @@ class FeedGenerator {
 				rmdir( $forked_dir );
 			}
 		}
+	}
+
+	/**
+	 * Promotion keys already written in this run, per feed (CBT-716).
+	 *
+	 * @var array<string,array<string,bool>>
+	 */
+	private $promotions_seen = array();
+
+	/**
+	 * Whether a Google Promotions row is the first with its promotion_id in
+	 * this run — Google wants ONE row per promotion, while the engine walks
+	 * products. Rows without an id are keyed by their full content. The set
+	 * survives across batches in a transient, reset by the run's first batch.
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @param array  $row       Mapped row data.
+	 * @return bool
+	 */
+	private function is_new_promotion( string $feed_name, array $row ): bool {
+		$key = 'ctxfeed_promotions_seen_' . $feed_name;
+		if ( ! isset( $this->promotions_seen[ $feed_name ] ) ) {
+			$stored                              = get_transient( $key );
+			$this->promotions_seen[ $feed_name ] = is_array( $stored ) ? $stored : array();
+		}
+
+		$id = '';
+		foreach ( array( 'promotion_id', 'g:promotion_id' ) as $name ) {
+			if ( isset( $row[ $name ] ) && is_scalar( $row[ $name ] ) && '' !== trim( (string) $row[ $name ] ) ) {
+				$id = 'id:' . trim( (string) $row[ $name ] );
+				break;
+			}
+		}
+		if ( '' === $id ) {
+			$id = 'row:' . md5( (string) wp_json_encode( $row ) );
+		}
+
+		if ( isset( $this->promotions_seen[ $feed_name ][ $id ] ) ) {
+			return false;
+		}
+		$this->promotions_seen[ $feed_name ][ $id ] = true;
+		set_transient( $key, $this->promotions_seen[ $feed_name ], DAY_IN_SECONDS );
+
+		return true;
 	}
 
 	/**
@@ -1721,11 +1824,11 @@ class FeedGenerator {
 	 * @param string $final_path    Live feed path.
 	 * @param int    $product_total Products the run was scheduled for.
 	 * @param string $feed_name     Feed slug (for logging).
-	 * @return bool True if the working file was promoted; false if kept-previous or absent.
+	 * @return string 'promoted' | 'kept' (0 products, previous good feed kept) | 'missing' | 'rename_failed' (CBT-710).
 	 */
-	private function promote_working_file( string $working_path, string $final_path, int $product_total, string $feed_name ): bool {
+	private function promote_working_file( string $working_path, string $final_path, int $product_total, string $feed_name ): string {
 		if ( ! file_exists( $working_path ) ) {
-			return false;
+			return 'missing';
 		}
 
 		$previous_ok = file_exists( $final_path ) && (int) filesize( $final_path ) > 0;
@@ -1740,10 +1843,10 @@ class FeedGenerator {
 					array( 'feed' => $final_path )
 				);
 			}
-			return false;
+			return 'kept';
 		}
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.rename_rename, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_rename -- Atomic same-directory swap of our own feed file; readers of the public feed URL never see a half-written file, and WP_Filesystem offers no atomic move.
-		return rename( $working_path, $final_path );
+		return rename( $working_path, $final_path ) ? 'promoted' : 'rename_failed';
 	}
 }

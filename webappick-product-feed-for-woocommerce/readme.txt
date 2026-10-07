@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.31
+Stable tag: 8.0.32
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -493,6 +493,22 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.32 =
+* Security: FTP/SFTP passwords never leave your site. Feed details, exported .wpf files, the support bundle and AI tools no longer contain them, and the connection test reuses a saved password only for the same server and user. Feed logs are protected on Apache 2.4 too.
+* Security: the WP Options attribute can no longer put passwords, secret keys, license keys or similar settings into a feed.
+* Security: the FTP connection test no longer connects to local or private network addresses.
+* Security: an imported feed file keeps Custom Template 2 code blocks only when an Administrator imports it.
+* Fix: a feed that could not be written completely (for example a full disk) or could not replace the live file keeps the previous feed and is marked failed, instead of publishing a broken file.
+* Fix: SFTP uploads are streamed, checked and replace the live file in one step; the server key is remembered and a changed key stops the upload.
+* Fix: generated feeds are always valid UTF-8, and TXT headers use the feed's delimiter and enclosure.
+* Fix: Google feeds use Google's unit names (lb, cm, in). Google Local feeds send the GTIN instead of the SKU, and Local Inventory sends backordered items as out of stock.
+* Fix: the Google Promotions feed writes one row per promotion, as Google requires, in TSV (default) or RSS XML.
+* Fix: Bing feeds follow Microsoft's specification: backordered items are sent as preorder, shipping prices as plain numbers, identifier_exists as TRUE/FALSE, and long titles and descriptions are shortened.
+* Changed: ChatGPT feeds offer CSV and TSV. Existing JSON feeds keep working.
+* Fix: deleting a feed removes its file after a domain change and no longer deletes other feeds' logs; scheduled runs are not affected by daylight-saving changes; uninstalling removes the plugin's scheduled jobs.
+* Fix: no PHP 8.4 deprecation notice when writing CSV feeds; availability dates use the store's time zone.
+* Added: an AI connection (MCP) switch on the AI assistant page to turn the AI connection off completely. Needs CTX Feed Pro 8.0.23.
+
 = Version 8.0.31 =
 * Fix: no fatal error when Action Scheduler or Rank Math's settings API is not loaded — feed generation and scheduling check that they are available first, and a feed that cannot be scheduled is marked failed instead of breaking the page.
 * Added: stores using WooPayments Multi-Currency, YayCurrency or X-Currency get the Feed Currency field in the feed editor, and System Status reports them as a multi-currency site. Converting prices to the feed currency needs CTX Feed Pro 8.0.22.
@@ -504,20 +520,3 @@ If your feed fails to generate:
 * Improved: the "Pro features" menu is now "Premium", with current CTX Feed Pro prices.
 * Fix: the "Activate" links on the Our Plugins page and the "Update CTX Feed Pro now" link for old Pro versions work again.
 * Improved: the External services section of this readme lists every remote service the plugin contacts.
-
-= Version 8.0.30 =
-* Fix: products that have no product type saved — often added by an import, a supplier sync or a migration — are included in feeds again as simple products, as they were in version 6. WooCommerce shows these products normally, but feeds (and WooCommerce's own product export) skipped them. A product WooCommerce cannot read properly is left out instead of breaking the feed. Stores without such products are not affected.
-* Improved: on the Version Control page, updating CTX Feed while a newer CTX Feed Pro is available offers to update both in one step, CTX Feed first and then Pro.
-* Fix: the performance dashboard REST API routes (/ctxfeed/v8/dashboard/…) no longer return a server error.
-* Fix: no PHP deprecation notice from the feed upload (FTP/SFTP) code on PHP 8.4 and newer.
-
-= Version 8.0.29 =
-* Added: Google Product Review feed — every review gets a title taken from the start of the review text (the first sentence, or about 70 characters cut at a word), because WooCommerce reviews have no title of their own. Merchant Center no longer reports the title as missing.
-* Added: Google Product Review feed — a Product MPN row. Google matches reviews to products by GTIN or by brand + MPN, so stores without barcodes (for example their own brand) can map MPN to the SKU together with the brand.
-* Fix: Google Product Review feed — the Product Title and Product URL rows show their names in the feed editor instead of "Select Attribute", and the values mapped to them are used in the feed.
-* Added: Google feeds can send up to 10 product videos. Video Link 1–10 work like Additional Image 1–10: one video URL per row, each exported as its own video_link.
-* Fix: Google feeds — Min/Max Handling Time are exported on their own when the feed has no Shipping block, instead of being left out. With a Shipping block they stay inside it.
-* Improved: with Remove out-of-stock products (CTX Feed Pro) on, a variable product exported as one row lists only the attribute options that still have a sellable variation — for example Sizes "Toddler, Small, Medium" when Large is sold out. Needs CTX Feed Pro 8.0.20.
-* Fix: editing a feed that was saved without an update interval now shows "Every 24 Hours", the schedule it actually runs on, instead of "Select interval".
-* Fix: the License screen asks you to paste your API key and points to My Account > License keys on webappick.com, and "Manage license key" opens that page.
-* Improved: the Import feed drop zone can be used with the keyboard.

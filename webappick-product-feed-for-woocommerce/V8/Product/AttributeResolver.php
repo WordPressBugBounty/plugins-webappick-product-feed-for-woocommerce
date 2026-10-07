@@ -741,7 +741,9 @@ class AttributeResolver {
 					$plain_desc = (string) strip_shortcodes( $plain_desc );
 				}
 				$plain_desc = wp_strip_all_tags( html_entity_decode( $plain_desc, ENT_QUOTES ) );
-				$plain_desc = trim( (string) preg_replace( '/\s+/u', ' ', $plain_desc ) );
+				// Invalid UTF-8 (wrong-charset import) made the /u collapse
+				// return null and the whole description vanish (CBT-694).
+				$plain_desc = trim( (string) preg_replace( '/\s+/u', ' ', \CTXFeed\V8\Utility\Utf8::scrub( $plain_desc ) ) );
 				return apply_filters( 'woo_feed_filter_product_description', $plain_desc, $product, $config );
 
 			// V5 attribute: `description_with_html` — preserves HTML
@@ -2002,8 +2004,15 @@ class AttributeResolver {
 		$availability_date = (string) get_post_meta( $product->get_id(), $meta_key, true );
 
 		if ( '' !== $availability_date ) {
-			$timestamp         = strtotime( $availability_date );
-			$availability_date = false !== $timestamp ? gmdate( 'c', $timestamp ) : '';
+			// A date the merchant picked is a date in the STORE's timezone;
+			// strtotime() read it as UTC midnight, the evening before in
+			// UTC−X stores (CBT-719).
+			try {
+				$zone              = function_exists( 'wp_timezone' ) ? wp_timezone() : new \DateTimeZone( 'UTC' );
+				$availability_date = ( new \DateTimeImmutable( $availability_date, $zone ) )->format( 'c' );
+			} catch ( \Exception $e ) {
+				$availability_date = '';
+			}
 		}
 
 		// @hook woo_feed_filter_product_availability_date — V5 legacy bridge.

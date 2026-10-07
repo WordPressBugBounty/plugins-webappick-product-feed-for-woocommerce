@@ -106,6 +106,14 @@ class WpOptionResolver {
 
 		$value = get_option( $option_name, '' );
 
+		// Hard block, whatever the list or an integration says: a credential
+		// (by name, or an array value holding one) never reaches a feed
+		// (CBT-709). Uses the value just read — no second lookup.
+		if ( \CTXFeed\V8\Utility\SensitiveOptions::is_sensitive( $option_name, $value ) ) {
+			$this->cache[ $option_name ] = '';
+			return '';
+		}
+
 		// Arrays/objects are flattened for feed output.
 		if ( is_array( $value ) ) {
 			$value = $this->stringify_array( $value );

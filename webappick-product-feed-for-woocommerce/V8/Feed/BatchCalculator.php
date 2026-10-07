@@ -394,8 +394,17 @@ class BatchCalculator {
 	public function acquire_lock( string $feed_name ): bool {
 		$lock = get_transient( 'ctxfeed_generation_lock' );
 
-		// No lock exists — acquire it.
+		// No lock exists — acquire it (atomically: two requests that both saw
+		// "no lock" must not both win — CBT-720).
 		if ( false === $lock ) {
+			if ( ! $this->claim_mutex() ) {
+				return false;
+			}
+			$lock = $this->fresh_lock();
+			if ( false !== $lock ) {
+				$this->release_mutex();
+				return is_array( $lock ) && ( $lock['feed_name'] ?? '' ) === $feed_name;
+			}
 			set_transient(
 				'ctxfeed_generation_lock',
 				array(
@@ -404,6 +413,7 @@ class BatchCalculator {
 				),
 				self::LOCK_TTL 
 			);
+			$this->release_mutex();
 			return true;
 		}
 
@@ -424,7 +434,15 @@ class BatchCalculator {
 		if ( is_array( $lock ) && isset( $lock['acquired'] ) ) {
 			$age = time() - (int) $lock['acquired'];
 			if ( $age > self::LOCK_TTL ) {
-				// Stale lock — override it.
+				// Stale lock — override it (one taker only).
+				if ( ! $this->claim_mutex() ) {
+					return false;
+				}
+				$fresh = $this->fresh_lock();
+				if ( is_array( $fresh ) && ( $fresh['acquired'] ?? 0 ) !== $lock['acquired'] ) { // phpcs:ignore WordPress.PHP.YodaConditions.NotYoda -- Both sides are variables.
+					$this->release_mutex();
+					return ( $fresh['feed_name'] ?? '' ) === $feed_name;
+				}
 				set_transient(
 					'ctxfeed_generation_lock',
 					array(
@@ -433,11 +451,102 @@ class BatchCalculator {
 					),
 					self::LOCK_TTL 
 				);
+				$this->release_mutex();
 				return true;
 			}
 		}
 
 		return false;
+	}
+
+	/**
+	 * Option row used as a mutex around claiming the generation lock.
+	 *
+	 * @var string
+	 */
+	const MUTEX_OPTION = 'ctxfeed_generation_lock_mutex';
+
+	/**
+	 * Whether this request holds the database mutex row.
+	 *
+	 * @var bool
+	 */
+	private $mutex_held = false;
+
+	/**
+	 * Take the claim mutex: one INSERT IGNORE — the database guarantees
+	 * exactly one concurrent caller inserts the row (CBT-720). A mutex left
+	 * by a crashed request expires after 30 s.
+	 *
+	 * Without $wpdb (unit contexts) the claim is uncontended.
+	 *
+	 * @return bool
+	 */
+	private function claim_mutex(): bool {
+		global $wpdb;
+		if ( ! is_object( $wpdb ) || ! isset( $wpdb->options ) ) {
+			return true;
+		}
+		foreach ( array( 'query', 'prepare', 'get_var', 'delete' ) as $method ) {
+			if ( ! is_callable( array( $wpdb, $method ) ) ) {
+				return true;
+			}
+		}
+
+		for ( $attempt = 0; $attempt < 2; $attempt++ ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Atomic mutex: add_option() is check-then-insert and cannot guarantee a single winner.
+			$inserted = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", self::MUTEX_OPTION, (string) time() ) );
+			if ( 1 === (int) $inserted ) {
+				$this->mutex_held = true;
+				return true;
+			}
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Reads the mutex row written above; the options cache never saw it.
+			$taken = (int) $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::MUTEX_OPTION ) );
+			if ( 0 < $taken && 30 >= ( time() - $taken ) ) {
+				return false;
+			}
+			$this->release_mutex();
+		}
+
+		return false;
+	}
+
+	/**
+	 * Read the lock past this request's cache: another request may have
+	 * written it since we first looked (only meaningful under the mutex).
+	 *
+	 * @return mixed Lock array or false.
+	 */
+	private function fresh_lock() {
+		if ( ! $this->mutex_held ) {
+			return get_transient( 'ctxfeed_generation_lock' );
+		}
+		if ( function_exists( 'wp_using_ext_object_cache' ) && wp_using_ext_object_cache() ) {
+			// $force skips the backend's per-request copy.
+			return function_exists( 'wp_cache_get' ) ? wp_cache_get( 'ctxfeed_generation_lock', 'transient', true ) : false;
+		}
+		if ( function_exists( 'wp_cache_delete' ) ) {
+			// Transients live in options here; drop the request-local copies.
+			wp_cache_delete( 'notoptions', 'options' );
+			wp_cache_delete( '_transient_ctxfeed_generation_lock', 'options' );
+			wp_cache_delete( '_transient_timeout_ctxfeed_generation_lock', 'options' );
+		}
+
+		return get_transient( 'ctxfeed_generation_lock' );
+	}
+
+	/**
+	 * Drop the claim mutex.
+	 *
+	 * @return void
+	 */
+	private function release_mutex(): void {
+		global $wpdb;
+		$this->mutex_held = false;
+		if ( is_object( $wpdb ) && is_callable( array( $wpdb, 'delete' ) ) && isset( $wpdb->options ) ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Mutex row, see claim_mutex().
+			$wpdb->delete( $wpdb->options, array( 'option_name' => self::MUTEX_OPTION ) );
+		}
 	}
 
 	/**

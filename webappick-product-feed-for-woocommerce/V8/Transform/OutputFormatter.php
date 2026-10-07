@@ -50,6 +50,12 @@ class OutputFormatter implements TransformInterface {
 				continue;
 			}
 
+			// Drop invalid UTF-8 byte sequences (CBT-694). A product field
+			// imported in the wrong charset, or cut mid-character, otherwise
+			// reaches the file as-is and libxml rejects the whole XML feed
+			// ("Encoding error"). Everything after this assumes UTF-8.
+			$value = \CTXFeed\V8\Utility\Utf8::scrub( $value );
+
 			// Normalize encoding. @implements XFRM-FRD-8.1.
 			if ( 'UTF-8' !== $encoding && function_exists( 'mb_convert_encoding' ) ) {
 				$value = mb_convert_encoding( $value, $encoding, 'UTF-8' );

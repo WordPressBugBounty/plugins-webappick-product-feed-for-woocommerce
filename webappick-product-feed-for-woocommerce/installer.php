@@ -215,6 +215,24 @@ if ( ! class_exists( 'CTXFeed_Installer' ) ) {
 				    OR option_name LIKE '_transient_timeout_ctxfeed_%'
 				    OR option_name LIKE '_transient_ctxfeed_%'"
 			);
+
+			// With a persistent object cache (Redis, Memcached) transients
+			// never reach the options table, so the DELETE above clears
+			// nothing — a stale generation lock / "generating" progress
+			// survived a deactivate-reactivate. Delete the known keys
+			// through the API (CBT-720).
+			$keys = array( 'ctxfeed_generation_lock', 'ctxfeed_schedule_heal_at', 'ctxfeed_alerts', 'ctxfeed_activity' );
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- One-off list of feed rows at deactivation.
+			$feeds = (array) $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( 'wf_feed_' ) . '%' ) );
+			foreach ( $feeds as $option ) {
+				$slug = substr( (string) $option, strlen( 'wf_feed_' ) );
+				foreach ( array( 'ctxfeed_progress_', 'ctxfeed_chain_revives_', 'ctxfeed_query_snapshot_', 'ctxfeed_product_snapshot_' ) as $prefix ) {
+					$keys[] = $prefix . $slug;
+				}
+			}
+			foreach ( $keys as $key ) {
+				delete_transient( $key );
+			}
 		}
 
 		/**
@@ -240,6 +258,16 @@ if ( ! class_exists( 'CTXFeed_Installer' ) ) {
 		 */
 		private static function create_files() {
 			if ( apply_filters( 'woo_feed_install_skip_create_files', false ) ) {
+				return;
+			}
+
+			// Apache 2.2 + 2.4 rules and index files, and a one-time scrub of
+			// credentials older versions logged (CBT-708). Runs on activation
+			// AND every update (check_version → install).
+			if ( class_exists( '\CTXFeed\V8\Utility\LogDirGuard' ) ) {
+				wp_mkdir_p( WOO_FEED_LOG_DIR );
+				\CTXFeed\V8\Utility\LogDirGuard::ensure( WOO_FEED_LOG_DIR );
+				\CTXFeed\V8\Utility\LogDirGuard::scrub_legacy_once( WOO_FEED_LOG_DIR );
 				return;
 			}
 			$files = array(

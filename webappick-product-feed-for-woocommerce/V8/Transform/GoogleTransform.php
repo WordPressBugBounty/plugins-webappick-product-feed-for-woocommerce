@@ -75,8 +75,12 @@ class GoogleTransform implements TransformInterface {
 		$product_data = $this->transform_title( $product_data, $config );
 		$product_data = $this->transform_description( $product_data, $config );
 		$product_data = $this->transform_availability( $product_data );
+		if ( 'google_local_inventory' === $provider ) {
+			$product_data = $this->transform_local_availability( $product_data );
+		}
 		$product_data = $this->transform_availability_date( $product_data );
 		$product_data = $this->transform_color_size( $product_data );
+		$product_data = $this->transform_units( $product_data );
 
 		// Price / sale_price = bare number + the row's configured suffix as
 		// written; the feed currency is appended ONLY when the suffix is empty
@@ -189,6 +193,86 @@ class GoogleTransform implements TransformInterface {
 		}
 
 		$data['availability'] = $availability;
+
+		return $data;
+	}
+
+	/**
+	 * Local inventory availability vocabulary (CBT-713).
+	 *
+	 * Local inventory feeds accept only in_stock, limited_availability,
+	 * on_display_to_order and out_of_stock — the online map's backorder /
+	 * preorder are not valid there. A backordered or pre-order item cannot
+	 * be picked up in the store today, so it is reported out_of_stock
+	 * rather than advertised as available. Merchant-typed local values
+	 * pass through.
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param array $data Product data (online availability already normalised).
+	 * @return array
+	 */
+	private function transform_local_availability( array $data ): array {
+		if ( ! isset( $data['availability'] ) || ! is_string( $data['availability'] ) || '' === $data['availability'] ) {
+			return $data;
+		}
+
+		$valid = array( 'in_stock', 'limited_availability', 'on_display_to_order', 'out_of_stock' );
+		if ( ! in_array( $data['availability'], $valid, true ) ) {
+			$data['availability'] = 'out_of_stock';
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Google unit tokens for weights and dimensions (CBT-715).
+	 *
+	 * Weights accept lb / oz / g / kg — WooCommerce's "lbs" is not one of
+	 * them. Dimensions accept in / cm only — WooCommerce's m, mm and yd are
+	 * converted. Applies to the `"<number> <unit>"` values the weight /
+	 * length / width / height attributes produce, under Google's weight and
+	 * dimension attribute names only; anything else is left alone.
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param array $data Product data keyed by merchant attribute.
+	 * @return array
+	 */
+	private function transform_units( array $data ): array {
+		foreach ( $data as $key => $value ) {
+			if ( ! is_string( $key ) || ! is_string( $value ) || '' === $value ) {
+				continue;
+			}
+			$name = (string) preg_replace( '/^g:/', '', $key );
+			// Google's own template keys are weight / length / width / height
+			// (→ g:shipping_*); product_* and shipping_* are picker variants.
+			if ( ! preg_match( '/^(?:(?:shipping|product)_)?(weight|length|width|height)$/', $name, $m ) ) {
+				continue;
+			}
+			if ( ! preg_match( '/^\s*(-?\d+(?:[.,]\d+)?)\s*([a-zA-Z]+)\s*$/', $value, $parts ) ) {
+				continue;
+			}
+			$number = (float) str_replace( ',', '.', $parts[1] );
+			$unit   = strtolower( $parts[2] );
+
+			if ( 'weight' === $m[1] ) {
+				if ( 'lbs' === $unit ) {
+					$data[ $key ] = $parts[1] . ' lb';
+				}
+				continue;
+			}
+
+			$convert = array(
+				'm'  => array( 100, 'cm' ),
+				'mm' => array( 0.1, 'cm' ),
+				'yd' => array( 36, 'in' ),
+			);
+			if ( isset( $convert[ $unit ] ) ) {
+				$amount       = round( $number * $convert[ $unit ][0], 2 );
+				$data[ $key ] = rtrim( rtrim( number_format( $amount, 2, '.', '' ), '0' ), '.' ) . ' ' . $convert[ $unit ][1];
+			}
+		}
 
 		return $data;
 	}

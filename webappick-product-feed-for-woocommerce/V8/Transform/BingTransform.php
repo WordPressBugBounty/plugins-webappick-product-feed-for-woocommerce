@@ -27,6 +27,21 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class BingTransform implements TransformInterface {
 
+	/**
+	 * Microsoft Merchant Center title limit (characters).
+	 *
+	 * @var int
+	 */
+	const TITLE_MAX_LENGTH = 150;
+
+	/**
+	 * Microsoft Merchant Center description limit (characters).
+	 *
+	 * @var int
+	 */
+	const DESCRIPTION_MAX_LENGTH = 10000;
+
+
 	use FeedCurrencyFallbackTrait;
 
 
@@ -50,6 +65,8 @@ class BingTransform implements TransformInterface {
 		$product_data = $this->transform_availability( $product_data );
 		$product_data = $this->transform_availability_date( $product_data );
 		$product_data = $this->transform_shipping( $product_data, $config );
+		$product_data = $this->transform_identifier_exists( $product_data );
+		$product_data = $this->cap_lengths( $product_data );
 
 		// Price / sale_price = bare number + the row's configured suffix as
 		// written; the feed currency is appended ONLY when the suffix is empty
@@ -82,7 +99,12 @@ class BingTransform implements TransformInterface {
 			'in_stock'     => 'in_stock',
 			'out_of_stock' => 'out_of_stock',
 			'preorder'     => 'preorder',
-			'backorder'    => 'backorder',
+			// Microsoft accepts only in stock / out of stock / preorder; an
+			// item taking orders for later delivery is "preorder" (owner,
+			// CBT-714). `backorder` was rejected.
+			'backorder'    => 'preorder',
+			'onbackorder'  => 'preorder',
+			'on_backorder' => 'preorder',
 		);
 
 		$normalized = str_replace( '-', '_', $availability );
@@ -139,7 +161,18 @@ class BingTransform implements TransformInterface {
 	 * @return array Modified product data.
 	 */
 	private function transform_shipping( array $data, Config $config ): array {
-		if ( empty( $data['shipping'] ) || is_array( $data['shipping'] ) ) {
+		if ( empty( $data['shipping'] ) ) {
+			return $data;
+		}
+
+		// Microsoft: shipping price is numeric — "12.99", no currency
+		// (CBT-714). XML carries the entries as arrays.
+		if ( is_array( $data['shipping'] ) ) {
+			foreach ( $data['shipping'] as $i => $entry ) {
+				if ( is_array( $entry ) && isset( $entry['price'] ) && is_scalar( $entry['price'] ) ) {
+					$data['shipping'][ $i ]['price'] = self::bare_amount( (string) $entry['price'] );
+				}
+			}
 			return $data;
 		}
 
@@ -164,13 +197,70 @@ class BingTransform implements TransformInterface {
 
 			if ( count( $parts ) >= 4 ) {
 				// Remove region (index 1): country:service:price.
-				$result[] = $parts[0] . ':' . $parts[2] . ':' . $parts[3];
+				$result[] = $parts[0] . ':' . $parts[2] . ':' . self::bare_amount( $parts[3] );
 			} else {
 				$result[] = trim( $entry );
 			}
 		}
 
 		$data['shipping'] = implode( ',', $result );
+
+		return $data;
+	}
+
+	/**
+	 * A money value without its currency code ("6.49 USD" → "6.49").
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string $amount Amount.
+	 * @return string
+	 */
+	private static function bare_amount( string $amount ): string {
+		return trim( (string) preg_replace( '/\s*[A-Za-z]{3}\s*$/', '', trim( $amount ) ) );
+	}
+
+	/**
+	 * Microsoft: identifier_exists is Boolean TRUE / FALSE (CBT-714).
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param array $data Product data.
+	 * @return array
+	 */
+	private function transform_identifier_exists( array $data ): array {
+		if ( ! isset( $data['identifier_exists'] ) || ! is_scalar( $data['identifier_exists'] ) ) {
+			return $data;
+		}
+
+		$value = strtolower( trim( (string) $data['identifier_exists'] ) );
+		if ( in_array( $value, array( 'yes', 'y', 'true', '1' ), true ) ) {
+			$data['identifier_exists'] = 'TRUE';
+		} elseif ( in_array( $value, array( 'no', 'n', 'false', '0' ), true ) ) {
+			$data['identifier_exists'] = 'FALSE';
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Microsoft limits: title 150, description 10000 characters (CBT-714).
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param array $data Product data.
+	 * @return array
+	 */
+	private function cap_lengths( array $data ): array {
+		$limits = array(
+			'title'       => self::TITLE_MAX_LENGTH,
+			'description' => self::DESCRIPTION_MAX_LENGTH,
+		);
+		foreach ( $limits as $key => $max ) {
+			if ( isset( $data[ $key ] ) && is_string( $data[ $key ] ) && mb_strlen( $data[ $key ] ) > $max ) {
+				$data[ $key ] = mb_substr( $data[ $key ], 0, $max );
+			}
+		}
 
 		return $data;
 	}

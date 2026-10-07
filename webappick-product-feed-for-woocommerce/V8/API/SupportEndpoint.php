@@ -463,7 +463,9 @@ class SupportEndpoint extends RestController {
 		$status = new StatusEndpoint();
 		$files  = array(
 			'system-status.txt' => $status->full_status_text(),
-			'system-status.log' => '' === $feed ? $status->logs_text() : $this->feed_log( $feed ),
+			// Logs can hold credentials written by older versions (SFTP
+			// login failures) — never ship them unredacted (CBT-708).
+			'system-status.log' => Redactor::text( '' === $feed ? $status->logs_text() : $this->feed_log( $feed ), Redactor::saved_ftp_passwords() ),
 		);
 
 		$config_text = $this->feed_config_text( $feed );
@@ -639,7 +641,13 @@ class SupportEndpoint extends RestController {
 			);
 		}
 
-		return $option_name ? str_replace( 'wf_feed_', '', (string) $option_name ) : '';
+		// Only a wf_feed_ row is a feed — a stale numeric id can point at
+		// another plugin's option (CBT-695).
+		if ( ! $option_name || 0 !== strpos( (string) $option_name, 'wf_feed_' ) ) {
+			return '';
+		}
+
+		return substr( (string) $option_name, strlen( 'wf_feed_' ) );
 	}
 
 	/**
@@ -668,7 +676,7 @@ class SupportEndpoint extends RestController {
 		if ( 'all' === $feed ) {
 			global $wpdb;
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- wf_feed_ configs are non-autoloaded options with no enumerable get_option API; admin-only, on demand.
-			$names = (array) $wpdb->get_col( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'wf_feed_%'" );
+			$names = (array) $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( 'wf_feed_' ) . '%' ) );
 			foreach ( $names as $name ) {
 				$slugs[] = str_replace( 'wf_feed_', '', (string) $name );
 			}

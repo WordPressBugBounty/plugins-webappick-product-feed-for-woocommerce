@@ -328,7 +328,7 @@ class ReviewResolver {
 	 * @return string Title, or '' for empty text.
 	 */
 	public static function title_from_content( string $content ): string {
-		$text = trim( (string) preg_replace( '/\s+/u', ' ', $content ) );
+		$text = trim( (string) preg_replace( '/\s+/u', ' ', \CTXFeed\V8\Utility\Utf8::scrub( $content ) ) ); // CBT-694: invalid UTF-8 nulled the /u regex.
 		if ( '' === $text ) {
 			return '';
 		}

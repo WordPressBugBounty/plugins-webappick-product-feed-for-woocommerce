@@ -293,6 +293,7 @@ class XMLTemplate implements TemplateInterface {
 	 *
 	 * Supported variables:
 	 * - {DateTimeNow}     — Current date/time in Y-m-d H:i:s format.
+	 * - {DateTimeRFC822}  — Current UTC date/time in RFC 822 (RSS dates, CBT-719).
 	 * - {BlogName}        — Site name from get_bloginfo('name').
 	 * - {BlogURL}         — Site URL from get_bloginfo('url').
 	 * - {BlogDescription} — CTX Feed attribution description.
@@ -308,6 +309,8 @@ class XMLTemplate implements TemplateInterface {
 	private function replace_template_variables( string $content, Config $config ): string {
 		$variables = array(
 			'{DateTimeNow}'            => gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) ),
+			// RFC 822 for RSS <lastBuildDate>/<pubDate> (CBT-719).
+			'{DateTimeRFC822}'         => gmdate( 'D, d M Y H:i:s', time() ) . ' +0000',
 			'{BlogName}'               => get_bloginfo( 'name' ),
 			'{BlogURL}'                => get_bloginfo( 'url' ),
 			'{BlogDescription}'        => 'CTX Feed - This product feed is generated with the CTX Feed - WooCommerce Product Feed Manager plugin by WebAppick.com. For all your support questions check out our plugin Docs on https://webappick.com/docs or e-mail to: support@webappick.com',
@@ -403,8 +406,14 @@ class XMLTemplate implements TemplateInterface {
 		$cdata_enabled = $this->cdata_enabled_memo;
 
 		if ( $cdata_enabled && '' !== $value ) {
-			// Strip existing CDATA markers, then wrap fresh.
-			$clean = str_replace( array( '<![CDATA[', ']]>' ), '', html_entity_decode( $value ) );
+			// A value that is already ONE wrapped CDATA section is unwrapped;
+			// any "]]>" left in the text is split the canonical way so it is
+			// carried, not deleted (CBT-719 — it used to vanish silently).
+			$clean = html_entity_decode( $value );
+			if ( 0 === strpos( $clean, '<![CDATA[' ) && ']]>' === substr( $clean, -3 ) ) {
+				$clean = substr( $clean, 9, -3 );
+			}
+			$clean = str_replace( ']]>', ']]]]><![CDATA[>', $clean );
 			return '<![CDATA[' . $clean . ']]>';
 		}
 

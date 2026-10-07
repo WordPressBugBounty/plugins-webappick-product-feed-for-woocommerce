@@ -194,11 +194,60 @@ class Filesystem {
 	 */
 	public function get_feed_url( string $feed_name, string $extension = 'xml', string $provider = '' ): string {
 
-		$upload_dir = wp_upload_dir();
+		// Derived from the real path so a `ctxfeed_feed_dir` override moves
+		// the URL with the file (CBT-720).
+		return self::path_to_url( $this->get_feed_path( $feed_name, $extension, $provider ) );
+	}
 
-		return trailingslashit( $upload_dir['baseurl'] ) . 'woo-feed/'
-			. $this->feed_sub_path( $provider, $extension )
-			. sanitize_file_name( $feed_name ) . '.' . $extension;
+	/**
+	 * Forward slashes, repeated ones collapsed (keeps a leading `//` UNC
+	 * prefix) — wp_normalize_path() without its WordPress dependency.
+	 *
+	 * @param string $path Path.
+	 * @return string
+	 */
+	private static function normalize_path( string $path ): string {
+		return (string) preg_replace( '#(?<=.)/+#', '/', str_replace( '\\', '/', $path ) );
+	}
+
+	/**
+	 * Public URL of a file in the feed folder.
+	 *
+	 * Uploads paths map to the uploads URL (the default layout); a
+	 * `ctxfeed_feed_dir` elsewhere under the WordPress root maps to the site
+	 * URL. Anything else has no URL WordPress knows — the
+	 * `ctxfeed_feed_url` filter supplies it (CBT-720; until 8.0.32 the
+	 * stored URL was the raw disk path there).
+	 *
+	 * @since 8.0.32
+	 *
+	 * @param string $path Absolute file path.
+	 * @return string URL.
+	 */
+	public static function path_to_url( string $path ): string {
+		$url        = $path;
+		$upload_dir = wp_upload_dir();
+		$basedir    = self::normalize_path( (string) ( $upload_dir['basedir'] ?? '' ) );
+		$normalized = self::normalize_path( $path );
+		$abspath    = defined( 'ABSPATH' ) ? self::normalize_path( (string) ABSPATH ) : '';
+
+		if ( '' !== $basedir && 0 === strpos( $normalized, trailingslashit( $basedir ) ) ) {
+			$url = trailingslashit( (string) $upload_dir['baseurl'] ) . substr( $normalized, strlen( trailingslashit( $basedir ) ) );
+		} elseif ( '' !== $abspath && 0 === strpos( $normalized, $abspath ) && function_exists( 'site_url' ) ) {
+			$url = site_url( '/' . ltrim( substr( $normalized, strlen( $abspath ) ), '/' ) );
+		}
+
+		/**
+		 * Filters the public URL of a feed file.
+		 *
+		 * Needed when `ctxfeed_feed_dir` points outside the WordPress root.
+		 *
+		 * @since 8.0.32
+		 *
+		 * @param string $url  URL.
+		 * @param string $path Absolute file path.
+		 */
+		return (string) apply_filters( 'ctxfeed_feed_url', $url, $path );
 	}
 
 	/**

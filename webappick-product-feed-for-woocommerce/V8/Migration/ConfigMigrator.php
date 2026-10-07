@@ -78,7 +78,11 @@ class ConfigMigrator {
 		global $wpdb;
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Enumerating options by LIKE pattern has no WP API equivalent; one-off migration scan, caching would risk a stale feed list.
 		$results = $wpdb->get_col(
-			"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE 'wf_feed_%' AND option_name NOT LIKE '%_status'"
+			$wpdb->prepare(
+				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s AND option_name NOT LIKE %s",
+				$wpdb->esc_like( 'wf_feed_' ) . '%',
+				'%' . $wpdb->esc_like( '_status' )
+			)
 		);
 		return array_map(
 			function ( $name ) {

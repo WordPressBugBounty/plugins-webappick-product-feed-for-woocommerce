@@ -98,6 +98,7 @@ class TemplateInfo {
 			'google'                 => 'channels/google.svg',
 			'google_local'           => 'channels/google.svg',
 			'google_local_inventory' => 'channels/google.svg',
+			'google_promotions'      => 'channels/google.svg',
 			'googlereview'           => 'channels/google.svg',
 			'google_dynamic_ads'     => 'channels/google.svg',
 			'google_shopping_action' => 'channels/google.svg',
@@ -206,6 +207,12 @@ class TemplateInfo {
 				'feed_file_type' => array( 'XML', 'CSV', 'TXT' ),
 				'doc'            => array( esc_attr__( 'How to Generate Google Local Inventory Feed', 'woo-feed' ) => 'https://webappick.com/generate-google-local-inventory-feed/#what-are-google%E2%80%99s-free-local-inventory-product-listings?' ),
 			),
+			// Google Promotions: tab-delimited or XML (answer/2906014); TSV
+			// first = the default file type (CBT-716).
+			'google_promotions'                 => array(
+				'link'           => 'https://support.google.com/merchants/answer/2906014',
+				'feed_file_type' => array( 'TSV', 'XML' ),
+			),
 			'googlereview'                      => array(
 				'link'           => 'https://developers.google.com/product-review-feeds/sample',
 				'feed_file_type' => array( 'XML' ),
@@ -222,11 +229,13 @@ class TemplateInfo {
 				'link'           => 'https://www.perplexity.ai/merchants',
 				'feed_file_type' => array( 'CSV', 'TSV', 'XML' ),
 			),
-			// OpenAI Product Feed Spec: JSONL/CSV/TSV (+Parquet). XML is
-			// not an OpenAI-ingestible format, so it's not offered.
+			// OpenAI Product Feed Spec: JSONL/CSV/TSV (+Parquet). XML is not
+			// ingestible, and our JSON is one array, not JSON Lines — so only
+			// CSV and TSV are offered (owner, CBT-712). Existing JSON feeds
+			// keep generating.
 			'chatgpt'                           => array(
 				'link'           => 'https://chatgpt.com/merchants',
-				'feed_file_type' => array( 'CSV', 'TSV', 'JSON' ),
+				'feed_file_type' => array( 'CSV', 'TSV' ),
 			),
 			// X Shopping Manager ingests CSV/TSV only (upload or
 			// scheduled URL fetch) — XML is not a documented format.
