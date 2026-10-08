@@ -1205,6 +1205,10 @@ class FeedGenerator {
 		// a broken one while reporting "N products exported" (CBT-710).
 		$write_failed = ! empty( $progress['write_failed'] ) || $footer_write_failed;
 
+		// Set when a 0-product run kept the previous feed file: that file is
+		// the OLD feed, so this run must not stamp "Last updated" (CBT-724).
+		$kept_previous = false;
+
 		if ( $write_failed ) {
 			$kept = file_exists( $file_path ) && (int) filesize( $file_path ) > 0;
 			if ( file_exists( $working_path ) ) {
@@ -1250,7 +1254,13 @@ class FeedGenerator {
 				);
 				$this->feed_logger->flush( $feed_name );
 			}
-		} elseif ( 'rename_failed' === $this->promote_working_file( $working_path, $file_path, $product_total, $feed_name ) ) {
+		} elseif ( 'kept' === ( $promotion = $this->promote_working_file( $working_path, $file_path, $product_total, $feed_name ) ) ) { // phpcs:ignore Generic.CodeAnalysis.AssignmentInCondition.Found, Squiz.PHP.DisallowMultipleAssignments.FoundInControlStructure -- One call decides the branch; its result picks kept vs rename_failed below.
+			$kept_previous = true;
+			if ( $this->feed_logger ) {
+				$this->feed_logger->warning( $feed_name, 'This run found 0 products, so the previous feed file was kept and "Last updated" was not changed. Check the feed\'s filters and that products are published, then generate again.' );
+				$this->feed_logger->flush( $feed_name );
+			}
+		} elseif ( 'rename_failed' === $promotion ) {
 			// The finished file could not replace the live one: the live
 			// feed is the PREVIOUS run's, so this run must not be stamped
 			// as freshly updated (CBT-710). The orphaned working file goes too.
@@ -1278,7 +1288,7 @@ class FeedGenerator {
 		// Promote feed: update wf_feed_ with URL and timestamp. A failed run
 		// published nothing, so it must not stamp the feed as freshly
 		// updated — the file on disk is the PREVIOUS run's.
-		if ( ! empty( $file_path ) && ! $run_failed ) {
+		if ( ! empty( $file_path ) && ! $run_failed && ! $kept_previous ) {
 			$this->manager->promote_feed( $feed_name, $file_path );
 		}
 
@@ -1318,9 +1328,10 @@ class FeedGenerator {
 		$this->manager->update_progress(
 			$feed_name,
 			array(
-				'current' => $progress['total'],
-				'total'   => $progress['total'],
-				'status'  => $run_failed ? 'failed' : 'completed',
+				'current'       => $progress['total'],
+				'total'         => $progress['total'],
+				'status'        => $run_failed ? 'failed' : 'completed',
+				'kept_previous' => $kept_previous,
 			) 
 		);
 
@@ -1831,7 +1842,13 @@ class FeedGenerator {
 			return 'missing';
 		}
 
-		$previous_ok = file_exists( $final_path ) && (int) filesize( $final_path ) > 0;
+		// "Previous good feed" means THIS feed generated before. A file left
+		// at the same path by a deleted feed of the same name is not one: a
+		// never-generated feed publishes its (empty) file and gets its URL
+		// and stamp (CBT-724).
+		$feed        = \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( get_option( 'wf_feed_' . $feed_name ) );
+		$generated   = is_array( $feed ) && ! empty( $feed['last_updated'] );
+		$previous_ok = $generated && file_exists( $final_path ) && (int) filesize( $final_path ) > 0;
 
 		if ( 0 === $product_total && $previous_ok ) {
 			// Zero products + a good previous feed = almost always a transient

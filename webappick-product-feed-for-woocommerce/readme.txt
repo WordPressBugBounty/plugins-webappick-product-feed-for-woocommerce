@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.32
+Stable tag: 8.0.33
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -493,6 +493,20 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.33 =
+* Changed: ChatGPT feeds follow OpenAI's own product feed format (item_id, url, image_url, seller_name, and variants with group_id and variant_dict). Saved ChatGPT feeds are updated automatically on update; the original settings are kept as a backup.
+* Fix: feeds made with an older version follow the "include all shipping countries" setting again, and the Filters tab shows the real value so saving no longer switches it to the feed country.
+* Fix: text you type into a mapping row, such as a fixed brand, is never translated by TranslatePress. Needs CTX Feed Pro 8.0.24.
+* Fix: a run that finds no products keeps the previous feed file and its "Last updated" date, and the feed log says so.
+* Fix: Bing sale_price is a plain number, as Microsoft requires.
+* Fix: feeds on a 5-, 15-, 30- or 45-minute schedule are listed under the right status in Manage Feeds.
+* Security: feed logs are stored in a folder with a random name, so they cannot be opened on servers that ignore .htaccess (such as nginx).
+* Added: email notifications when a scheduled feed update fails, finds no products or stops running (Settings > Notifications). Needs CTX Feed Pro 8.0.24.
+* Added: a notice before updating from Version Control while CTX Feed is going through its major update.
+* Improved: Google Shopping Actions, Walmart, Etsy, Shopee and Wish templates are marked as legacy with an explanation; Walmart no longer offers JSON.
+* Improved: clearer hints for the FTP/SFTP path and the XML Extra header.
+* Improved: the plugin zip no longer includes developer test files.
+
 = Version 8.0.32 =
 * Security: FTP/SFTP passwords never leave your site. Feed details, exported .wpf files, the support bundle and AI tools no longer contain them, and the connection test reuses a saved password only for the same server and user. Feed logs are protected on Apache 2.4 too.
 * Security: the WP Options attribute can no longer put passwords, secret keys, license keys or similar settings into a feed.
@@ -520,3 +534,8 @@ If your feed fails to generate:
 * Improved: the "Pro features" menu is now "Premium", with current CTX Feed Pro prices.
 * Fix: the "Activate" links on the Our Plugins page and the "Update CTX Feed Pro now" link for old Pro versions work again.
 * Improved: the External services section of this readme lists every remote service the plugin contacts.
+
+== Upgrade Notice ==
+
+= 8.0.33 =
+CTX Feed is going through a major update. Back up your site, update CTX Feed and CTX Feed Pro together, then regenerate your feeds and check them: titles, prices, brand and shipping.

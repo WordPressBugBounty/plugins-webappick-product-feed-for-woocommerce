@@ -161,6 +161,15 @@ class MigrationServiceProvider extends ServiceProvider {
 			}
 		);
 
+		// One-time upgrade (CBT-712): saved ChatGPT feeds → OpenAI's own
+		// product feed format (names, required rows, variant rows).
+		add_action(
+			'woo_feed_plugin_updated',
+			static function () {
+				( new ChatGptFeedMigrator() )->run();
+			}
+		);
+
 		/**
 		 * Fires after all migration services have been booted and wired.
 		 *

@@ -88,6 +88,10 @@ class FeatureGate {
 		// gates writes and is a kill-switch left OFF even on Pro until the owner
 		// opts in — so it is a KNOWN key here but Pro does not unlock it.
 		'mcp_abilities',
+		// Email the merchant when a scheduled feed update fails, finds 0
+		// products or is overdue (CBT-730). Settings row in free; the sender
+		// is the Pro FailureNotifications engine.
+		'failure_notifications',
 		'mcp_abilities_write',
 	);
 

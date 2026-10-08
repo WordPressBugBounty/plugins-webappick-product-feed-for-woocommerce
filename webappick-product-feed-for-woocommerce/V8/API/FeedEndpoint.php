@@ -503,22 +503,26 @@ class FeedEndpoint extends RestController {
 			}
 
 			$feeds[] = array(
-				'id'          => $row['option_id'],
-				'option_name' => $option_name,
-				'feed_name'   => isset( $rules['filename'] ) ? $rules['filename'] : $feed_name,
-				'slug'        => $feed_name,
-				'channel'     => ucwords( str_replace( '_', ' ', $provider ) ),
-				'provider'    => $provider,
-				'logo'        => TemplateInfo::logo_url( $provider ),
-				'file_type'   => isset( $rules['feedType'] ) ? strtoupper( $rules['feedType'] ) : 'XML',
-				'feed_url'    => isset( $config['url'] ) ? $config['url'] : '',
-				'auto_update' => $this->is_auto_update_on( $config ),
-				'interval'    => $this->display_interval( $config ),
-				'last_update' => $this->to_iso8601_utc( isset( $config['last_updated'] ) ? (string) $config['last_updated'] : '' ),
+				'id'               => $row['option_id'],
+				'option_name'      => $option_name,
+				'feed_name'        => isset( $rules['filename'] ) ? $rules['filename'] : $feed_name,
+				'slug'             => $feed_name,
+				'channel'          => ucwords( str_replace( '_', ' ', $provider ) ),
+				'provider'         => $provider,
+				'logo'             => TemplateInfo::logo_url( $provider ),
+				'file_type'        => isset( $rules['feedType'] ) ? strtoupper( $rules['feedType'] ) : 'XML',
+				'feed_url'         => isset( $config['url'] ) ? $config['url'] : '',
+				'auto_update'      => $this->is_auto_update_on( $config ),
+				'interval'         => $this->display_interval( $config ),
+				// Language-independent schedule (seconds; 0 = not scheduled)
+				// for the Manage Feeds status filter — the label is translated
+				// and Pro's minute intervals read "Every N Minutes" (CBT-726).
+				'interval_seconds' => $this->interval_seconds( $config ),
+				'last_update'      => $this->to_iso8601_utc( isset( $config['last_updated'] ) ? (string) $config['last_updated'] : '' ),
 				// A run started elsewhere (cron, another tab, another admin):
 				// the list picks it up and shows the live console for it.
-				'generating'  => $this->is_generating( $feed_name ),
-				'next_run'    => $next_run,
+				'generating'       => $this->is_generating( $feed_name ),
+				'next_run'         => $next_run,
 			);
 		}
 
@@ -1199,6 +1203,15 @@ class FeedEndpoint extends RestController {
 			$eval_removed = self::strip_ct2_eval( $feed_rules );
 		}
 
+		// An older ChatGPT feed file imports in OpenAI's own format (CBT-712).
+		if ( 'chatgpt' === ( $feed_rules['provider'] ?? '' ) && class_exists( '\\CTXFeed\\V8\\Migration\\ChatGptFeedMigrator' ) ) {
+			$feed_rules = \CTXFeed\V8\Migration\ChatGptFeedMigrator::migrate_rules(
+				$feed_rules,
+				\CTXFeed\V8\Channel\TemplateDefaults::get_currency(),
+				\CTXFeed\V8\Channel\TemplateDefaults::default_brand()
+			)['rules'];
+		}
+
 		// Determine feed name.
 		$custom_name = sanitize_text_field( $request->get_param( 'feed_name' ) );
 		$custom_name = trim( $custom_name );
@@ -1573,8 +1586,7 @@ class FeedEndpoint extends RestController {
 
 		$feed_slug = str_replace( 'wf_feed_', '', $feed_data['option_name'] );
 
-		$upload_dir = wp_get_upload_dir();
-		$log_dir    = $upload_dir['basedir'] . '/woo-feed/logs/';
+		$log_dir = \CTXFeed\V8\Utility\LogDirGuard::dir();
 
 		// 1. Try V8 per-feed log: {slug}.log (written by FeedLogger).
 		$log_file_path = $log_dir . sanitize_file_name( $feed_slug ) . '.log';
@@ -3225,20 +3237,21 @@ class FeedEndpoint extends RestController {
 		}
 
 		return array(
-			'id'          => $raw['option_id'],
-			'option_name' => $raw['option_name'],
-			'feed_name'   => isset( $rules['filename'] ) ? $rules['filename'] : $feed_name,
-			'slug'        => $feed_name,
-			'channel'     => ucwords( str_replace( '_', ' ', $provider ) ),
-			'provider'    => $provider,
-			'logo'        => TemplateInfo::logo_url( $provider ),
-			'file_type'   => isset( $rules['feedType'] ) ? strtoupper( $rules['feedType'] ) : 'XML',
-			'feed_url'    => isset( $config['url'] ) ? $config['url'] : '',
-			'auto_update' => $this->is_auto_update_on( $config ),
-			'interval'    => $this->display_interval( $config ),
-			'last_update' => $this->to_iso8601_utc( isset( $config['last_updated'] ) ? (string) $config['last_updated'] : '' ),
-			'feedrules'   => $rules,
-			'config'      => $config,
+			'id'               => $raw['option_id'],
+			'option_name'      => $raw['option_name'],
+			'feed_name'        => isset( $rules['filename'] ) ? $rules['filename'] : $feed_name,
+			'slug'             => $feed_name,
+			'channel'          => ucwords( str_replace( '_', ' ', $provider ) ),
+			'provider'         => $provider,
+			'logo'             => TemplateInfo::logo_url( $provider ),
+			'file_type'        => isset( $rules['feedType'] ) ? strtoupper( $rules['feedType'] ) : 'XML',
+			'feed_url'         => isset( $config['url'] ) ? $config['url'] : '',
+			'auto_update'      => $this->is_auto_update_on( $config ),
+			'interval'         => $this->display_interval( $config ),
+			'interval_seconds' => $this->interval_seconds( $config ),
+			'last_update'      => $this->to_iso8601_utc( isset( $config['last_updated'] ) ? (string) $config['last_updated'] : '' ),
+			'feedrules'        => $rules,
+			'config'           => $config,
 		);
 	}
 
@@ -3391,6 +3404,24 @@ class FeedEndpoint extends RestController {
 	 */
 	private function is_auto_update_on( array $config ): bool {
 		return isset( $config['status'] ) && 1 === (int) $config['status'];
+	}
+
+	/**
+	 * The feed's schedule in seconds, 0 when it does not auto-update — a
+	 * language-independent value for the Manage Feeds status filter
+	 * (CBT-726; the label is translated and Pro intervals are minutes).
+	 *
+	 * @since 8.0.33
+	 *
+	 * @param array $config Unserialised `wf_feed_{slug}` option.
+	 * @return int
+	 */
+	private function interval_seconds( array $config ): int {
+		if ( ! $this->is_auto_update_on( $config ) ) {
+			return 0;
+		}
+
+		return max( 0, (int) \CTXFeed\V8\Feed\FeedScheduler::effective_interval_seconds( $config ) );
 	}
 
 	/**

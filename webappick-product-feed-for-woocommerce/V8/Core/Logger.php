@@ -193,9 +193,8 @@ class Logger {
 	 * @return string
 	 */
 	public static function system_log_path(): string {
-		$upload_dir = wp_get_upload_dir();
 
-		return trailingslashit( $upload_dir['basedir'] ) . 'woo-feed/logs/' . self::SYSTEM_LOG_FILE;
+		return \CTXFeed\V8\Utility\LogDirGuard::dir() . self::SYSTEM_LOG_FILE;
 	}
 
 	/**

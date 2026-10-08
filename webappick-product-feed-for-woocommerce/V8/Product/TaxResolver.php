@@ -209,14 +209,10 @@ class TaxResolver {
 		$feed_country = $config->get( 'feed_country', '' );
 		$tax_country  = $config->get( 'tax_country', '' );
 
-		// Per-feed value is authoritative. The global `allow_all_shipping`
-		// setting is intentionally NOT consulted here — the Filter tab is
-		// the single source of truth.
-		//
-		// - tax_country === 'all'  → include all zones
-		// - tax_country === 'feed' → strict match vs feed_country
-		// - empty / unknown        → default to 'feed' behaviour.
-		if ( 'all' === $tax_country ) {
+		// V5 parity (GoogleTax / CustomTax): 'all' → every zone, 'feed' →
+		// feed-country zones only, empty → the global `allow_all_shipping`
+		// setting decides (CBT-728).
+		if ( ShippingResolver::all_countries( (string) $tax_country ) ) {
 			return $entries;
 		}
 

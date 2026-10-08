@@ -164,6 +164,12 @@ class SettingsEndpoint extends RestController {
 			'only_local_pickup_shipping'       => $enum( array( 'yes', 'no' ), __( 'Include only local pickup shipping in feeds.', 'woo-feed' ) ),
 			'enable_ftp_upload'                => $enum( array( 'yes', 'no' ), __( 'Enable FTP/SFTP feed upload.', 'woo-feed' ) ),
 			'enable_cdata'                     => $enum( array( 'yes', 'no' ), __( 'Wrap XML values in CDATA.', 'woo-feed' ) ),
+			'failure_email_notify'             => $enum( array( 'yes', 'no' ), __( 'Email when a scheduled feed update fails (Pro).', 'woo-feed' ) ),
+			'failure_email_recipients'         => array(
+				'type'              => 'string',
+				'validate_callback' => 'rest_validate_request_arg',
+				'description'       => __( 'Comma-separated addresses for failure emails; empty = the site admin email.', 'woo-feed' ),
+			),
 			'cache_ttl'                        => array(
 				'type'              => 'integer',
 				'minimum'           => 0,
@@ -282,6 +288,8 @@ class SettingsEndpoint extends RestController {
 			'only_local_pickup_shipping'       => 'no',
 			'enable_ftp_upload'                => 'no',
 			'enable_cdata'                     => 'yes',
+			'failure_email_notify'             => 'no',
+			'failure_email_recipients'         => '',
 		);
 
 		// V5-actual install defaults for custom-field toggles — only
@@ -327,6 +335,11 @@ class SettingsEndpoint extends RestController {
 		// Telemetry opt-in lives with the AppServices tracker, not in the
 		// settings option — expose it so the Diagnostics toggle hydrates.
 		$settings['tracking_opt_in'] = $this->tracking_allowed() ? 'yes' : 'no';
+
+		// Read-only: the failure-email recipients field shows it as the
+		// default address (CBT-730). Never saved.
+		$admin_email             = get_option( 'admin_email', '' );
+		$settings['admin_email'] = is_string( $admin_email ) ? $admin_email : '';
 
 		return $this->success( $settings );
 	}
@@ -503,6 +516,19 @@ class SettingsEndpoint extends RestController {
 			unset( $args['enable_cdata'] );
 		}
 
+		// Failure email (CBT-730): the switch is stored by free; the Pro
+		// FailureNotifications engine reads it and sends the email.
+		if ( array_key_exists( 'failure_email_notify', $args ) ) {
+			$val                          = strtolower( sanitize_text_field( $args['failure_email_notify'] ) );
+			$data['failure_email_notify'] = in_array( $val, array( 'yes', 'no' ), true ) ? $val : $defaults['failure_email_notify'];
+			unset( $args['failure_email_notify'] );
+		}
+
+		if ( array_key_exists( 'failure_email_recipients', $args ) ) {
+			$data['failure_email_recipients'] = self::sanitize_recipients( (string) $args['failure_email_recipients'] );
+			unset( $args['failure_email_recipients'] );
+		}
+
 		// Nested objects: taxonomy and identifier custom fields.
 		// Track whether either changed so we can invalidate the V5
 		// product-attribute cache transient — V5 did this on every toggle
@@ -588,6 +614,27 @@ class SettingsEndpoint extends RestController {
 		}
 
 		return $this->success( $response );
+	}
+
+	/**
+	 * Keep only valid addresses from a comma/semicolon/space-separated list,
+	 * deduplicated and joined with ", " (CBT-730).
+	 *
+	 * @since 8.0.33
+	 *
+	 * @param string $raw Raw input.
+	 * @return string
+	 */
+	public static function sanitize_recipients( string $raw ): string {
+		$valid = array();
+		foreach ( preg_split( '/[\s,;]+/', $raw ) as $part ) {
+			$email = sanitize_email( $part );
+			if ( '' !== $email && is_email( $email ) && ! in_array( strtolower( $email ), array_map( 'strtolower', $valid ), true ) ) {
+				$valid[] = $email;
+			}
+		}
+
+		return implode( ', ', $valid );
 	}
 
 	/**

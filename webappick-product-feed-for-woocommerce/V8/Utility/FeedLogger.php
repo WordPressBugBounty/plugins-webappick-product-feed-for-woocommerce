@@ -82,8 +82,7 @@ class FeedLogger {
 		 */
 		$this->enabled = (bool) apply_filters( 'ctxfeed_feed_log_enabled', true );
 
-		$upload_dir    = wp_get_upload_dir();
-		$this->log_dir = trailingslashit( $upload_dir['basedir'] ) . 'woo-feed/logs/';
+		$this->log_dir = LogDirGuard::dir(); // Random per-site folder (CBT-725).
 	}
 
 	/**

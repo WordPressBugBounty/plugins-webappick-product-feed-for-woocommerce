@@ -404,6 +404,8 @@ class AttributeRegistry {
 				'ex_link'                => __( 'External Product URL', 'woo-feed' ),
 				'add_to_cart_link'       => __( 'Add to Cart URL', 'woo-feed' ),
 				'item_group_id'          => __( 'Parent Id [Group Id]', 'woo-feed' ),
+				'variant_options'        => __( 'Variant Options [JSON]', 'woo-feed' ),
+				'is_variation'           => __( 'Is Variation [true/empty]', 'woo-feed' ),
 				'sku'                    => __( 'SKU', 'woo-feed' ),
 				'sku_id'                 => __( 'SKU_ID', 'woo-feed' ),
 				'parent_sku'             => __( 'Parent SKU', 'woo-feed' ),

@@ -121,6 +121,31 @@ class ShippingResolver {
 	}
 
 	/**
+	 * Whether a feed's Shipping/Tax country scope includes every country.
+	 *
+	 * V5 parity (GoogleShipping / GoogleTax / CustomTax): 'all' and 'feed'
+	 * are explicit; an empty or unknown value falls back to the global
+	 * `allow_all_shipping` setting (default 'no'). Implements CBT-728.
+	 *
+	 * @since 8.0.33
+	 *
+	 * @param string $scope Feed value: 'all', 'feed' or ''.
+	 * @return bool True to include every country's rates.
+	 */
+	public static function all_countries( string $scope ): bool {
+		if ( 'all' === $scope ) {
+			return true;
+		}
+		if ( 'feed' === $scope ) {
+			return false;
+		}
+
+		$settings = get_option( 'woo_feed_settings', array() );
+
+		return is_array( $settings ) && isset( $settings['allow_all_shipping'] ) && 'yes' === $settings['allow_all_shipping'];
+	}
+
+	/**
 	 * Whether local pickup methods are excluded from shipping entries.
 	 *
 	 * V5 parity — Settings::get('only_local_pickup_shipping'), default
@@ -829,15 +854,10 @@ class ShippingResolver {
 		$feed_country     = $config->get( 'feed_country', '' );
 		$shipping_country = $config->get( 'shipping_country', '' );
 
-		// Per-feed value is authoritative. The global `allow_all_shipping`
-		// setting is intentionally NOT consulted here — the Filter tab is
-		// the single source of truth. Unset / legacy feeds default to
-		// `'feed'` (strict match against the feed country).
-		//
-		// - shipping_country === 'all'  → include all zones
-		// - shipping_country === 'feed' → strict match vs feed_country
-		// - empty / unknown             → default to 'feed' behaviour.
-		if ( 'all' === $shipping_country ) {
+		// V5 parity (GoogleShipping::get_csv): 'all' → every zone, 'feed' →
+		// feed-country zones only, empty → the global `allow_all_shipping`
+		// setting decides (CBT-728). V5 feeds were saved with an empty value.
+		if ( self::all_countries( (string) $shipping_country ) ) {
 			return $entries;
 		}
 

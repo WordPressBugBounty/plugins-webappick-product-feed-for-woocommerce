@@ -14,6 +14,7 @@
 namespace CTXFeed\V8\Feed;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Core\Logger;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -329,6 +330,8 @@ class FeedManager {
 			// CBT-710: a batch hit a short write — finalize must not publish.
 			// Listed here or the fixed-key merge drops it.
 			'write_failed'    => isset( $data['write_failed'] ) ? (bool) $data['write_failed'] : ! empty( $existing['write_failed'] ),
+			// A 0-product run kept the previous feed file unstamped (CBT-724).
+			'kept_previous'   => isset( $data['kept_previous'] ) ? (bool) $data['kept_previous'] : ! empty( $existing['kept_previous'] ),
 		);
 
 		// Per-batch counters for the live generation console. These were
@@ -344,6 +347,57 @@ class FeedManager {
 		}
 
 		set_transient( "ctxfeed_progress_{$feed_id}", $progress, HOUR_IN_SECONDS );
+
+		$this->announce_outcome( $feed_id, $existing, $progress, $data );
+	}
+
+	/**
+	 * Fire the run-outcome actions once, on the transition (CBT-730).
+	 *
+	 * Every failure path (sync throw, dead batch chain, fatal shutdown,
+	 * finalize) ends in update_progress( status => 'failed' ), so this is the
+	 * one place that sees them all. Listeners (the Pro failure-email engine)
+	 * can never break generation: each call is isolated.
+	 *
+	 * @since 8.0.33
+	 *
+	 * @param string $feed_id  Feed slug.
+	 * @param array  $existing Progress before this update.
+	 * @param array  $progress Progress after this update.
+	 * @param array  $data     The fields this call set.
+	 * @return void
+	 */
+	private function announce_outcome( string $feed_id, array $existing, array $progress, array $data ): void {
+		try {
+			if ( 'failed' === $progress['status'] && 'failed' !== ( $existing['status'] ?? '' ) ) {
+				/**
+				 * Fires once when a feed run turns `failed`.
+				 *
+				 * `$progress['trigger']` is 'scheduled' for auto-update runs.
+				 *
+				 * @since 8.0.33
+				 *
+				 * @param string $feed_id  Feed slug.
+				 * @param array  $progress Progress record.
+				 */
+				do_action( 'ctxfeed_feed_run_failed', $feed_id, $progress );
+			}
+
+			if ( ! empty( $data['kept_previous'] ) && 'completed' === $progress['status'] ) {
+				/**
+				 * Fires when a run found 0 products and kept the previous
+				 * feed file (CBT-724).
+				 *
+				 * @since 8.0.33
+				 *
+				 * @param string $feed_id  Feed slug.
+				 * @param array  $progress Progress record.
+				 */
+				do_action( 'ctxfeed_feed_kept_previous', $feed_id, $progress );
+			}
+		} catch ( \Throwable $e ) {
+			Logger::error( "Run-outcome listener failed (non-fatal): {$feed_id}", array( 'error' => $e->getMessage() ) );
+		}
 	}
 
 	/**

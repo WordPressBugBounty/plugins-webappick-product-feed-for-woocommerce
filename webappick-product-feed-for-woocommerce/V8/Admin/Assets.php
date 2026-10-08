@@ -157,6 +157,11 @@ class Assets {
 			'pro_pricing'  => ProPricing::snapshot(),
 		);
 
+		// What an unset Shipping/Tax country scope means on this site (the
+		// global allow_all_shipping, V5 parity) so the Filters tab shows the
+		// effective value of a V5-era feed (CBT-728).
+		$data['country_scope_default'] = \CTXFeed\V8\Product\ShippingResolver::all_countries( '' ) ? 'all' : 'feed';
+
 		/**
 		 * Filter the data passed to the React admin app via wp_localize_script.
 		 *

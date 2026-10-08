@@ -61,6 +61,15 @@ class ChatGptTransform implements TransformInterface {
 		$product_data = $this->apply_feed_currency_fallback( $product_data, $config, array( 'price', 'sale_price' ) );
 		$product_data = $this->strip_thousand_separators( $product_data, array( 'price', 'sale_price' ) );
 
+		// OpenAI's own feed format (owner, CBT-712). Works on the configured
+		// names — native (item_id, group_id, …) or legacy (id, item_group_id,
+		// …); AttributeNameMapper writes the native names afterwards.
+		$product_data = $this->transform_sale_price( $product_data );
+		$product_data = $this->transform_weight( $product_data );
+		$product_data = $this->transform_variants( $product_data );
+		$product_data = $this->transform_image_list( $product_data );
+		$product_data = $this->cap_text( $product_data );
+
 		return $product_data;
 	}
 
@@ -107,7 +116,19 @@ class ChatGptTransform implements TransformInterface {
 	 * @return array Modified product data.
 	 */
 	private function transform_availability( array $data ): array {
-		if ( empty( $data['availability'] ) ) {
+		if ( ! array_key_exists( 'availability', $data ) || is_array( $data['availability'] ) ) {
+			return $data;
+		}
+		// OpenAI's own format (has seller_name) vs its Google-compatible
+		// profile, which spells preorder and has no "unknown" (CBT-712).
+		$google_compatible = ! array_key_exists( 'seller_name', $data );
+
+		if ( '' === trim( (string) $data['availability'] ) ) {
+			// OpenAI rejects a row with an empty availability; unknown is its
+			// explicit "stock status unavailable" value (CBT-712).
+			if ( ! $google_compatible ) {
+				$data['availability'] = 'unknown';
+			}
 			return $data;
 		}
 
@@ -126,6 +147,9 @@ class ChatGptTransform implements TransformInterface {
 
 		if ( isset( $map[ $availability ] ) ) {
 			$data['availability'] = $map[ $availability ];
+		}
+		if ( $google_compatible && 'pre_order' === $data['availability'] ) {
+			$data['availability'] = 'preorder';
 		}
 
 		return $data;
@@ -154,6 +178,146 @@ class ChatGptTransform implements TransformInterface {
 			$value = strtolower( trim( (string) $data[ $flag ] ) );
 
 			$data[ $flag ] = in_array( $value, array( 'true', '1', 'yes', 'y', 'on' ), true ) ? 'true' : 'false';
+		}
+
+		return $data;
+	}
+
+	/**
+	 * The leading decimal amount of a money string ("59.99 USD" → 59.99).
+	 *
+	 * @param mixed $value Value.
+	 * @return float|null
+	 */
+	private static function amount( $value ): ?float {
+		if ( ! is_scalar( $value ) || 1 !== preg_match( '/^\s*(\d+(?:\.\d+)?)/', (string) $value, $m ) ) {
+			return null;
+		}
+
+		return (float) $m[1];
+	}
+
+	/**
+	 * OpenAI ignores a sale price that is not strictly between 0 and the
+	 * regular price; send none instead (CBT-712).
+	 *
+	 * @param array $data Product data.
+	 * @return array
+	 */
+	private function transform_sale_price( array $data ): array {
+		if ( ! array_key_exists( 'sale_price', $data ) || '' === (string) ( is_scalar( $data['sale_price'] ) ? $data['sale_price'] : '' ) ) {
+			return $data;
+		}
+		$sale  = self::amount( $data['sale_price'] );
+		$price = self::amount( $data['price'] ?? null );
+		if ( null === $sale || $sale <= 0 || ( null !== $price && $sale >= $price ) ) {
+			$data['sale_price'] = '';
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Weight as a bare decimal plus item_weight_unit (g, kg, oz, lb) — the
+	 * WooCommerce value arrives as "0.75 kg" / "2 lbs". Only split when the
+	 * feed has an item_weight_unit column, so older feeds keep the unit
+	 * with the number (CBT-712).
+	 *
+	 * @param array $data Product data.
+	 * @return array
+	 */
+	private function transform_weight( array $data ): array {
+		$units = array(
+			'g'      => 'g',
+			'gram'   => 'g',
+			'grams'  => 'g',
+			'kg'     => 'kg',
+			'kgs'    => 'kg',
+			'oz'     => 'oz',
+			'ozs'    => 'oz',
+			'ounce'  => 'oz',
+			'ounces' => 'oz',
+			'lb'     => 'lb',
+			'lbs'    => 'lb',
+			'pound'  => 'lb',
+			'pounds' => 'lb',
+		);
+
+		if ( array_key_exists( 'item_weight_unit', $data ) && is_scalar( $data['item_weight_unit'] ) ) {
+			$unit                     = strtolower( trim( (string) $data['item_weight_unit'] ) );
+			$data['item_weight_unit'] = $units[ $unit ] ?? '';
+		}
+
+		if ( ! array_key_exists( 'item_weight_unit', $data ) || ! isset( $data['weight'] ) || ! is_scalar( $data['weight'] ) || '' === trim( (string) $data['weight'] ) ) {
+			return $data;
+		}
+
+		if ( 1 === preg_match( '/^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Z]*)\s*$/', (string) $data['weight'], $m ) ) {
+			$data['weight'] = str_replace( ',', '.', $m[1] );
+			$unit           = strtolower( $m[2] );
+			if ( '' === $data['item_weight_unit'] && isset( $units[ $unit ] ) ) {
+				$data['item_weight_unit'] = $units[ $unit ];
+			}
+		}
+		if ( '' === $data['item_weight_unit'] ) {
+			$data['weight'] = ''; // A weight without a valid unit is not usable.
+		}
+
+		return $data;
+	}
+
+	/**
+	 * Set listing_has_variations = true on every variant row: the row's group
+	 * differs from its own item ID (CBT-712). Empty otherwise.
+	 *
+	 * @param array $data Product data.
+	 * @return array
+	 */
+	private function transform_variants( array $data ): array {
+		if ( ! array_key_exists( 'listing_has_variations', $data ) ) {
+			return $data;
+		}
+		$group = (string) ( $data['group_id'] ?? $data['item_group_id'] ?? '' );
+		$item  = (string) ( $data['item_id'] ?? $data['id'] ?? '' );
+
+		$data['listing_has_variations'] = ( '' !== $group && $group !== $item ) ? 'true' : '';
+
+		return $data;
+	}
+
+	/**
+	 * Additional images: comma-separated, no spaces (OpenAI: "do not use
+	 * spaces or semicolons as list separators").
+	 *
+	 * @param array $data Product data.
+	 * @return array
+	 */
+	private function transform_image_list( array $data ): array {
+		foreach ( array( 'additional_image_urls', 'additional_image_link' ) as $key ) {
+			if ( isset( $data[ $key ] ) && is_scalar( $data[ $key ] ) && '' !== (string) $data[ $key ] ) {
+				$urls         = array_filter( array_map( 'trim', explode( ',', (string) $data[ $key ] ) ), 'strlen' );
+				$data[ $key ] = implode( ',', $urls );
+			}
+		}
+
+		return $data;
+	}
+
+	/**
+	 * OpenAI: titles up to 150 characters, descriptions up to 5,000.
+	 *
+	 * @param array $data Product data.
+	 * @return array
+	 */
+	private function cap_text( array $data ): array {
+		$limits = array(
+			'title'       => 150,
+			'description' => 5000,
+		);
+		foreach ( $limits as $key => $max ) {
+			if ( isset( $data[ $key ] ) && is_string( $data[ $key ] ) && mb_strlen( $data[ $key ] ) > $max ) {
+				$data[ $key ] = mb_substr( $data[ $key ], 0, $max );
+			}
 		}
 
 		return $data;

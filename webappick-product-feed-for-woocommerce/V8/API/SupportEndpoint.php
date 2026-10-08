@@ -579,7 +579,7 @@ class SupportEndpoint extends RestController {
 			return '(logs directory unavailable)';
 		}
 
-		$log_dir = trailingslashit( $upload['basedir'] ) . 'woo-feed/logs/';
+		$log_dir = \CTXFeed\V8\Utility\LogDirGuard::dir();
 		if ( ! is_dir( $log_dir ) ) {
 			return '(no logs yet — enable debug logging in Settings, then regenerate the feed)';
 		}

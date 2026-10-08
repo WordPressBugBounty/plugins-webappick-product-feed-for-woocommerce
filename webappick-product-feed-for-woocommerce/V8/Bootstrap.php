@@ -149,7 +149,7 @@ class Bootstrap {
 	private function define_constants(): void {
 
 		if ( ! defined( 'CTXFEED_V8_VERSION' ) ) {
-			define( 'CTXFEED_V8_VERSION', '8.0.32' );
+			define( 'CTXFEED_V8_VERSION', '8.0.33' );
 		}
 
 		if ( ! defined( 'CTXFEED_V8_PATH' ) ) {
@@ -212,8 +212,7 @@ class Bootstrap {
 		}
 
 		if ( ! defined( 'WOO_FEED_LOG_DIR' ) ) {
-			$upload_dir = wp_get_upload_dir();
-			define( 'WOO_FEED_LOG_DIR', $upload_dir['basedir'] . '/woo-feed/logs/' );
+			define( 'WOO_FEED_LOG_DIR', \CTXFeed\V8\Utility\LogDirGuard::dir() );
 		}
 	}
 

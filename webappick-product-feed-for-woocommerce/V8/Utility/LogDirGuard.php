@@ -47,6 +47,170 @@ class LogDirGuard {
 	const SCRUBBED_OPTION = 'ctxfeed_logs_scrubbed_cbt708';
 
 	/**
+	 * Option holding this site's random log-folder key (CBT-725).
+	 *
+	 * @var string
+	 */
+	const DIR_OPTION = 'ctxfeed_log_dir_key';
+
+	/**
+	 * Per-request memo of dir().
+	 *
+	 * @var string|null
+	 */
+	private static $dir = null;
+
+	/**
+	 * This site's log folder: `uploads/woo-feed/logs-{random}/`.
+	 *
+	 * Nginx ignores the .htaccess deny rules, so a guessable
+	 * `uploads/woo-feed/logs/{feed}.log` was readable by anyone there; an
+	 * unguessable per-site folder name closes that (CBT-725). The key is
+	 * created once (moving the old `logs/` contents in) and never changes.
+	 * Override with the `ctxfeed_log_dir` filter — from a must-use plugin,
+	 * since the path is resolved while plugins load.
+	 *
+	 * @since 8.0.33
+	 * @return string Absolute path with trailing slash.
+	 */
+	public static function dir(): string {
+		if ( null !== self::$dir ) {
+			return self::$dir;
+		}
+
+		$base = self::base_dir();
+		$new  = false;
+		// Logging must never break a request: option I/O failures fall back
+		// to a fresh key for this request.
+		try {
+			$key = function_exists( 'get_option' ) ? get_option( self::DIR_OPTION ) : '';
+		} catch ( \Throwable $e ) {
+			$key = '';
+		}
+		if ( ! is_string( $key ) || 1 !== preg_match( '/^[a-z0-9]{16,40}$/', $key ) ) {
+			$key = self::random_key();
+			$new = true;
+			try {
+				if ( function_exists( 'update_option' ) ) {
+					update_option( self::DIR_OPTION, $key, true );
+				}
+			} catch ( \Throwable $e ) {
+				$new = false; // Not persisted: do not move the old logs around.
+			}
+		}
+
+		$dir = $base . 'logs-' . $key . '/';
+		if ( function_exists( 'apply_filters' ) ) {
+			/**
+			 * Filters CTX Feed's log folder (absolute path).
+			 *
+			 * @since 8.0.33
+			 *
+			 * @param string $dir Log folder.
+			 */
+			$dir = (string) apply_filters( 'ctxfeed_log_dir', $dir );
+		}
+		self::$dir = rtrim( $dir, '/\\' ) . '/';
+
+		if ( $new ) {
+			self::migrate_legacy();
+		}
+
+		return self::$dir;
+	}
+
+	/**
+	 * Move the logs out of the old guessable `woo-feed/logs/` folder into
+	 * this site's random folder, then remove the old folder (CBT-725).
+	 * Idempotent — a no-op once the old folder is gone.
+	 *
+	 * @since 8.0.33
+	 * @return int Files moved.
+	 */
+	public static function migrate_legacy(): int {
+		$legacy = self::base_dir() . 'logs/';
+		$target = self::dir();
+		if ( ! is_dir( $legacy ) || rtrim( $legacy, '/' ) === rtrim( $target, '/' ) ) {
+			return 0;
+		}
+
+		if ( ! is_dir( $target ) && function_exists( 'wp_mkdir_p' ) ) {
+			wp_mkdir_p( $target );
+		}
+		self::ensure( $target );
+
+		$moved = 0;
+		foreach ( (array) glob( $legacy . '*' ) as $file ) {
+			$name = basename( (string) $file );
+			if ( ! is_file( $file ) || in_array( $name, array( '.htaccess', 'index.php', 'index.html' ), true ) ) {
+				continue;
+			}
+			if ( ! file_exists( $target . $name ) && @rename( $file, $target . $name ) ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden, WordPress.WP.AlternativeFunctions.rename_rename, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_rename -- Moving our own log files inside uploads; a failure leaves the file where it was.
+				++$moved;
+			}
+		}
+
+		// Remove the old folder only when nothing but its guard files is left.
+		$left = array_filter(
+			(array) glob( $legacy . '{,.}*', GLOB_BRACE ),
+			static function ( $f ) {
+				return ! in_array( basename( (string) $f ), array( '.', '..', '.htaccess', 'index.php', 'index.html' ), true );
+			}
+		);
+		if ( empty( $left ) ) {
+			foreach ( array( '.htaccess', 'index.php', 'index.html' ) as $guard ) {
+				if ( is_file( $legacy . $guard ) ) {
+					@unlink( $legacy . $guard ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden, WordPress.WP.AlternativeFunctions.unlink_unlink, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_unlink -- Our own guard file in uploads.
+				}
+			}
+			@rmdir( $legacy ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden, WordPress.WP.AlternativeFunctions.file_system_operations_rmdir, WordPressVIPMinimum.Functions.RestrictedFunctions.directory_rmdir -- Our own empty folder in uploads.
+		}
+
+		return $moved;
+	}
+
+	/**
+	 * Forget the memoized folder (tests).
+	 *
+	 * @return void
+	 */
+	public static function reset(): void {
+		self::$dir = null;
+	}
+
+	/**
+	 * `uploads/woo-feed/` with trailing slash.
+	 *
+	 * @return string
+	 */
+	private static function base_dir(): string {
+		$basedir = '';
+		if ( function_exists( 'wp_get_upload_dir' ) ) {
+			$upload  = wp_get_upload_dir();
+			$basedir = (string) ( $upload['basedir'] ?? '' );
+		}
+		if ( '' === $basedir ) {
+			$basedir = ( defined( 'WP_CONTENT_DIR' ) ? WP_CONTENT_DIR : ABSPATH . 'wp-content' ) . '/uploads';
+		}
+
+		return rtrim( $basedir, '/\\' ) . '/woo-feed/';
+	}
+
+	/**
+	 * 20 lowercase hex-ish characters, cryptographically random when
+	 * possible (wp_generate_password() is not loaded yet while plugins load).
+	 *
+	 * @return string
+	 */
+	private static function random_key(): string {
+		try {
+			return bin2hex( random_bytes( 10 ) );
+		} catch ( \Throwable $e ) {
+			return substr( md5( uniqid( '', true ) . mt_rand() ), 0, 20 ); // phpcs:ignore WordPress.WP.AlternativeFunctions.rand_mt_rand -- Fallback only; wp_rand() is pluggable and not loaded yet.
+		}
+	}
+
+	/**
 	 * Write the guard files into a log directory (idempotent, cheap).
 	 *
 	 * Replaces the legacy Apache-2.2-only .htaccess; never touches a

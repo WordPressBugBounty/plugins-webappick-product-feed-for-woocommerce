@@ -71,7 +71,14 @@ class BingTransform implements TransformInterface {
 		// Price / sale_price = bare number + the row's configured suffix as
 		// written; the feed currency is appended ONLY when the suffix is empty
 		// and a multi-currency plugin provided that currency (CBT-602, owner).
-		$product_data = $this->apply_feed_currency_fallback( $product_data, $config, array( 'price', 'sale_price' ) );
+		$product_data = $this->apply_feed_currency_fallback( $product_data, $config, array( 'price' ) );
+
+		// Microsoft: sale_price is a bare number ("20.99", no symbols), unlike
+		// price ("23.99 USD"). Strips a currency a saved row still carries
+		// (owner, CBT-722).
+		if ( isset( $product_data['sale_price'] ) && is_scalar( $product_data['sale_price'] ) && '' !== (string) $product_data['sale_price'] ) {
+			$product_data['sale_price'] = self::bare_amount( (string) $product_data['sale_price'] );
+		}
 
 		return $product_data;
 	}

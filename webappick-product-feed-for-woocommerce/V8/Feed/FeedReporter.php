@@ -264,8 +264,7 @@ class FeedReporter {
 	 * @return void
 	 */
 	private function save_report_file( string $feed_slug, array $report ): void {
-		$upload_dir = wp_get_upload_dir();
-		$log_dir    = trailingslashit( $upload_dir['basedir'] ) . 'woo-feed/logs/';
+		$log_dir = \CTXFeed\V8\Utility\LogDirGuard::dir();
 
 		if ( ! is_dir( $log_dir ) ) {
 			wp_mkdir_p( $log_dir );
@@ -346,8 +345,7 @@ class FeedReporter {
 	 * @return string Full file path.
 	 */
 	public function get_report_path( string $feed_slug ): string {
-		$upload_dir = wp_get_upload_dir();
 
-		return trailingslashit( $upload_dir['basedir'] ) . 'woo-feed/logs/' . sanitize_file_name( $feed_slug ) . '-report.txt';
+		return \CTXFeed\V8\Utility\LogDirGuard::dir() . sanitize_file_name( $feed_slug ) . '-report.txt';
 	}
 }

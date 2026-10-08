@@ -318,7 +318,15 @@ class FeedScheduler {
 				$this->batch_calculator->release_lock( $feed_name );
 			}
 			$manager = $this->manager ? $this->manager : new FeedManager();
-			$manager->update_progress( $feed_name, array( 'status' => 'failed' ) );
+			// Carry the trigger: a throw before the run's first progress write
+			// would otherwise leave it unknown (failure emails, CBT-730).
+			$manager->update_progress(
+				$feed_name,
+				array(
+					'status'  => 'failed',
+					'trigger' => $trigger,
+				)
+			);
 
 			// Re-throw so the REST caller still gets the real error message.
 			throw $e;

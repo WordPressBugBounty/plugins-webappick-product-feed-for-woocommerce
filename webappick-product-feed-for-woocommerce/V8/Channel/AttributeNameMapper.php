@@ -33,6 +33,15 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AttributeNameMapper {
 
 	/**
+	 * Whether the ChatGPT feed being mapped is OpenAI's Google-compatible
+	 * profile (no seller_name column) rather than OpenAI's own format.
+	 *
+	 * @var bool
+	 */
+	private $chatgpt_google_compatible = false;
+
+
+	/**
 	 * Attribute name mappings per channel and format.
 	 *
 	 * Structure: $mappings[provider][feed_type_normalized][internal_attribute] = mapped_name
@@ -80,8 +89,11 @@ class AttributeNameMapper {
 		// PROD-FRD-10.11.
 		$lookup_attr = ProductRepository::strip_dup_suffix( (string) $attribute );
 
-		// Look up mapping.
-		if ( isset( $this->mappings[ $provider ][ $normalized_type ][ $lookup_attr ] ) ) {
+		// Look up mapping. A ChatGPT feed without seller_name is OpenAI's
+		// Google-compatible profile: keep its names (CBT-712).
+		if ( 'chatgpt' === $provider && $this->chatgpt_google_compatible ) {
+			$mapped_name = $lookup_attr;
+		} elseif ( isset( $this->mappings[ $provider ][ $normalized_type ][ $lookup_attr ] ) ) {
 			$mapped_name = $this->mappings[ $provider ][ $normalized_type ][ $lookup_attr ];
 		} else {
 			$mapped_name = $lookup_attr;
@@ -120,6 +132,8 @@ class AttributeNameMapper {
 	 * @return array Product data array with remapped keys.
 	 */
 	public function map_product_data( array $product_data, $provider, $feed_type ) {
+		$this->set_chatgpt_profile( $provider, array_keys( $product_data ) );
+
 		// Delimited formats (CSV/TSV/TXT) are rendered POSITIONALLY — the template
 		// does array_values() and the header is built separately, one column per
 		// mapped attribute (get_mapped_headers). So emit one value per input
@@ -231,6 +245,7 @@ class AttributeNameMapper {
 	 */
 	public function get_mapped_headers( array $mattributes, $provider, $feed_type ) {
 		$mapped_headers = array();
+		$this->set_chatgpt_profile( $provider, $mattributes );
 
 		foreach ( $mattributes as $attribute ) {
 			$mapped_name      = $this->map_name( $attribute, $provider, $feed_type );
@@ -1153,6 +1168,25 @@ class AttributeNameMapper {
 			),
 		);
 
+		// ChatGPT = OpenAI's own product feed format (owner, CBT-712): feeds
+		// saved with the older Google-style names write the OpenAI names, so
+		// header and rows match the OpenAI format. Native names map to
+		// themselves (no entry needed).
+		$chatgpt_legacy     = array(
+			'id'                    => 'item_id',
+			'link'                  => 'url',
+			'image_link'            => 'image_url',
+			'item_group_id'         => 'group_id',
+			'additional_image_link' => 'additional_image_urls',
+			'return_window'         => 'return_deadline_in_days',
+			'enable_search'         => 'is_eligible_search',
+			'enable_checkout'       => 'is_eligible_checkout',
+		);
+		$v5_data['chatgpt'] = array(
+			'CSV'  => $chatgpt_legacy,
+			'JSON' => $chatgpt_legacy,
+		);
+
 		// Normalize and return mappings.
 		$mappings = array();
 		foreach ( $v5_data as $provider => $formats ) {
@@ -1229,5 +1263,28 @@ class AttributeNameMapper {
 		}
 
 		return $provider;
+	}
+
+	/**
+	 * OpenAI takes two layouts (developers.openai.com/commerce/specs/file-upload/products):
+	 * its own format, which REQUIRES seller_name and uses item_id / url /
+	 * image_url, and a Google-compatible profile (id, link, image_link, no
+	 * seller_name). A saved ChatGPT feed with a seller_name column is
+	 * written with OpenAI's names; one without keeps its Google-compatible
+	 * names — renaming those would make it valid in neither (CBT-712).
+	 *
+	 * @param string $provider Provider.
+	 * @param array  $names    The feed's merchant attribute names.
+	 * @return void
+	 */
+	private function set_chatgpt_profile( $provider, array $names ): void {
+		if ( 'chatgpt' !== strtolower( trim( (string) $provider ) ) ) {
+			return;
+		}
+		$plain = array();
+		foreach ( $names as $name ) {
+			$plain[] = ProductRepository::strip_dup_suffix( (string) $name );
+		}
+		$this->chatgpt_google_compatible = ! in_array( 'seller_name', $plain, true );
 	}
 }

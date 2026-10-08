@@ -397,7 +397,7 @@ class StatusEndpoint extends RestController {
 		$files = array();
 
 		// V8 per-feed logs (woo-feed/logs/{slug}.log — written by FeedLogger).
-		$v8_dir = $base . 'woo-feed/logs';
+		$v8_dir = rtrim( \CTXFeed\V8\Utility\LogDirGuard::dir(), '/' );
 		if ( is_dir( $v8_dir ) && is_readable( $v8_dir ) ) {
 			$files = array_merge( $files, (array) glob( $v8_dir . '/*.log' ) );
 		}

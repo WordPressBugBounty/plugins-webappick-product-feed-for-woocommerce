@@ -31,6 +31,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 class ProductRepository {
 
 	/**
+	 * True while a static Text ('pattern') row is being resolved (CBT-731).
+	 *
+	 * @var bool
+	 */
+	private static $resolving_static_value = false;
+
+	/**
 	 * Config the compiled execution plan below was built from (reference
 	 * held so the object id cannot be recycled while the plan is alive).
 	 *
@@ -251,6 +258,41 @@ class ProductRepository {
 	 * @return mixed Filtered attribute value.
 	 */
 	private function resolve_with_filters( \WC_Product $product, array $mapping, Config $config ) {
+		// A static Text row ('pattern') is a merchant-typed constant: the
+		// translation shims (TranslatePress) must leave it as typed even though
+		// the V5 hook families below still fire for it (CBT-731). Restored on
+		// the way out so nested resolution keeps the outer row's state.
+		$was_static                   = self::$resolving_static_value;
+		self::$resolving_static_value = isset( $mapping['type'] ) && 'pattern' === $mapping['type'];
+		try {
+			return $this->resolve_filtered_value( $product, $mapping, $config );
+		} finally {
+			self::$resolving_static_value = $was_static;
+		}
+	}
+
+	/**
+	 * Whether the row being resolved right now is a static Text value.
+	 *
+	 * Read by translation compat shims so a merchant-typed constant (e.g. a
+	 * fixed brand) is never translated (CBT-731).
+	 *
+	 * @since 8.0.33
+	 * @return bool
+	 */
+	public static function is_resolving_static_value(): bool {
+		return self::$resolving_static_value;
+	}
+
+	/**
+	 * Resolve one row and run the hook families (see resolve_with_filters()).
+	 *
+	 * @param \WC_Product $product Product being exported.
+	 * @param array       $mapping Single feed-rule mapping row.
+	 * @param Config      $config  Feed configuration.
+	 * @return mixed
+	 */
+	private function resolve_filtered_value( \WC_Product $product, array $mapping, Config $config ) {
 		// 1. Resolve raw value via resolver chain.
 		$value   = $this->resolver->resolve( $product, $mapping, $config );
 		$wc_attr = isset( $mapping['wc_attr'] ) ? $mapping['wc_attr'] : '';
