@@ -10,7 +10,7 @@
  * Plugin Name:       CTX Feed
  * Plugin URI:        https://webappick.com/
  * Description:       Easily generate woocommerce product feed for any marketing channel like Google, Meta, Tiktok, X, SnapChat, ChatGPT, Perplexity & more. Support 220+ Channels.
- * Version:           8.0.33
+ * Version:           8.0.34
  * Author:            WebAppick
  * Author URI:        https://webappick.com/
  * License:           GPL v2
@@ -63,6 +63,45 @@ if ( version_compare( PHP_VERSION, '7.4', '<' ) ) {
 	);
 	return;
 }
+
+/**
+ * Incomplete-installation guard (CBT-734).
+ *
+ * WordPress copies an update's files one by one; on a slow host the folder is
+ * half-written for minutes, and an unguarded require of a not-yet-copied file
+ * fatals EVERY request (HelpScout #69268: 361 fatals in 2.5 minutes). Same
+ * pattern as WooCommerce's "installation is incomplete" check: verify the boot
+ * files first; if any is missing, stay inactive for this request and tell
+ * administrators, instead of failing. The next request after the copy
+ * finishes boots normally. No global function is declared, so no collision.
+ *
+ * @since 8.0.34
+ */
+$ctxfeed_missing_files = array_filter(
+	array( 'constants.php', 'installer.php', 'V8/autoload.php', 'V8/Bootstrap.php' ),
+	static function ( $file ) {
+		return ! is_readable( __DIR__ . '/' . $file );
+	}
+);
+if ( ! empty( $ctxfeed_missing_files ) ) {
+	add_action(
+		'admin_notices',
+		static function () {
+			if ( ! current_user_can( 'activate_plugins' ) ) {
+				return;
+			}
+			echo '<div class="notice notice-warning"><p>';
+			echo esc_html__( 'CTX Feed is paused because some of its files are missing. This is normal for a moment while the plugin is being updated. If this message stays after the update has finished, reinstall CTX Feed from Plugins > Add New Plugin.', 'woo-feed' );
+			echo '</p></div>';
+		}
+	);
+	// Tell CTX Feed Pro the free plugin is mid-update, not uninstalled, so it
+	// does not start its "install the free plugin" onboarding meanwhile.
+	add_filter( 'ctxfeed_free_installation_incomplete', '__return_true' );
+	unset( $ctxfeed_missing_files );
+	return;
+}
+unset( $ctxfeed_missing_files );
 
 if ( ! defined( 'WOO_FEED_FREE_FILE' ) ) {
 	/**

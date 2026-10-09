@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.33
+Stable tag: 8.0.34
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -493,6 +493,13 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.34 =
+* Fix: a feed no longer lists the same products twice. On some servers two background processes could build the same feed at once; now only one can.
+* Fix: an update that is still copying its files no longer causes a "critical error" on the site. CTX Feed waits until the update has finished and shows administrators a short notice meanwhile.
+* Fix: FTP and SFTP uploads go straight to the feed's real file name. Google Merchant Center's SFTP no longer reports a ".part" file.
+* Added: FTP/SFTP upload progress in the live log on Manage Feeds and in the feed log. A run is marked complete only after the upload has finished.
+* Fix: the live generation log on Manage Feeds always fits inside the page and no longer runs past the left or right edge.
+
 = Version 8.0.33 =
 * Changed: ChatGPT feeds follow OpenAI's own product feed format (item_id, url, image_url, seller_name, and variants with group_id and variant_dict). Saved ChatGPT feeds are updated automatically on update; the original settings are kept as a backup.
 * Fix: feeds made with an older version follow the "include all shipping countries" setting again, and the Filters tab shows the real value so saving no longer switches it to the feed country.
@@ -536,6 +543,9 @@ If your feed fails to generate:
 * Improved: the External services section of this readme lists every remote service the plugin contacts.
 
 == Upgrade Notice ==
+
+= 8.0.34 =
+CTX Feed is going through a major update. Back up your site, update CTX Feed and CTX Feed Pro together, then regenerate your feeds and check them: titles, prices, brand and shipping.
 
 = 8.0.33 =
 CTX Feed is going through a major update. Back up your site, update CTX Feed and CTX Feed Pro together, then regenerate your feeds and check them: titles, prices, brand and shipping.

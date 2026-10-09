@@ -60,6 +60,38 @@ class FeedRemoteTransport {
 	}
 
 	/**
+	 * Optional progress listener (CBT-737), called as
+	 * ( string $state, int $bytes_sent, int $bytes_total, string $protocol ),
+	 * $state one of 'uploading', 'uploaded', 'failed'. Throttled: at most
+	 * every PROGRESS_INTERVAL seconds while uploading, always on start/end.
+	 *
+	 * @since 8.0.34
+	 * @var callable|null
+	 */
+	private $progress_callback;
+
+	/**
+	 * Seconds between progress-listener calls while a transfer runs.
+	 *
+	 * @since 8.0.34
+	 * @var int
+	 */
+	const PROGRESS_INTERVAL = 2;
+
+	/**
+	 * Set the progress listener (FeedGenerator writes it to the run's
+	 * progress record so the admin console shows the upload).
+	 *
+	 * @since 8.0.34
+	 *
+	 * @param callable $callback Listener.
+	 * @return void
+	 */
+	public function set_progress_callback( callable $callback ): void {
+		$this->progress_callback = $callback;
+	}
+
+	/**
 	 * Export feed file via FTP / SFTP.
 	 *
 	 * Reads V5-compatible feedrules keys. Early-returns when upload is
@@ -136,11 +168,17 @@ class FeedRemoteTransport {
 
 		$this->log_info( $feed_id, sprintf( 'Uploading via %s to %s@%s:%d%s', strtoupper( $protocol ), $user, $host, $port, $path ) );
 
+		$total   = (int) filesize( $filepath );
+		$tracker = $this->start_progress( $feed_id, $protocol, $total );
+		$ok      = false;
+
 		try {
 			if ( 'ftp' === $protocol ) {
-				return $this->upload_ftp( $feed_id, $host, $user, $password, $port, $passive_mode, $filepath, $path . $remote_file );
+				$ok = $this->upload_ftp( $feed_id, $host, $user, $password, $port, $passive_mode, $filepath, $path . $remote_file, $tracker );
+			} else {
+				$ok = $this->upload_sftp( $feed_id, $host, $user, $password, $port, $filepath, $remote_file, $path, $tracker );
 			}
-			return $this->upload_sftp( $feed_id, $host, $user, $password, $port, $filepath, $remote_file, $path );
+			return $ok;
 		} catch ( \Throwable $e ) {
 			// Never let the password reach a log, whatever produced the text (CBT-708).
 			$message = sprintf( 'FTP upload error (%s): %s', $protocol, self::mask( $e->getMessage(), array( $password, $encrypted_password ) ) );
@@ -153,7 +191,140 @@ class FeedRemoteTransport {
 			);
 			$this->log_error( $feed_id, $message );
 			return false;
+		} finally {
+			$this->finish_progress( $ok );
 		}
+	}
+
+	/**
+	 * Upload progress state for the transfer in flight.
+	 *
+	 * @var array{feed_id:string,protocol:string,total:int,sent:int,started:float,last_call:float,last_logged:int}|null
+	 */
+	private $progress;
+
+	/**
+	 * Start tracking an upload; returns the per-chunk tick the connection
+	 * classes call as ( int $bytes_sent, int $bytes_total ).
+	 *
+	 * @param string $feed_id  Feed slug.
+	 * @param string $protocol 'ftp' or 'sftp'.
+	 * @param int    $total    Bytes to send.
+	 * @return callable
+	 */
+	private function start_progress( string $feed_id, string $protocol, int $total ): callable {
+		$this->progress = array(
+			'feed_id'     => $feed_id,
+			'protocol'    => $protocol,
+			'total'       => $total,
+			'sent'        => 0,
+			'started'     => microtime( true ),
+			'last_call'   => microtime( true ),
+			'last_logged' => 0,
+		);
+		$this->notify( 'uploading' );
+
+		return function ( $sent ) {
+			$this->tick( (int) $sent );
+		};
+	}
+
+	/**
+	 * One progress step: a feed-log line each time a new 10% band is reached
+	 * (with the real percent — chunks can jump several bands), the listener at most
+	 * every PROGRESS_INTERVAL seconds.
+	 *
+	 * @param int $sent Bytes sent so far.
+	 * @return void
+	 */
+	private function tick( int $sent ): void {
+		if ( null === $this->progress ) {
+			return;
+		}
+		$p         = &$this->progress;
+		$p['sent'] = min( max( $sent, $p['sent'] ), max( $p['total'], $sent ) );
+		$percent   = $p['total'] > 0 ? (int) floor( $p['sent'] * 100 / $p['total'] ) : 100;
+		$step      = (int) ( floor( $percent / 10 ) * 10 );
+
+		if ( $step > $p['last_logged'] && $step < 100 ) {
+			$p['last_logged'] = $step;
+			$this->log_info(
+				$p['feed_id'],
+				sprintf( 'Uploading… %d%% (%s of %s)', $percent, self::size( $p['sent'] ), self::size( $p['total'] ) )
+			);
+			if ( $this->feed_logger && method_exists( $this->feed_logger, 'flush' ) ) {
+				// Flush now: an upload can run for many minutes and the log
+				// file is what the admin reads while it does.
+				$this->feed_logger->flush( $p['feed_id'] );
+			}
+		}
+
+		if ( microtime( true ) - $p['last_call'] >= self::PROGRESS_INTERVAL ) {
+			$p['last_call'] = microtime( true );
+			$this->notify( 'uploading' );
+		}
+	}
+
+	/**
+	 * Close the tracked upload: final listener call + duration in the log.
+	 *
+	 * @param bool $ok Whether the upload succeeded.
+	 * @return void
+	 */
+	private function finish_progress( bool $ok ): void {
+		if ( null === $this->progress ) {
+			return;
+		}
+		if ( $ok ) {
+			$this->progress['sent'] = $this->progress['total'];
+			$this->log_info(
+				$this->progress['feed_id'],
+				sprintf( 'Uploaded %s in %s.', self::size( $this->progress['total'] ), self::duration( microtime( true ) - $this->progress['started'] ) )
+			);
+		}
+		$this->notify( $ok ? 'uploaded' : 'failed' );
+		$this->progress = null;
+	}
+
+	/**
+	 * Call the progress listener; a listener error never breaks the upload.
+	 *
+	 * @param string $state 'uploading', 'uploaded' or 'failed'.
+	 * @return void
+	 */
+	private function notify( string $state ): void {
+		if ( ! is_callable( $this->progress_callback ) || null === $this->progress ) {
+			return;
+		}
+		try {
+			call_user_func( $this->progress_callback, $state, $this->progress['sent'], $this->progress['total'], $this->progress['protocol'] );
+		} catch ( \Throwable $e ) {
+			Logger::error( 'Upload progress listener failed (non-fatal)', array( 'error' => $e->getMessage() ) );
+		}
+	}
+
+	/**
+	 * Human file size ("43 MB", "4.3 MB").
+	 *
+	 * @param int $bytes Bytes.
+	 * @return string
+	 */
+	private static function size( int $bytes ): string {
+		if ( function_exists( 'size_format' ) ) {
+			return (string) size_format( $bytes, $bytes >= 1048576 && $bytes < 10485760 ? 1 : 0 );
+		}
+		return $bytes . ' B';
+	}
+
+	/**
+	 * Human duration ("16m 18s", "42s").
+	 *
+	 * @param float $seconds Seconds.
+	 * @return string
+	 */
+	private static function duration( float $seconds ): string {
+		$s = (int) round( $seconds );
+		return $s >= 60 ? sprintf( '%dm %ds', intdiv( $s, 60 ), $s % 60 ) : sprintf( '%ds', $s );
 	}
 
 	/**
@@ -161,18 +332,19 @@ class FeedRemoteTransport {
 	 *
 	 * @since 8.0.0
 	 *
-	 * @param string $feed_id      Feed slug.
-	 * @param string $host         Host.
-	 * @param string $user         User.
-	 * @param string $password     Password.
-	 * @param int    $port         Port.
-	 * @param bool   $passive_mode Passive mode flag.
-	 * @param string $local_file   Absolute local file path.
-	 * @param string $remote_file  Absolute remote file path (incl. filename).
+	 * @param string        $feed_id      Feed slug.
+	 * @param string        $host         Host.
+	 * @param string        $user         User.
+	 * @param string        $password     Password.
+	 * @param int           $port         Port.
+	 * @param bool          $passive_mode Passive mode flag.
+	 * @param string        $local_file   Absolute local file path.
+	 * @param string        $remote_file  Absolute remote file path (incl. filename).
+	 * @param callable|null $on_progress Per-chunk progress tick. @since 8.0.34.
 	 *
 	 * @return bool
 	 */
-	private function upload_ftp( string $feed_id, string $host, string $user, string $password, int $port, bool $passive_mode, string $local_file, string $remote_file ): bool {
+	private function upload_ftp( string $feed_id, string $host, string $user, string $password, int $port, bool $passive_mode, string $local_file, string $remote_file, ?callable $on_progress = null ): bool {
 		if ( ! function_exists( 'ftp_connect' ) ) {
 			$msg = 'FTP upload failed — PHP FTP extension is not enabled on this server.';
 			Logger::error( $msg, array( 'feed_id' => $feed_id ) );
@@ -202,7 +374,7 @@ class FeedRemoteTransport {
 			return false;
 		}
 
-		$uploaded = $ftp->upload_file( $local_file, $remote_file );
+		$uploaded = $ftp->upload_file( $local_file, $remote_file, $on_progress );
 
 		foreach ( (array) $ftp->get_messages() as $m ) {
 			$this->log_info( $feed_id, $m );
@@ -288,19 +460,20 @@ class FeedRemoteTransport {
 	 *
 	 * @since 8.0.0
 	 *
-	 * @param string $feed_id     Feed slug.
-	 * @param string $host        Host.
-	 * @param string $user        User.
-	 * @param string $password    Password.
-	 * @param int    $port        Port.
-	 * @param string $local_file  Absolute local file path.
-	 * @param string $remote_file Just the filename on the remote server.
-	 * @param string $path        Remote directory with trailing slash.
+	 * @param string        $feed_id     Feed slug.
+	 * @param string        $host        Host.
+	 * @param string        $user        User.
+	 * @param string        $password    Password.
+	 * @param int           $port        Port.
+	 * @param string        $local_file  Absolute local file path.
+	 * @param string        $remote_file Just the filename on the remote server.
+	 * @param string        $path        Remote directory with trailing slash.
+	 * @param callable|null $on_progress Per-chunk progress tick. @since 8.0.34.
 	 *
 	 * @return bool
 	 * @throws \Throwable Re-thrown from SFTPConnection so export() can log the underlying message.
 	 */
-	private function upload_sftp( string $feed_id, string $host, string $user, string $password, int $port, string $local_file, string $remote_file, string $path ): bool {
+	private function upload_sftp( string $feed_id, string $host, string $user, string $password, int $port, string $local_file, string $remote_file, string $path, ?callable $on_progress = null ): bool {
 		if ( ! extension_loaded( 'ssh2' ) ) {
 			$msg = 'SFTP upload failed — the PHP ssh2 extension is not enabled on this server. Ask your host to enable it or switch the feed to FTP.';
 			Logger::error( $msg, array( 'feed_id' => $feed_id ) );
@@ -342,7 +515,7 @@ class FeedRemoteTransport {
 			$known     = \CTXFeed\V8\Utility\FTP\SftpHostKeys::get( $host, $port );
 			$sftp_conn = new SFTPConnection( $host, $port, '' !== $known ? $known : false );
 			$sftp_conn->login( $user, $password );
-			$ok = $sftp_conn->upload_file( $local_file, $remote_file, $path );
+			$ok = $sftp_conn->upload_file( $local_file, $remote_file, $path, $on_progress );
 			if ( $ok && '' === $known ) {
 				\CTXFeed\V8\Utility\FTP\SftpHostKeys::remember( $host, $port, $sftp_conn->get_fingerprint() );
 			}

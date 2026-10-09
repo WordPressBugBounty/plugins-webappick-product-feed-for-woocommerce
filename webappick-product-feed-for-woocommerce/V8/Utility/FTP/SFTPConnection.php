@@ -113,18 +113,26 @@ class SFTPConnection {
 	}
 
 	/**
-	 * Upload a generated feed file to the remote SFTP server.
+	 * Upload a file to the SFTP server under its FINAL name.
 	 *
-	 * @since 8.0.0
+	 * Written straight to the target name, never a temporary name renamed
+	 * afterwards (CBT-737): ingest servers such as Google Merchant Center's
+	 * (partnerupload.google.com) process every file the moment it is closed,
+	 * by its name, so a temporary ".name.part" file was picked up as an
+	 * unknown feed and reported as an error. The transfer is still streamed
+	 * in chunks (never the whole feed in memory) and verified: every byte
+	 * written, the stream closed cleanly, and — when the server reports it —
+	 * the remote size equals the local size.
 	 *
-	 * @param string $local_file  Local file to upload.
-	 * @param string $remote_file Remote file name.
-	 * @param string $path        Must use trailing slash. Directory path to put the file on remote server.
+	 * @param string        $local_file  Local file to upload.
+	 * @param string        $remote_file Remote file name.
+	 * @param string        $path        Must use trailing slash. Directory path to put the file on remote server.
+	 * @param callable|null $on_progress Called as ( int $bytes_sent, int $bytes_total ) after every chunk. @since 8.0.34.
 	 *
 	 * @return bool True once the file has been written to the remote server.
 	 * @throws \Exception When the local file is unreadable, the remote path is invalid, or the transfer fails.
 	 */
-	public function upload_file( $local_file, $remote_file, $path ) {
+	public function upload_file( $local_file, $remote_file, $path, $on_progress = null ) {
 
 		if ( ! file_exists( $local_file ) ) {
 			throw new \Exception( "Local file does't exists.: " . esc_attr( $local_file ) . '.' );
@@ -150,12 +158,7 @@ class SFTPConnection {
 
 		}
 
-		// CBT-711: stream the file (never the whole feed in memory), write
-		// it under a hidden temporary name, confirm every byte arrived, then
-		// rename it over the live remote file — a partial upload can never
-		// replace a good one, and readers never see a half-written feed.
 		$final_remote = $path . $remote_file;
-		$temp_remote  = $path . '.' . $remote_file . '.part';
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Local read of the feed file this plugin just generated; streamed, never loaded whole.
 		$local = fopen( $local_file, 'rb' );
@@ -164,36 +167,82 @@ class SFTPConnection {
 		}
 
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Opens the ssh2.sftp:// stream wrapper for the remote feed file; WP_Filesystem cannot address an SFTP stream resource.
-		$stream = fopen( "ssh2.sftp://$sftp$temp_remote", 'w' );
+		$stream = fopen( "ssh2.sftp://$sftp$final_remote", 'w' );
 		if ( ! $stream ) {
 			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the local handle opened above.
 			fclose( $local );
 			throw new \Exception( 'Could not open file: ' . esc_attr( $path ) . '.' );
 		}
 
-		$copied = stream_copy_to_stream( $local, $stream );
+		$copied = self::copy_stream( $local, $stream, $local_size, $on_progress );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the local handle opened above.
 		fclose( $local );
 		// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Closes the ssh2.sftp:// stream; its result is the last chance to see a failed flush.
 		$closed = fclose( $stream );
 
-		if ( false === $copied || (int) $copied !== $local_size || false === $closed ) {
-			$this->remove_remote( $temp_remote );
-			throw new \Exception( sprintf( 'Upload incomplete: %1$d of %2$d bytes reached the server (connection dropped or remote disk/quota full). The previous remote file was left unchanged.', absint( $copied ), absint( $local_size ) ) );
+		if ( $copied !== $local_size || false === $closed ) {
+			throw new \Exception( sprintf( 'Upload incomplete: %1$d of %2$d bytes reached the server (connection dropped or remote disk/quota full). The file on the server may be incomplete until the next successful upload.', absint( $copied ), absint( $local_size ) ) );
 		}
 
-		$remote_size = $this->remote_size( $temp_remote );
+		// Ingest servers may move the file away the moment it is closed; an
+		// unknown size is not a failure, only a different one is.
+		$remote_size = $this->remote_size( $final_remote );
 		if ( null !== $remote_size && $remote_size !== $local_size ) {
-			$this->remove_remote( $temp_remote );
-			throw new \Exception( sprintf( 'Upload incomplete: the server holds %1$d of %2$d bytes. The previous remote file was left unchanged.', absint( $remote_size ), absint( $local_size ) ) );
-		}
-
-		if ( ! $this->replace_remote( $temp_remote, $final_remote ) ) {
-			$this->remove_remote( $temp_remote );
-			throw new \Exception( 'The uploaded file could not be renamed to ' . esc_attr( $final_remote ) . ' on the server (permissions).' );
+			throw new \Exception( sprintf( 'Upload incomplete: the server holds %1$d of %2$d bytes. The file on the server may be incomplete until the next successful upload.', absint( $remote_size ), absint( $local_size ) ) );
 		}
 
 		return true;
+	}
+
+	/**
+	 * Copy a local stream to a remote one in chunks, reporting progress.
+	 *
+	 * Handles short writes (an SFTP stream may accept part of a chunk) and
+	 * stops on a write that makes no progress, so a dead connection cannot
+	 * spin forever.
+	 *
+	 * @since 8.0.34
+	 *
+	 * @param resource      $from        Local read handle.
+	 * @param resource      $to          Remote write handle.
+	 * @param int           $total       Bytes expected (for the progress callback).
+	 * @param callable|null $on_progress Called as ( int $bytes_sent, int $bytes_total ).
+	 * @return int Bytes written.
+	 */
+	public static function copy_stream( $from, $to, int $total, $on_progress = null ): int {
+		/**
+		 * Filter the SFTP upload chunk size in bytes (default 1 MB).
+		 *
+		 * @since 8.0.34
+		 *
+		 * @param int $chunk Chunk size in bytes.
+		 */
+		$chunk = max( 8192, (int) ( function_exists( 'apply_filters' ) ? apply_filters( 'ctxfeed_sftp_upload_chunk_bytes', 1048576 ) : 1048576 ) );
+		$sent  = 0;
+
+		// phpcs:disable WordPress.WP.AlternativeFunctions.file_system_operations_fread, WordPress.WP.AlternativeFunctions.file_system_operations_fwrite, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fwrite -- Streams the feed from the local file to the ssh2.sftp:// stream wrapper; WP_Filesystem has no streaming API for a remote SFTP resource.
+		while ( ! feof( $from ) ) {
+			$buffer = fread( $from, $chunk );
+			if ( false === $buffer ) {
+				break;
+			}
+			$length = strlen( $buffer );
+			$offset = 0;
+			while ( $offset < $length ) {
+				$written = fwrite( $to, 0 === $offset ? $buffer : substr( $buffer, $offset ) );
+				if ( false === $written || 0 === $written ) {
+					return $sent + $offset;
+				}
+				$offset += $written;
+			}
+			$sent += $length;
+			if ( is_callable( $on_progress ) ) {
+				call_user_func( $on_progress, $sent, $total );
+			}
+		}
+		// phpcs:enable WordPress.WP.AlternativeFunctions.file_system_operations_fread, WordPress.WP.AlternativeFunctions.file_system_operations_fwrite, WordPressVIPMinimum.Functions.RestrictedFunctions.file_ops_fwrite
+
+		return $sent;
 	}
 
 	/**
@@ -210,45 +259,6 @@ class SFTPConnection {
 		$stat = @ssh2_sftp_stat( $this->sftp, $remote );
 
 		return is_array( $stat ) && isset( $stat['size'] ) ? (int) $stat['size'] : null;
-	}
-
-	/**
-	 * Move the uploaded temp file over the live remote file. SFTP v3 rename
-	 * does not overwrite on most servers, so the old file is removed first
-	 * when the plain rename is refused.
-	 *
-	 * @param string $from Temp remote path.
-	 * @param string $to   Final remote path.
-	 * @return bool
-	 */
-	private function replace_remote( string $from, string $to ): bool {
-		if ( ! function_exists( 'ssh2_sftp_rename' ) ) {
-			return false;
-		}
-		// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- Expected refusals (target exists) are handled by the retry below.
-		if ( @ssh2_sftp_rename( $this->sftp, $from, $to ) ) {
-			return true;
-		}
-		if ( function_exists( 'ssh2_sftp_unlink' ) ) {
-			@ssh2_sftp_unlink( $this->sftp, $to );
-		}
-		$ok = @ssh2_sftp_rename( $this->sftp, $from, $to );
-		// phpcs:enable WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden
-
-		return (bool) $ok;
-	}
-
-	/**
-	 * Remove a remote file, silently.
-	 *
-	 * @param string $remote Remote path.
-	 * @return void
-	 */
-	private function remove_remote( string $remote ): void {
-		if ( function_exists( 'ssh2_sftp_unlink' ) ) {
-			// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- Cleanup of our own temp file; failure is non-fatal.
-			@ssh2_sftp_unlink( $this->sftp, $remote );
-		}
 	}
 
 	/**

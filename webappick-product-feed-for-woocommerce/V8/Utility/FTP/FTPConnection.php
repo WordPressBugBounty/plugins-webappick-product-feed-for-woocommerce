@@ -215,14 +215,15 @@ class FTPConnection {
 	}
 
 	/**
-	 * Upload files to FTP server
+	 * Upload files to FTP server, straight to the final name (CBT-737).
 	 *
-	 * @param string $file_from      file name and path that needs to be uploaded.
-	 * @param string $file_to        file name and path where the to put the file.
+	 * @param string        $file_from   file name and path that needs to be uploaded.
+	 * @param string        $file_to     file name and path where the to put the file.
+	 * @param callable|null $on_progress Called as ( int $bytes_sent, int $bytes_total ) while the transfer runs. @since 8.0.34.
 	 *
 	 * @return bool
 	 */
-	public function upload_file( $file_from, $file_to ) {
+	public function upload_file( $file_from, $file_to, $on_progress = null ) {
 
 		// *** Set the transfer mode
 		$ascii_array   = array( 'txt', 'csv', 'xml' );
@@ -232,8 +233,7 @@ class FTPConnection {
 		$mode = in_array( $extension, $ascii_array, true ) ? FTP_ASCII : FTP_BINARY;
 
 		// *** Upload the file
-		// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- ftp_put() emits a PHP warning ("Could not create file") when the remote directory is missing — the exact condition the root fallback below handles. The boolean return is checked and logged; suppressing the warning keeps a strict error handler (WP debug / test harness) from escalating it and aborting the upload before the retry runs.
-		$upload                 = @ftp_put( $this->connection_id, $file_to, $file_from, $mode );
+		$upload                 = $this->put( $file_to, $file_from, $mode, $on_progress );
 		$this->last_remote_path = $file_to;
 
 		// Missing remote directory — fall back to the server root so the feed
@@ -245,8 +245,7 @@ class FTPConnection {
 			if ( $root_target !== $file_to ) {
 				/* translators: 1: original remote path, 2: root fallback path */
 				$this->log_message( sprintf( esc_html__( 'Remote path "%1$s" failed — retrying at root "%2$s".', 'woo-feed' ), $file_to, $root_target ) );
-				// phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden -- Same rationale as the first ftp_put above: the boolean return drives success/failure, and the warning must not escalate.
-				$upload = @ftp_put( $this->connection_id, $root_target, $file_from, $mode );
+				$upload = $this->put( $root_target, $file_from, $mode, $on_progress );
 				if ( $upload ) {
 					$this->last_remote_path = $root_target;
 				}
@@ -277,5 +276,50 @@ class FTPConnection {
 			$this->log_message( sprintf( esc_html__( 'Uploaded "%1$s" as "%2$s"', 'woo-feed' ), $file_from, $this->last_remote_path ) );
 			return true;
 		}
+	}
+
+	/**
+	 * One FTP transfer to $target, with progress when the non-blocking API
+	 * is available (ftp_nb_fput), else a plain ftp_put().
+	 *
+	 * Warnings are suppressed: ftp_put()/ftp_nb_fput() warn ("Could not create
+	 * file") when the remote directory is missing — the exact condition the
+	 * root fallback handles. The boolean return is checked and logged; a
+	 * strict error handler (WP debug / test harness) must not escalate it and
+	 * abort the upload before the retry runs.
+	 *
+	 * @since 8.0.34
+	 *
+	 * @param string        $target      Remote path.
+	 * @param string        $file_from   Local file.
+	 * @param int           $mode        FTP_ASCII or FTP_BINARY.
+	 * @param callable|null $on_progress Called as ( int $bytes_sent, int $bytes_total ).
+	 * @return bool
+	 */
+	private function put( $target, $file_from, $mode, $on_progress ) {
+		// phpcs:disable WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden, WordPress.WP.AlternativeFunctions.file_system_operations_fopen, WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- See the method doc: the boolean return drives success; the local handle is the feed file this plugin just wrote, streamed to the FTP data connection.
+		if ( ! is_callable( $on_progress ) || ! function_exists( 'ftp_nb_fput' ) || ! function_exists( 'ftp_nb_continue' ) ) {
+			return @ftp_put( $this->connection_id, $target, $file_from, $mode );
+		}
+
+		$handle = @fopen( $file_from, 'rb' );
+		if ( ! $handle ) {
+			return false;
+		}
+		$total  = (int) filesize( $file_from );
+		$result = @ftp_nb_fput( $this->connection_id, $target, $handle, $mode );
+		while ( FTP_MOREDATA === $result ) {
+			call_user_func( $on_progress, (int) ftell( $handle ), $total );
+			$result = @ftp_nb_continue( $this->connection_id );
+		}
+		fclose( $handle );
+		// phpcs:enable WordPress.PHP.NoSilencedErrors.Discouraged, Generic.PHP.NoSilencedErrors.Forbidden, WordPress.WP.AlternativeFunctions.file_system_operations_fopen, WordPress.WP.AlternativeFunctions.file_system_operations_fclose
+
+		if ( FTP_FINISHED === $result ) {
+			call_user_func( $on_progress, $total, $total );
+			return true;
+		}
+
+		return false;
 	}
 }

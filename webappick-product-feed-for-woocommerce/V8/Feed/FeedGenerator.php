@@ -1321,6 +1321,42 @@ class FeedGenerator {
 			}
 		}
 
+		// Export (FTP / SFTP upload) if configured. @implements FEED-FRD-5.1.
+		// Runs BEFORE the run is marked completed (CBT-737): the status stays
+		// 'finalizing' while the file uploads, the progress record carries the
+		// bytes sent so the admin console shows the upload, and the run is
+		// still "in progress" — a second run cannot start mid-upload.
+		try {
+			$exporter = new FeedRemoteTransport();
+			if ( $this->feed_logger ) {
+				$exporter->set_feed_logger( $this->feed_logger );
+			}
+			$exporter->set_progress_callback(
+				function ( $state, $sent, $total, $protocol ) use ( $feed_name ) {
+					$this->manager->update_progress(
+						$feed_name,
+						array(
+							'upload_status'   => (string) $state,
+							'upload_sent'     => (int) $sent,
+							'upload_total'    => (int) $total,
+							'upload_protocol' => (string) $protocol,
+						)
+					);
+					// A long upload must not outlive the site-wide lock.
+					if ( $this->batch_calculator ) {
+						$this->batch_calculator->acquire_lock( $feed_name );
+					}
+				}
+			);
+			// Use the LIVE feed path (the working file was renamed on promote).
+			$exporter->export( $feed_name, $file_path, $config );
+		} catch ( \Throwable $e ) {
+			// Export failure must not prevent feed completion.
+			if ( $this->logger ) {
+				$this->logger->error( "Feed export failed (non-fatal): {$feed_name}", array( 'error' => $e->getMessage() ) );
+			}
+		}
+
 		// Update progress. A run that wrote nothing because every product
 		// failed reports `failed`, not `completed` — the admin must see that
 		// the live file is stale. @implements FEED-FRD-10.1.
@@ -1335,20 +1371,6 @@ class FeedGenerator {
 			) 
 		);
 
-		// Export (FTP / SFTP upload) if configured. @implements FEED-FRD-5.1.
-		try {
-			$exporter = new FeedRemoteTransport();
-			if ( $this->feed_logger ) {
-				$exporter->set_feed_logger( $this->feed_logger );
-			}
-			// Use the LIVE feed path (the working file was renamed on promote).
-			$exporter->export( $feed_name, $file_path, $config );
-		} catch ( \Throwable $e ) {
-			// Export failure must not prevent feed completion.
-			if ( $this->logger ) {
-				$this->logger->error( "Feed export failed (non-fatal): {$feed_name}", array( 'error' => $e->getMessage() ) );
-			}
-		}
 
 		// Clean up BatchCalculator state: persist this run's measured
 		// per-product time for the next run's first-batch seed, then clear

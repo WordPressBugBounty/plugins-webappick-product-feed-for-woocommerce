@@ -34,6 +34,22 @@ class FeedManager {
 	 *
 	 * @since 8.0.10
 	 */
+	/**
+	 * FTP/SFTP upload fields of the progress record (CBT-737): upload_status
+	 * ('' | 'uploading' | 'uploaded' | 'failed'), upload_protocol ('ftp' |
+	 * 'sftp'), upload_sent / upload_total (bytes). The admin console renders
+	 * the upload from them; reset at the start of every run.
+	 *
+	 * @since 8.0.34
+	 * @var array<string, string|int>
+	 */
+	const UPLOAD_DEFAULTS = array(
+		'upload_status'   => '',
+		'upload_protocol' => '',
+		'upload_sent'     => 0,
+		'upload_total'    => 0,
+	);
+
 	const BATCH_COUNTERS = array(
 		'last_batch_written',
 		'last_batch_skipped',
@@ -334,6 +350,12 @@ class FeedManager {
 			'kept_previous'   => isset( $data['kept_previous'] ) ? (bool) $data['kept_previous'] : ! empty( $existing['kept_previous'] ),
 		);
 
+		// Upload fields (CBT-737) — fixed-key list, like everything above.
+		foreach ( self::UPLOAD_DEFAULTS as $key => $default ) {
+			$value            = array_key_exists( $key, $data ) ? $data[ $key ] : ( $existing[ $key ] ?? $default );
+			$progress[ $key ] = is_int( $default ) ? (int) $value : (string) $value;
+		}
+
 		// Per-batch counters for the live generation console. These were
 		// silently dropped by the fixed key list above, so the console always
 		// read "0 products" — they now persist like every other field.
@@ -448,7 +470,7 @@ class FeedManager {
 				'eta_seconds'     => 0,
 				'avg_batch_time'  => 0.0,
 				'invalid_reasons' => array(),
-			) + array_fill_keys( self::BATCH_COUNTERS, 0 );
+			) + array_fill_keys( self::BATCH_COUNTERS, 0 ) + self::UPLOAD_DEFAULTS;
 		}
 
 		// Backfill any missing keys for backwards compatibility.
@@ -467,7 +489,7 @@ class FeedManager {
 				'eta_seconds'     => 0,
 				'avg_batch_time'  => 0.0,
 				'invalid_reasons' => array(),
-			) + array_fill_keys( self::BATCH_COUNTERS, 0 ),
+			) + array_fill_keys( self::BATCH_COUNTERS, 0 ) + self::UPLOAD_DEFAULTS,
 			$progress
 		);
 	}

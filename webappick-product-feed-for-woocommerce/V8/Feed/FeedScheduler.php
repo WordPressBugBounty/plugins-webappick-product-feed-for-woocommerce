@@ -130,9 +130,17 @@ class FeedScheduler {
 	 * with a halved batch size. Null when no batch is in flight.
 	 *
 	 * @since 8.0.7
-	 * @var array{feed_name:string,offset:int,batch_size:int,total:int,attempt:int}|null
+	 * @var array{feed_name:string,offset:int,batch_size:int,total:int,attempt:int,run:string}|null
 	 */
 	private $in_flight_batch = null;
+
+	/**
+	 * Per-run batch cursor: only one process may start each batch (CBT-735).
+	 *
+	 * @since 8.0.34
+	 * @var BatchCursor|null
+	 */
+	private $batch_cursor;
 
 	/**
 	 * Whether the fatal-recovery shutdown function has been registered this
@@ -175,6 +183,31 @@ class FeedScheduler {
 	 * @var Filesystem|null
 	 */
 	private $filesystem;
+
+	/**
+	 * Inject the batch cursor (tests). Lazily created otherwise.
+	 *
+	 * @since 8.0.34
+	 *
+	 * @param BatchCursor $batch_cursor Cursor.
+	 * @return void
+	 */
+	public function set_batch_cursor( BatchCursor $batch_cursor ): void {
+		$this->batch_cursor = $batch_cursor;
+	}
+
+	/**
+	 * The batch cursor.
+	 *
+	 * @since 8.0.34
+	 * @return BatchCursor
+	 */
+	private function cursor(): BatchCursor {
+		if ( ! $this->batch_cursor ) {
+			$this->batch_cursor = new BatchCursor();
+		}
+		return $this->batch_cursor;
+	}
 
 	/**
 	 * Set the per-feed logger instance.
@@ -538,8 +571,13 @@ class FeedScheduler {
 				'last_batch_written'  => 0,
 				'last_batch_skipped'  => 0,
 				'last_batch_excluded' => 0,
-			)
+			) + FeedManager::UPLOAD_DEFAULTS
 		);
+
+		// One token per run; every batch/finalize action carries it and must
+		// claim its position on the cursor before writing (CBT-735). '' when
+		// the cursor could not be written — the run then behaves as before.
+		$run = $this->cursor()->begin( $feed_name );
 
 		// Synchronous fast-path: if all products fit in one batch, process
 		// immediately in the current request instead of deferring to Action
@@ -547,6 +585,11 @@ class FeedScheduler {
 		// small feeds (e.g. 38 products) complete in seconds.
 		if ( $total <= $batch_size && $this->generator ) {
 			Logger::info( "Synchronous generation — {$total} products fit in one batch: {$feed_name}" );
+
+			// This request owns offset 0; a paused remainder hands it on.
+			if ( '' !== $run && ! $this->cursor()->claim( $feed_name, $run, 0 ) ) {
+				$run = '';
+			}
 
 			try {
 				$result = $this->generator->process_batch(
@@ -573,7 +616,7 @@ class FeedScheduler {
 						? (int) $result['next_batch_size']
 						: $batch_size;
 
-					$this->schedule_next_or_finalize( $feed_name, 0, $step, $total, $next_size );
+					$this->schedule_next_or_finalize( $feed_name, 0, $step, $total, $next_size, $run );
 					$this->dispatch_runner();
 
 					return true;
@@ -627,12 +670,7 @@ class FeedScheduler {
 		as_schedule_single_action(
 			time(),
 			self::GENERATE_ACTION,
-			array(
-				'feed_name'  => $feed_name,
-				'offset'     => 0,
-				'batch_size' => $batch_size,
-				'total'      => $total,
-			),
+			self::batch_args( $feed_name, 0, $batch_size, $total, 0, $run ),
 			self::GROUP 
 		);
 
@@ -659,10 +697,11 @@ class FeedScheduler {
 	 * @param int    $batch_size      Batch size used for this batch (for offset calculation).
 	 * @param int    $total           Total product count.
 	 * @param int    $next_batch_size Adaptive batch size for the next batch (from BatchCalculator).
+	 * @param string $run             Run token ('' = action queued before 8.0.34, no cursor). @since 8.0.34.
 	 *
 	 * @return void
 	 */
-	public function schedule_next_or_finalize( string $feed_name, int $offset, int $batch_size, int $total, int $next_batch_size = 0 ): void {
+	public function schedule_next_or_finalize( string $feed_name, int $offset, int $batch_size, int $total, int $next_batch_size = 0, string $run = '' ): void {
 		if ( ! $this->scheduler_has( 'as_schedule_single_action' ) ) {
 			return;
 		}
@@ -674,17 +713,23 @@ class FeedScheduler {
 			$next_batch_size = $batch_size;
 		}
 
+		// Move the cursor BEFORE queueing: a synchronous runner may execute
+		// the new action before this call returns. Losing the swap means a
+		// newer run (or a cancel) owns the feed now — this chain ends here.
+		if ( '' !== $run ) {
+			$to = $next_offset < $total ? $next_offset : BatchCursor::FINALIZE;
+			if ( ! $this->cursor()->hand_off( $feed_name, $run, $offset, $to ) ) {
+				Logger::info( "Batch chain ended — the run was superseded or cancelled: {$feed_name} offset {$offset}" );
+				return;
+			}
+		}
+
 		if ( $next_offset < $total ) {
 			// Schedule next batch with adaptive batch size.
 			as_schedule_single_action(
 				time(),
 				self::GENERATE_ACTION,
-				array(
-					'feed_name'  => $feed_name,
-					'offset'     => $next_offset,
-					'batch_size' => $next_batch_size,
-					'total'      => $total,
-				),
+				self::batch_args( $feed_name, $next_offset, $next_batch_size, $total, 0, $run ),
 				self::GROUP 
 			);
 
@@ -695,10 +740,7 @@ class FeedScheduler {
 			as_schedule_single_action(
 				time() + 5,
 				self::FINALIZE_ACTION,
-				array(
-					'feed_name' => $feed_name,
-					'total'     => $total,
-				),
+				self::finalize_args( $feed_name, $total, $run ),
 				self::GROUP 
 			);
 
@@ -793,12 +835,67 @@ class FeedScheduler {
 			$this->batch_calculator->clear_history( $feed_name );
 		}
 
+		// Every still-queued action of the run now loses its claim (CBT-735).
+		$this->cursor()->clear( $feed_name );
+
 		// Drop the product-ID snapshot transient — next run rebuilds it.
 		// We use a fresh ProductQuery binding rather than the injected one
 		// because cancel() is called from contexts that may not have run
 		// FeedGenerator (e.g. delete_feed before any generation).
 		$query = new ProductQuery();
 		$query->clear_snapshot( $feed_name );
+	}
+
+	/**
+	 * Action args for a batch. Action Scheduler passes the VALUES positionally
+	 * to handle_batch(), so the order is the signature's order; the run token
+	 * is only added when there is one, keeping pre-8.0.34 shapes intact.
+	 *
+	 * @since 8.0.34
+	 *
+	 * @param string $feed_name  Feed slug.
+	 * @param int    $offset     Offset.
+	 * @param int    $batch_size Batch size.
+	 * @param int    $total      Total products.
+	 * @param int    $attempt    Retry attempt.
+	 * @param string $run        Run token.
+	 * @return array<string,mixed>
+	 */
+	private static function batch_args( string $feed_name, int $offset, int $batch_size, int $total, int $attempt, string $run ): array {
+		$args = array(
+			'feed_name'  => $feed_name,
+			'offset'     => $offset,
+			'batch_size' => $batch_size,
+			'total'      => $total,
+		);
+		if ( $attempt > 0 || '' !== $run ) {
+			$args['attempt'] = $attempt;
+		}
+		if ( '' !== $run ) {
+			$args['run'] = $run;
+		}
+		return $args;
+	}
+
+	/**
+	 * Action args for the finalize step (positional, see batch_args()).
+	 *
+	 * @since 8.0.34
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @param int    $total     Total products.
+	 * @param string $run       Run token.
+	 * @return array<string,mixed>
+	 */
+	private static function finalize_args( string $feed_name, int $total, string $run ): array {
+		$args = array(
+			'feed_name' => $feed_name,
+			'total'     => $total,
+		);
+		if ( '' !== $run ) {
+			$args['run'] = $run;
+		}
+		return $args;
 	}
 
 	/**
@@ -1354,8 +1451,8 @@ class FeedScheduler {
 	 * @return void
 	 */
 	public function boot(): void {
-		add_action( self::GENERATE_ACTION, array( $this, 'handle_batch' ), 10, 5 );
-		add_action( self::FINALIZE_ACTION, array( $this, 'handle_finalization' ), 10, 2 );
+		add_action( self::GENERATE_ACTION, array( $this, 'handle_batch' ), 10, 6 );
+		add_action( self::FINALIZE_ACTION, array( $this, 'handle_finalization' ), 10, 3 );
 		add_action( self::RECURRING_ACTION, array( $this, 'handle_recurring' ), 10, 1 );
 
 		// Self-heal for silently-dropped recurring registrations (CBT-569): a
@@ -1458,6 +1555,10 @@ class FeedScheduler {
 		if ( $this->generator && method_exists( $this->generator, 'discard_working_file' ) ) {
 			$this->generator->discard_working_file( $feed_name );
 		}
+
+		// A batch already running when the user stopped the feed cannot hand
+		// the run on, so it does not queue a successor (CBT-735).
+		$this->cursor()->clear( $feed_name );
 
 		if ( $cancelled > 0 ) {
 			Logger::info( "Cancelled {$cancelled} queued generation action(s): {$feed_name}" );
@@ -1698,10 +1799,11 @@ class FeedScheduler {
 	 * @param int    $batch_size Batch size.
 	 * @param int    $total      Total product count.
 	 * @param int    $attempt    Smaller-batch retry counter (0 = first try). @since 8.0.7.
+	 * @param string $run        Run token; '' for actions queued before 8.0.34. @since 8.0.34.
 	 *
 	 * @return void
 	 */
-	public function handle_batch( string $feed_name, int $offset, int $batch_size, int $total, int $attempt = 0 ): void {
+	public function handle_batch( string $feed_name, int $offset, int $batch_size, int $total, int $attempt = 0, string $run = '' ): void {
 		if ( ! $this->generator ) {
 			Logger::error( 'FeedGenerator not set in FeedScheduler' );
 			return;
@@ -1726,6 +1828,18 @@ class FeedScheduler {
 			return;
 		}
 
+		// One owner per batch (CBT-735). Action Scheduler can hand the same
+		// pending action to two runners at once; both copies used to run and
+		// each chained its own next batch, so the whole catalogue was written
+		// twice into one file (#69480). The claim is a single conditional
+		// UPDATE: the second copy — or an action left over from an older or
+		// cancelled run — loses it and stops before touching the file, the
+		// progress record or the lock.
+		if ( '' !== $run && ! $this->cursor()->claim( $feed_name, $run, $offset ) ) {
+			Logger::info( "Duplicate batch dropped — another process owns it or the run moved on: {$feed_name} offset {$offset}" );
+			return;
+		}
+
 		// Refresh the generation lock TTL so it doesn't expire mid-generation
 		// on large catalogs with many batches (e.g., 100K products / 100 batch = 1000 batches).
 		if ( $this->batch_calculator ) {
@@ -1742,6 +1856,7 @@ class FeedScheduler {
 			'batch_size' => $batch_size,
 			'total'      => $total,
 			'attempt'    => $attempt,
+			'run'        => $run,
 		);
 		$this->register_fatal_guard();
 
@@ -1768,7 +1883,7 @@ class FeedScheduler {
 			delete_transient( 'ctxfeed_chain_revives_' . $feed_name );
 
 			// Chain next batch or finalize with adaptive batch size. @implements FEED-FRD-3.2.
-			$this->schedule_next_or_finalize( $feed_name, $offset, $step, $total, $next_batch_size );
+			$this->schedule_next_or_finalize( $feed_name, $offset, $step, $total, $next_batch_size, $run );
 		} catch ( \Throwable $e ) {
 			// Catchable failure handled here — disarm the shutdown guard.
 			$this->in_flight_batch = null;
@@ -1783,7 +1898,7 @@ class FeedScheduler {
 			// batch five times only delays the same failure (CBT-659), so it
 			// fails on the first attempt with one log line.
 			if ( ! $this->is_permanent_failure( $e, $feed_name )
-				&& $this->maybe_schedule_batch_retry( $feed_name, $offset, $batch_size, $total, $attempt, $e->getMessage() ) ) {
+				&& $this->maybe_schedule_batch_retry( $feed_name, $offset, $batch_size, $total, $attempt, $e->getMessage(), $run ) ) {
 				return;
 			}
 
@@ -1841,7 +1956,7 @@ class FeedScheduler {
 		$reason = 'fatal: ' . ( isset( $last['message'] ) ? $last['message'] : 'unknown' );
 
 		try {
-			if ( $this->maybe_schedule_batch_retry( $batch['feed_name'], $batch['offset'], $batch['batch_size'], $batch['total'], $batch['attempt'], $reason ) ) {
+			if ( $this->maybe_schedule_batch_retry( $batch['feed_name'], $batch['offset'], $batch['batch_size'], $batch['total'], $batch['attempt'], $reason, (string) ( $batch['run'] ?? '' ) ) ) {
 				return;
 			}
 			// Retries exhausted — mark the run failed so it doesn't hang.
@@ -1901,10 +2016,12 @@ class FeedScheduler {
 	 * @param int    $total      Total product count.
 	 * @param int    $attempt    Retry attempt number (0 = first try).
 	 * @param string $reason     Human-readable failure reason (for the log).
+	 * @param string $run        Run token ('' = no cursor). @since 8.0.34.
 	 *
-	 * @return bool True if a smaller retry was scheduled; false to give up.
+	 * @return bool True if a smaller retry was scheduled (or the run is no
+	 *              longer this chain's to fail); false to give up.
 	 */
-	private function maybe_schedule_batch_retry( string $feed_name, int $offset, int $batch_size, int $total, int $attempt, string $reason ): bool {
+	private function maybe_schedule_batch_retry( string $feed_name, int $offset, int $batch_size, int $total, int $attempt, string $reason, string $run = '' ): bool {
 		/**
 		 * Filter the retry ceiling for a failing batch (0 disables retries).
 		 *
@@ -1941,6 +2058,13 @@ class FeedScheduler {
 			return false; // No retry possible — the caller fails the run and releases the lock.
 		}
 
+		// Re-open the SAME offset on the cursor for the retry. Losing the swap
+		// means a newer run or a cancel owns the feed: nothing of ours to
+		// retry or to fail (CBT-735).
+		if ( '' !== $run && ! $this->cursor()->hand_off( $feed_name, $run, $offset, $offset ) ) {
+			return true;
+		}
+
 		// Refresh the lock so it survives until the retry runs, then schedule the
 		// SAME offset with the smaller size in a fresh request.
 		if ( $this->batch_calculator ) {
@@ -1950,13 +2074,7 @@ class FeedScheduler {
 		as_schedule_single_action(
 			time() + 5,
 			self::GENERATE_ACTION,
-			array(
-				'feed_name'  => $feed_name,
-				'offset'     => $offset,
-				'batch_size' => $smaller,
-				'total'      => $total,
-				'attempt'    => $attempt + 1,
-			),
+			self::batch_args( $feed_name, $offset, $smaller, $total, $attempt + 1, $run ),
 			self::GROUP
 		);
 
@@ -2080,6 +2198,19 @@ class FeedScheduler {
 			Logger::error( "Dead batch chain gave up after {$attempts} revives: {$feed_name}" );
 			return true;
 		}
+		// Point the run's cursor at the resume position, conditional on the
+		// value just read: a live batch handing off at this instant wins and
+		// the revive backs off instead of forking the chain (CBT-735).
+		$run    = '';
+		$cursor = $this->cursor()->read( $feed_name );
+		if ( null !== $cursor && '' !== $cursor['run'] ) {
+			$to = ( $total > 0 && $current >= $total ) ? BatchCursor::FINALIZE : $current;
+			if ( ! $this->cursor()->reopen( $feed_name, $cursor['raw'], $cursor['run'], $to ) ) {
+				return false;
+			}
+			$run = $cursor['run'];
+		}
+
 		set_transient( 'ctxfeed_chain_revives_' . $feed_name, $attempts + 1, HOUR_IN_SECONDS );
 
 		if ( $this->batch_calculator ) {
@@ -2091,10 +2222,7 @@ class FeedScheduler {
 			as_schedule_single_action(
 				time(),
 				self::FINALIZE_ACTION,
-				array(
-					'feed_name' => $feed_name,
-					'total'     => $total,
-				),
+				self::finalize_args( $feed_name, $total, $run ),
 				self::GROUP 
 			);
 			Logger::warning( "Dead chain revived at finalize: {$feed_name}" );
@@ -2123,12 +2251,7 @@ class FeedScheduler {
 		as_schedule_single_action(
 			time(),
 			self::GENERATE_ACTION,
-			array(
-				'feed_name'  => $feed_name,
-				'offset'     => $current,
-				'batch_size' => $size,
-				'total'      => $total,
-			),
+			self::batch_args( $feed_name, $current, $size, $total, 0, $run ),
 			self::GROUP
 		);
 		Logger::warning(
@@ -2314,10 +2437,11 @@ class FeedScheduler {
 	 *
 	 * @param string $feed_name Feed slug identifier.
 	 * @param int    $total     Total product count.
+	 * @param string $run       Run token; '' for actions queued before 8.0.34. @since 8.0.34.
 	 *
 	 * @return void
 	 */
-	public function handle_finalization( string $feed_name, int $total ): void {
+	public function handle_finalization( string $feed_name, int $total, string $run = '' ): void {
 		if ( ! $this->generator ) {
 			Logger::error( 'FeedGenerator not set in FeedScheduler' );
 			return;
@@ -2333,6 +2457,13 @@ class FeedScheduler {
 		// Checked BEFORE touching progress so the completed status survives.
 		if ( method_exists( $this->generator, 'has_working_file' ) && ! $this->generator->has_working_file( $feed_name ) ) {
 			Logger::info( "Finalize skipped — no working file, the run was already finalized: {$feed_name}" );
+			return;
+		}
+
+		// One finalize per run: two copies racing would both write the footer
+		// and promote (CBT-735).
+		if ( '' !== $run && ! $this->cursor()->claim( $feed_name, $run, BatchCursor::FINALIZE ) ) {
+			Logger::info( "Duplicate finalize dropped — another process owns it or the run moved on: {$feed_name}" );
 			return;
 		}
 
