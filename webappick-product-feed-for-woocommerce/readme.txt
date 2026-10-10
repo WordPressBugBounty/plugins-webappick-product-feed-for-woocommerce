@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.34
+Stable tag: 8.0.35
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -493,6 +493,13 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.35 =
+* Changed: "First Variation Price" uses the price of the first variation in the product's variation order, the same variation "First Variation Quantity" uses. Before, it gave the lowest price, the same as "Min Variation Price".
+* Fix: Enclosure "None" on CSV and TSV feeds writes values without wrapping them. They were wrapped in spaces.
+* Added: category mapping in WPML and Polylang stores. Map each category once in your default language; translated categories use that mapping, and the editor lists each category once. Needs CTX Feed Pro 8.0.26.
+* Fix: Dynamic Attribute names show in the feed editor as you typed them, including after a rename. Needs CTX Feed Pro 8.0.26.
+* Fix: the License page points to My Account → Downloads to download CTX Feed Pro.
+
 = Version 8.0.34 =
 * Fix: a feed no longer lists the same products twice. On some servers two background processes could build the same feed at once; now only one can.
 * Fix: an update that is still copying its files no longer causes a "critical error" on the site. CTX Feed waits until the update has finished and shows administrators a short notice meanwhile.
@@ -543,6 +550,9 @@ If your feed fails to generate:
 * Improved: the External services section of this readme lists every remote service the plugin contacts.
 
 == Upgrade Notice ==
+
+= 8.0.35 =
+CTX Feed is going through a major update. Back up your site, update CTX Feed and CTX Feed Pro together, then regenerate your feeds and check them: titles, prices, brand and shipping. "First Variation Price" now uses the first variation's price, not the lowest.
 
 = 8.0.34 =
 CTX Feed is going through a major update. Back up your site, update CTX Feed and CTX Feed Pro together, then regenerate your feeds and check them: titles, prices, brand and shipping.

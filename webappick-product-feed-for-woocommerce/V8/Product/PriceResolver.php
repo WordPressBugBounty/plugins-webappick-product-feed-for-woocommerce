@@ -292,7 +292,7 @@ class PriceResolver {
 		$prices = $variation_prices[ $price_key ];
 
 		// Get the base price based on variable_price config (min/max/first).
-		$raw = $this->pick_variable_price( $prices, $config );
+		$raw = $this->pick_variable_price( $prices, $config, $product );
 
 		if ( '' === $raw || null === $raw ) {
 			return '';
@@ -317,12 +317,13 @@ class PriceResolver {
 	 *
 	 * @since 8.0.0
 	 *
-	 * @param array  $prices Variation prices keyed by variation ID.
-	 * @param Config $config Feed configuration.
+	 * @param array            $prices  Variation prices keyed by variation ID.
+	 * @param Config           $config  Feed configuration.
+	 * @param \WC_Product|null $product Variable product ('first' follows its menu order).
 	 *
 	 * @return string Selected price value.
 	 */
-	private function pick_variable_price( array $prices, Config $config ): string {
+	private function pick_variable_price( array $prices, Config $config, $product = null ): string {
 		if ( empty( $prices ) ) {
 			return '';
 		}
@@ -351,6 +352,17 @@ class PriceResolver {
 				return (string) max( $prices );
 
 			case 'first':
+				// The first variation in the product's own (menu) order — the
+				// same variation Variable quantity "First" uses. WooCommerce
+				// sorts $prices ascending, so reset() was always the lowest
+				// price, identical to 'min' (V5 quirk, CBT-746).
+				if ( is_object( $product ) && is_callable( array( $product, 'get_visible_children' ) ) ) {
+					foreach ( (array) $product->get_visible_children() as $variation_id ) {
+						if ( isset( $prices[ $variation_id ] ) && '' !== (string) $prices[ $variation_id ] ) {
+							return (string) $prices[ $variation_id ];
+						}
+					}
+				}
 				return (string) reset( $prices );
 
 			case 'min':

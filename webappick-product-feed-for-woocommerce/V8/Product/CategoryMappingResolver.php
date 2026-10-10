@@ -177,6 +177,18 @@ class CategoryMappingResolver {
 			return '';
 		}
 
+		// Mapped value per product term — its own row, or the row of one of
+		// its translations (CBT-744). A multilingual store maps its categories
+		// once, in the default language; a translated product carries the
+		// translated term ids, which have no row of their own.
+		$values = array();
+		foreach ( $term_ids as $term_id ) {
+			$value = $this->mapped_value( $mapping_assoc, $term_id );
+			if ( '' !== $value ) {
+				$values[ $term_id ] = $value;
+			}
+		}
+
 		/**
 		 * Restore V5's literal `max($term_ids)` term pick.
 		 *
@@ -196,13 +208,7 @@ class CategoryMappingResolver {
 		if ( apply_filters( 'ctxfeed_cmapping_v5_max_id', false ) ) {
 			$picked = max( $term_ids );
 
-			if ( ! isset( $mapping_assoc[ $picked ] ) ) {
-				return '';
-			}
-
-			$value = $mapping_assoc[ $picked ];
-
-			return '' === $value || null === $value ? '' : (string) $value;
+			return $values[ $picked ] ?? '';
 		}
 
 		// Pick the deepest MAPPED term by real hierarchy: only terms that
@@ -214,9 +220,7 @@ class CategoryMappingResolver {
 		$picked       = 0;
 		$picked_depth = -1;
 		foreach ( $term_ids as $term_id ) {
-			if ( ! isset( $mapping_assoc[ $term_id ] )
-				|| '' === $mapping_assoc[ $term_id ]
-				|| null === $mapping_assoc[ $term_id ] ) {
+			if ( ! isset( $values[ $term_id ] ) ) {
 				continue;
 			}
 
@@ -232,6 +236,62 @@ class CategoryMappingResolver {
 			return '';
 		}
 
-		return (string) $mapping_assoc[ $picked ];
+		return $values[ $picked ];
+	}
+
+	/**
+	 * Per-request memo of term translations (term id => translated ids).
+	 *
+	 * @var array<int, int[]>
+	 */
+	private $translations = array();
+
+	/**
+	 * The mapping value for a term: its own row, else the row of the first
+	 * translation that has one (default language first). '' when none.
+	 *
+	 * @since 8.0.35
+	 *
+	 * @param array $mapping Mapping rows keyed by term id.
+	 * @param int   $term_id Product term id.
+	 * @return string
+	 */
+	private function mapped_value( array $mapping, int $term_id ): string {
+		if ( isset( $mapping[ $term_id ] ) && '' !== $mapping[ $term_id ] && null !== $mapping[ $term_id ] ) {
+			return (string) $mapping[ $term_id ];
+		}
+
+		if ( ! array_key_exists( $term_id, $this->translations ) ) {
+			/**
+			 * Translations of a product category term, for category mapping.
+			 *
+			 * Multilingual shims (WPML, Polylang in CTX Feed Pro) return the
+			 * term ids of the same category in the other languages, default
+			 * language first. Only asked for a term that has no mapping row.
+			 *
+			 * @since 8.0.35
+			 *
+			 * @param int[] $translations Translated term ids.
+			 * @param int   $term_id      Product term id.
+			 */
+			$ids = apply_filters( 'ctxfeed_category_mapping_term_translations', array(), $term_id );
+
+			$this->translations[ $term_id ] = array_values(
+				array_filter(
+					array_map( 'intval', is_array( $ids ) ? $ids : array() ),
+					static function ( $id ) use ( $term_id ) {
+						return $id > 0 && $id !== $term_id;
+					}
+				)
+			);
+		}
+
+		foreach ( $this->translations[ $term_id ] as $translated_id ) {
+			if ( isset( $mapping[ $translated_id ] ) && '' !== $mapping[ $translated_id ] && null !== $mapping[ $translated_id ] ) {
+				return (string) $mapping[ $translated_id ];
+			}
+		}
+
+		return '';
 	}
 }

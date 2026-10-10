@@ -1082,11 +1082,21 @@ class AttributeRegistry {
 
 		if ( ! empty( $data ) ) {
 			foreach ( $data as $row ) {
-				$opts                         = maybe_unserialize( $row->option_value );
-				$opts                         = maybe_unserialize( $opts );
-				$options[ $row->option_name ] = is_array( $opts ) && isset( $opts['wfDAttributeName'] )
-					? $opts['wfDAttributeName']
-					: str_replace( self::PREFIX_DYN_ATTRIBUTE, '', $row->option_name );
+				$opts = maybe_unserialize( $row->option_value );
+				$opts = maybe_unserialize( $opts );
+				// Typed name (wfDAttributeName), else the code, else the slug.
+				// V8 Pro ≤ 8.0.25 saved only the code, so the label fell back to
+				// the slug fixed at creation and a rename never showed (CBT-743).
+				$label = str_replace( self::PREFIX_DYN_ATTRIBUTE, '', $row->option_name );
+				if ( is_array( $opts ) ) {
+					foreach ( array( 'wfDAttributeName', 'wfDAttributeCode', 'name' ) as $name_key ) {
+						if ( isset( $opts[ $name_key ] ) && is_scalar( $opts[ $name_key ] ) && '' !== trim( (string) $opts[ $name_key ] ) ) {
+							$label = (string) $opts[ $name_key ];
+							break;
+						}
+					}
+				}
+				$options[ $row->option_name ] = $label;
 			}
 		}
 

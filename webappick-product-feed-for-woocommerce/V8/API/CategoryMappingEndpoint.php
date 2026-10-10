@@ -63,7 +63,7 @@ class CategoryMappingEndpoint extends RestController {
 	// payload changes (e.g. the hierarchy-first sort added below).
 	// Bump the suffix when the shape or order changes so old rows in
 	// the options table don't get served.
-	const CAT_CACHE_TRANSIENT = 'ctxfeed_cat_map_categories_v2';
+	const CAT_CACHE_TRANSIENT = 'ctxfeed_cat_map_categories_v3'; // v3: always the default language (CBT-744).
 	const CAT_CACHE_TTL       = 12 * HOUR_IN_SECONDS;
 
 	/**
@@ -898,18 +898,68 @@ class CategoryMappingEndpoint extends RestController {
 			return $cached;
 		}
 
-		$terms = get_terms(
-			array(
-				'taxonomy'   => 'product_cat',
-				'hide_empty' => false,
-				'orderby'    => 'name',
-				'order'      => 'ASC',
-			) 
-		);
+		/**
+		 * Fires before the Category Mapping editor lists product categories.
+		 *
+		 * Multilingual shims widen the listing to ALL languages here, then
+		 * (ctxfeed_category_mapping_terms) drop every category that is a
+		 * translation of a default-language one. The editor — and its cache,
+		 * shared by every admin — always shows one row per category whatever
+		 * language the admin browses in; translated products resolve through
+		 * their translations (CBT-744).
+		 *
+		 * @since 8.0.35
+		 */
+		do_action( 'ctxfeed_category_mapping_before_list_terms' );
+
+		try {
+			/**
+			 * Filter the get_terms() arguments of the Category Mapping editor.
+			 *
+			 * @since 8.0.35
+			 *
+			 * @param array $args get_terms() arguments.
+			 */
+			$terms = get_terms(
+				(array) apply_filters(
+					'ctxfeed_category_mapping_terms_args',
+					array(
+						'taxonomy'   => 'product_cat',
+						'hide_empty' => false,
+						'orderby'    => 'name',
+						'order'      => 'ASC',
+					)
+				)
+			);
+		} finally {
+			/**
+			 * Fires after the Category Mapping editor listed the categories —
+			 * shims restore the admin's language.
+			 *
+			 * @since 8.0.35
+			 */
+			do_action( 'ctxfeed_category_mapping_after_list_terms' );
+		}
 
 		if ( is_wp_error( $terms ) ) {
 			return $terms;
 		}
+
+		/**
+		 * Filter the product categories the Category Mapping editor lists.
+		 *
+		 * @since 8.0.35
+		 *
+		 * @param \WP_Term[] $terms Terms from get_terms().
+		 */
+		$terms = array_values(
+			array_filter(
+				(array) apply_filters( 'ctxfeed_category_mapping_terms', $terms ),
+				static function ( $term ) {
+					return $term instanceof \WP_Term;
+				}
+			)
+		);
 
 		$term_map = array();
 		foreach ( $terms as $term ) {

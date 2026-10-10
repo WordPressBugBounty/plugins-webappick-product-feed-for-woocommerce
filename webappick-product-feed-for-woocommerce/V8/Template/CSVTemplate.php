@@ -267,6 +267,12 @@ class CSVTemplate implements TemplateInterface {
 				return '"';
 			case 'single':
 				return "'";
+			case ' ':
+			case 'none':
+				// "None" is stored as a single space (MakeForm, FeedEndpoint::
+				// sanitize_csv_enclosure). V5 wrote such fields unenclosed; the
+				// space must never become the enclosure (CBT-733).
+				return '';
 			default:
 				// If it's already a character (e.g., " or '), use as-is.
 				return ( strlen( $enclosure ) === 1 ) ? $enclosure : '"';
@@ -344,6 +350,10 @@ class CSVTemplate implements TemplateInterface {
 			return implode( $delimiter, $wrapped );
 		}
 
+		if ( '' === $enclosure ) {
+			return $this->unenclosed_line( $fields, $delimiter );
+		}
+
 		// Fallback (QUOTE_ALL disabled): fputcsv's minimal quoting. Strip ONLY
 		// fputcsv's trailing line terminator — StreamWriter adds its own PHP_EOL
 		// between rows, and a bare rtrim() would also eat the trailing delimiter
@@ -359,5 +369,33 @@ class CSVTemplate implements TemplateInterface {
 		fclose( $stream );
 
 		return $line;
+	}
+
+	/**
+	 * Build a line for Enclosure "None" (CBT-733).
+	 *
+	 * Fields are written as-is (V5 parity). A value that would break the row —
+	 * one containing the delimiter, a double quote or a line break — is the
+	 * only exception: it is wrapped in double quotes (embedded quotes doubled,
+	 * RFC 4180), so the file stays parseable.
+	 *
+	 * @since 8.0.35
+	 *
+	 * @param array  $fields    Field values.
+	 * @param string $delimiter Delimiter character.
+	 *
+	 * @return string Delimited line.
+	 */
+	private function unenclosed_line( array $fields, string $delimiter ): string {
+		$out = array();
+		foreach ( $fields as $field ) {
+			$value = (string) $field;
+			if ( ( '' !== $delimiter && false !== strpos( $value, $delimiter ) ) || false !== strpbrk( $value, "\"\r\n" ) ) {
+				$value = '"' . str_replace( '"', '""', $value ) . '"';
+			}
+			$out[] = $value;
+		}
+
+		return implode( $delimiter, $out );
 	}
 }
