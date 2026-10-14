@@ -340,6 +340,29 @@ class FeedGenerator {
 	 * @return array Batch result with 'count' and 'next_batch_size' keys.
 	 */
 	public function process_batch( string $feed_name, int $offset, int $batch_size, array $context = array() ): array {
+		// Every run resolves as a logged-out visitor — the price Google sees
+		// on the landing page — whoever started it (CBT-739). Scheduled runs
+		// already have no user; manual and browser-driven runs now match.
+		return \CTXFeed\V8\Utility\GuestContext::run(
+			function () use ( $feed_name, $offset, $batch_size, $context ): array {
+				return $this->run_batch( $feed_name, $offset, $batch_size, $context );
+			}
+		);
+	}
+
+	/**
+	 * Process one batch (body of process_batch(), already in guest context).
+	 *
+	 * @since 8.0.36
+	 *
+	 * @param string $feed_name  Feed slug identifier.
+	 * @param int    $offset     Product offset for this batch.
+	 * @param int    $batch_size Number of products per batch.
+	 * @param array  $context    Additional context data.
+	 *
+	 * @return array Batch result with 'count' and 'next_batch_size' keys.
+	 */
+	private function run_batch( string $feed_name, int $offset, int $batch_size, array $context = array() ): array {
 		// WooCommerce skips its cart helpers on cron/REST requests, which is
 		// every way a feed generates, yet core calls them from the tax
 		// location lookup that price and shipping resolution both reach.

@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use CTXFeed\Compat\Support\ProductHelper;
+use CTXFeed\Compat\Support\PriceStage;
 use CTXFeed\Compat\Support\Cache;
 
 /**
@@ -29,10 +30,12 @@ class WAD_DiscountCompatibility {
 	 */
 	public function __construct() {
 		// Get price with discount.
-		add_filter( 'woo_feed_filter_product_price', array( $this, 'get_discounted_price' ), 99999999, 5 );
-		add_filter( 'woo_feed_filter_product_sale_price', array( $this, 'get_discounted_price' ), 99999999, 5 );
-		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_discounted_price' ), 99999999, 5 );
-		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_discounted_price' ), 99999999, 5 );
+		// Discount stage of the price pipeline (CBT-795): after the bundle /
+		// composite models, before currency conversion.
+		add_filter( 'woo_feed_filter_product_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_sale_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
 	}
 
 	/**
@@ -100,18 +103,26 @@ class WAD_DiscountCompatibility {
 				$discounted_amount += (float) $wad_obj->get_discount_amount( $product->get_price() );
 			}
 
-			if ( $discounted_amount > 0 && empty( $price ) ) {
-				$price = (float) $product->get_price() - $discounted_amount;
-			} else {
-				$price = $original_price;
+			// The discounted price is the shop's current price minus the WAD
+			// discount — for the current price (`price`, the Google template's
+			// sale_price ← current_price default) AND the sale price. Before
+			// CBT-774 only an EMPTY incoming value was replaced, so the
+			// non-empty current price was never discounted and a WAD store on
+			// the default Google template shipped no discount at all.
+			if ( $discounted_amount > 0 && in_array( $price_type, array( 'price', 'sale_price' ), true ) ) {
+				$price = max( 0, (float) $product->get_price() - $discounted_amount );
+
+				// Only the price computed here is net; an untouched incoming
+				// value already carries tax when asked for with tax.
+				if ( $with_tax ) {
+					$price = ProductHelper::get_price_with_tax( $price, $product );
+				}
+
+				return $price;
 			}
 		}
 
-		if ( $with_tax ) {
-			$price = ProductHelper::get_price_with_tax( $price, $product );
-		}
-
-		return $price;
+		return $original_price;
 	}
 
 	/**

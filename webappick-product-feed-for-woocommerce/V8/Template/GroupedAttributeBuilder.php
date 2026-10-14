@@ -434,7 +434,7 @@ class GroupedAttributeBuilder {
 	 * DELIMITED formats (CSV/TSV/TXT) headers.
 	 *
 	 * Google's delimited spec puts each nested group in ONE column
-	 * (e.g. `tax(country:region:rate:postal_code:tax_ship)`), so the
+	 * (e.g. `tax(country:region:rate:tax_ship)`), so the
 	 * per-member entries (tax_country, tax_region, ...) collapse into a
 	 * single group-name entry at the position of the FIRST member.
 	 * Repeated instances (product_detail triplets mapped twice) still

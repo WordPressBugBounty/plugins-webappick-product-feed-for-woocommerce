@@ -173,6 +173,17 @@ class ProductQuery {
 		$product_types = $config->get( 'product_types', ProductTypeSupport::FREE_TYPES );
 		$args['type']  = $product_types;
 
+		// Vendor feed (CBT-753, V5 ProductQuery parity): the Feed settings
+		// "Vendors" selector limits the feed to products authored by the
+		// selected marketplace vendor(s). WooCommerce passes `author__in`
+		// straight through to WP_Query. Variations follow their parent (the
+		// expansion below reads children of the queried parents), matching
+		// V5's Filter::include_vendors() parent-author check.
+		$vendor_ids = self::resolve_vendor_ids( $config );
+		if ( ! empty( $vendor_ids ) ) {
+			$args['author__in'] = $vendor_ids;
+		}
+
 		// Category push-down seams (CBT-650). The category filter is a
 		// Filters-tab (Pro) feature, so the query-level cuts that used to live
 		// here — include mode via prune_to_included_categories() (8.0.14) and
@@ -798,6 +809,42 @@ class ProductQuery {
 		$data_store = new \WC_Product_Variation_Data_Store_CPT();
 
 		return (int) $data_store->find_matching_product_variation( $product, $formatted_attributes );
+	}
+
+	/**
+	 * Resolve the vendor (post author) ids a vendor feed is limited to.
+	 *
+	 * Reads feedrules `vendors` — an array of user ids from the Feed settings
+	 * "Vendors" selector, or a comma-separated string (V5
+	 * Config::get_vendors_to_include()). Non-positive values are dropped.
+	 *
+	 * @since 8.0.36
+	 *
+	 * @param Config $config Feed configuration.
+	 *
+	 * @return int[] Vendor user ids; empty = no vendor restriction.
+	 */
+	public static function resolve_vendor_ids( Config $config ): array {
+		$vendors = $config->get( 'vendors', array() );
+		if ( is_string( $vendors ) ) {
+			$vendors = explode( ',', $vendors );
+		}
+		if ( ! is_array( $vendors ) ) {
+			$vendors = array( $vendors );
+		}
+
+		$ids = array();
+		foreach ( $vendors as $vendor ) {
+			if ( ! is_scalar( $vendor ) ) {
+				continue;
+			}
+			$id = (int) trim( (string) $vendor );
+			if ( $id > 0 ) {
+				$ids[ $id ] = $id;
+			}
+		}
+
+		return array_values( $ids );
 	}
 
 	/**

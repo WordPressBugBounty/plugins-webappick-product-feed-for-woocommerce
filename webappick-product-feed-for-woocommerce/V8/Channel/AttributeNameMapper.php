@@ -542,7 +542,7 @@ class AttributeNameMapper {
 					'number_of_ratings'                   => 'number_of_ratings',
 					'number_of_reviews'                   => 'number_of_reviews',
 					'checkout_link_template'              => 'checkout link template',
-					'tax'                                 => 'tax(country:region:rate:postal_code:tax_ship)',
+					'tax'                                 => 'tax(country:region:rate:tax_ship)',
 					'tax_category'                        => 'tax category',
 					'shipping'                            => 'shipping(country:state:service:price)',
 					'weight'                              => 'shipping weight',

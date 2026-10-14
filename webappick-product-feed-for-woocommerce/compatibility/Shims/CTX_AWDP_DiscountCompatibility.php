@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use CTXFeed\Compat\Support\ProductHelper;
+use CTXFeed\Compat\Support\PriceStage;
 
 /**
  * Class CTX_AWDP_DiscountCompatibility
@@ -28,12 +29,14 @@ class CTX_AWDP_DiscountCompatibility {
 	 */
 	public function __construct() {
 		// Get price with discount.
-		add_filter( 'woo_feed_filter_product_regular_price', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_price', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_sale_price', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_regular_price_with_tax', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_discounted_price' ), 10, 5 );
+		// Discount stage of the price pipeline (CBT-795): after the bundle /
+		// composite models, before currency conversion.
+		add_filter( 'woo_feed_filter_product_regular_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_sale_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_regular_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
 	}
 
 	/**
@@ -48,21 +51,24 @@ class CTX_AWDP_DiscountCompatibility {
 	 * @return int
 	 */
 	public function get_discounted_price( $price, $product, $config, $with_tax, $price_type ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter, VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable -- Hook callback signature: the 5-argument arity registered with add_filter() must be preserved even though this adapter does not read every argument.
-		if ( class_exists( 'AWDP_Discount' ) ) {
-			$prices = \AWDP_Discount::instance()->wdpWCPAPrice( $price, $product );
-
-			if (
-				isset( $prices['originalPrice'] )
-				&& 'regular_price' === $price_type
-				&& isset( $prices['price'] )
-				&& $prices['price']
-			) {
-				$price = $prices['originalPrice'];
-			} elseif ( isset( $prices['price'] ) && $prices['price'] ) {
-				$price = $prices['price'];
-			}
+		// The regular price is never Acowebs' business: its `originalPrice` is
+		// the price BEFORE its discount — for a product on sale that is the
+		// sale price, so the regular row shipped the sale price (20 → 18,
+		// CBT-795). The bridge already carries the product's regular price.
+		if ( 'regular_price' === $price_type || ! class_exists( 'AWDP_Discount' ) ) {
+			return $price;
 		}
 
+		$prices = \AWDP_Discount::instance()->wdpWCPAPrice( $price, $product );
+		if ( ! is_array( $prices ) || empty( $prices['price'] ) || ! is_numeric( $prices['price'] ) ) {
+			// No discount for this product: the incoming value stands as-is —
+			// on a tax-inclusive row it ALREADY carries tax (adding it again
+			// taxed every undiscounted product twice, CBT-795).
+			return $price;
+		}
+
+		// Acowebs computes from the product's own (tax-exclusive) price.
+		$price = $prices['price'];
 		if ( $with_tax ) {
 			$price = ProductHelper::get_price_with_tax( $price, $product );
 		}

@@ -24,7 +24,8 @@ if ( ! function_exists( 'add_action' ) ) {
 	/*
 	 * The "Extended Product Title" and "Attribute Mapping" cards were parked
 	 * before release and are intentionally absent from this list; see the file
-	 * history if they need to be restored.
+	 * history if they need to be restored. "Multi Vendor Compatibility" was
+	 * removed because vendor feeds are a FREE feature (CBT-753).
 	 */
 	$woo_feed_features     = array(
 		array(
@@ -98,12 +99,6 @@ if ( ! function_exists( 'add_action' ) ) {
 			'title'       => 'Dynamic Pricing',
 			'description' => 'Sometime you may need to increase or decrease product price for a specific marketing channel. By making a Dynamic Attribute you can conditionally increase/decrease product price effortlessly.',
 			'more-link'   => 'https://youtu.be/elYbtW882vw',
-		),
-		array(
-			'thumb'       => esc_url( WOO_FEED_PLUGIN_URL ) . 'V8/Admin/images/feature-multi-vendors-thumbnail.svg',
-			'title'       => 'Multi Vendor Compatibility',
-			'description' => 'CTX Feed pro allows you to create a product feed for multiple or a specific vendor. Generating product feed for numerous vendors is straightforward with this plugin. Choose single or multiple vendors while creating product feeds. Support all the popular multi-vendor plugins.',
-			'more-link'   => 'https://youtu.be/es0qCA-_2jo',
 		),
 		array(
 			'thumb'       => esc_url( WOO_FEED_PLUGIN_URL ) . 'V8/Admin/images/feature-custom-template-2-thumbnail.svg',

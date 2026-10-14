@@ -57,12 +57,43 @@ class CompatibilityFactory {
 				}
 			}
 
+			// Some shims serve a THEME, not a plugin (CBT-772: WoodMart's
+			// variation gallery). is_plugin_active() never sees a theme.
+			if ( ! $is_any_plugin_active && self::theme_activates( $class ) ) {
+				$is_any_plugin_active = true;
+			}
+
 			if ( ! $is_any_plugin_active ) {
 				continue;
 			}
 
 			new $class_name();
 		}
+	}
+
+	/**
+	 * Whether the active theme (or its parent theme) needs a shim.
+	 *
+	 * Reads the `template` option through get_template(), so it works at
+	 * plugins_loaded (before the theme loads) and covers any child theme,
+	 * whatever it is named.
+	 *
+	 * @since 8.0.36
+	 *
+	 * @param string $class_key Shim key (e.g. 'VariationGallery').
+	 * @return bool
+	 */
+	public static function theme_activates( string $class_key ): bool {
+		$theme_shims = array(
+			// WoodMart theme → its variation gallery (CBT-772).
+			'VariationGallery' => array( 'woodmart' ),
+		);
+
+		if ( ! isset( $theme_shims[ $class_key ] ) || ! function_exists( 'get_template' ) ) {
+			return false;
+		}
+
+		return in_array( strtolower( (string) get_template() ), $theme_shims[ $class_key ], true );
 	}
 
 	/**

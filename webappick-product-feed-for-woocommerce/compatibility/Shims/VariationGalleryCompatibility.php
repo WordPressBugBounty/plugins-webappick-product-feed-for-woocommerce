@@ -81,51 +81,38 @@ class VariationGalleryCompatibility {
 			}
 		}
 
-		// Check WOODMART Theme.
-		if ( class_exists( 'WOODMART_Theme' ) ) {
+		// WoodMart theme (or any child theme of it — CBT-772: the old check
+		// matched only a child theme literally named "Woodmart Child").
+		if ( self::is_woodmart() ) {
 			$var_id    = $product->get_id();
 			$parent_id = $product->get_parent_id();
 
 			$variation_obj = get_post_meta( $parent_id, 'woodmart_variation_gallery_data', true );
-			if ( isset( $variation_obj, $variation_obj[ $var_id ] ) && is_string( $variation_obj[ $var_id ] ) ) {
-				$gallery_ids = explode( ',', $variation_obj[ $var_id ] );
-				if ( ! empty( $gallery_ids ) ) {
-					return $gallery_ids;
-				}
+			if ( is_array( $variation_obj ) && isset( $variation_obj[ $var_id ] ) && is_string( $variation_obj[ $var_id ] ) && '' !== $variation_obj[ $var_id ] ) {
+				return explode( ',', $variation_obj[ $var_id ] );
 			}
 
 			$wd_data = get_post_meta( $var_id, 'wd_additional_variation_images_data', true );
 			if ( ! empty( $wd_data ) && is_string( $wd_data ) ) {
-				$gallery_ids = explode( ',', $wd_data );
-				if ( ! empty( $gallery_ids ) ) {
-					return $gallery_ids;
-				}
-			}
-		}
-
-		// Check Woodmart Child Theme.
-		$theme = wp_get_theme();
-		if ( 'Woodmart Child' === $theme->name ) {
-			$var_id    = $product->get_id();
-			$parent_id = $product->get_parent_id();
-
-			$variation_obj = get_post_meta( $parent_id, 'woodmart_variation_gallery_data', true );
-			if ( isset( $variation_obj, $variation_obj[ $var_id ] ) && is_string( $variation_obj[ $var_id ] ) ) {
-				$gallery_ids = explode( ',', $variation_obj[ $var_id ] );
-				if ( ! empty( $gallery_ids ) ) {
-					return $gallery_ids;
-				}
-			}
-
-			$wd_data = get_post_meta( $var_id, 'wd_additional_variation_images_data', true );
-			if ( ! empty( $wd_data ) && is_string( $wd_data ) ) {
-				$gallery_ids = explode( ',', $wd_data );
-				if ( ! empty( $gallery_ids ) ) {
-					return $gallery_ids;
-				}
+				return explode( ',', $wd_data );
 			}
 		}
 
 		return $attachment_ids;
+	}
+
+	/**
+	 * Whether WoodMart is the active theme or the parent of the active theme.
+	 *
+	 * @since 8.0.36
+	 *
+	 * @return bool
+	 */
+	private static function is_woodmart(): bool {
+		if ( class_exists( 'WOODMART_Theme' ) ) {
+			return true;
+		}
+
+		return function_exists( 'get_template' ) && 'woodmart' === strtolower( (string) get_template() );
 	}
 }

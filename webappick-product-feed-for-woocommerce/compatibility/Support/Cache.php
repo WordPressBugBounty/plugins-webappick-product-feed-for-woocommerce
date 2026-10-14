@@ -58,8 +58,17 @@ class Cache {
 		}
 
 		if ( false === $expiration ) {
-			$expiration = get_option( 'woo_feed_settings', array( 'cache_ttl' => 6 * HOUR_IN_SECONDS ) );
-			$expiration = (int) $expiration['cache_ttl'];
+			// Settings saved without `cache_ttl` (or not an array) used to raise
+			// a notice AND cache with expiration 0 — "never expires" — although
+			// the user never chose that, so e.g. WAD's active-discount list went
+			// stale for good (CBT-795). Missing / invalid → 6 hours; an explicit
+			// 0 ("Never expire" in Settings) is kept. Same rule as
+			// SettingsEndpoint::get_cache_ttl().
+			$settings   = get_option( 'woo_feed_settings', array() );
+			$expiration = is_array( $settings ) && isset( $settings['cache_ttl'] ) && is_numeric( $settings['cache_ttl'] ) ? (int) $settings['cache_ttl'] : 6 * HOUR_IN_SECONDS;
+			if ( $expiration < 0 ) {
+				$expiration = 6 * HOUR_IN_SECONDS;
+			}
 		}
 
 		return set_transient( $prefix . $key, $data, $expiration );

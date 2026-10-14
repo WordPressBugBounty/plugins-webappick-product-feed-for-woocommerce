@@ -12,6 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use CTXFeed\Compat\Support\ProductHelper;
+use CTXFeed\Compat\Support\PriceStage;
 
 /**
  * Class RP_WCDPDCompatibility
@@ -28,12 +29,14 @@ class RP_WCDPDCompatibility {
 	 */
 	public function __construct() {
 		// Get price with discount.
-		add_filter( 'woo_feed_filter_product_regular_price', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_price', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_sale_price', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_regular_price_with_tax', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_discounted_price' ), 10, 5 );
-		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_discounted_price' ), 10, 5 );
+		// Discount stage of the price pipeline (CBT-795): after the bundle /
+		// composite models, before currency conversion.
+		add_filter( 'woo_feed_filter_product_regular_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_sale_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_regular_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
 
 		add_filter( 'rightpress_product_price_shop_calculate_by_price_test', '__return_false', 9999 );
 	}
@@ -61,12 +64,30 @@ class RP_WCDPDCompatibility {
 			return $price;
 		}
 
-		$price = $discount->get_price_for_product( $price, $price_type, $product );
-
-		if ( $with_tax ) {
-			$price = ProductHelper::get_price_with_tax( $price, $product );
+		// On a tax-inclusive row the incoming value already carries tax; ask
+		// RightPress about the product's own tax-exclusive price of that type
+		// and add tax to its answer only — it used to be handed the taxed
+		// price and taxed again (CBT-795).
+		$base = $price;
+		if ( $with_tax && $product instanceof \WC_Product ) {
+			if ( 'regular_price' === $price_type ) {
+				$base = $product->get_regular_price();
+			} elseif ( 'sale_price' === $price_type ) {
+				$base = $product->get_sale_price();
+			} else {
+				$base = $product->get_price();
+			}
 		}
 
-		return $price;
+		$adjusted = $discount->get_price_for_product( $base, $price_type, $product );
+
+		if ( ! $with_tax ) {
+			return $adjusted;
+		}
+		if ( '' === $adjusted || null === $adjusted || ! is_numeric( $adjusted ) || ( is_numeric( $base ) && abs( (float) $adjusted - (float) $base ) < 0.005 ) ) {
+			return $price; // No adjustment: the taxed incoming value stands.
+		}
+
+		return ProductHelper::get_price_with_tax( $adjusted, $product );
 	}
 }

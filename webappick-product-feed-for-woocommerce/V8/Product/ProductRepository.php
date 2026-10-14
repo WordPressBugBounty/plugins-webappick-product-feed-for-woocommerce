@@ -335,6 +335,10 @@ class ProductRepository {
 				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- $legacy_filter is built above as "woo_feed_filter_product_{$wc_attr}", so it always carries the registered woo_feed prefix; the sniff cannot resolve the variable.
 				$value = apply_filters( $legacy_filter, $value, $product, $config, $parent_product );
 			}
+
+			// Empty SEO title / description → the product's own (CBT-757,
+			// V5 parity). After the bridge so the SEO plugin's value wins.
+			$value = $this->resolver->apply_seo_fallback( $value, $product, $wc_attr, $config );
 		}
 
 		// 3.5. V5's SECOND legacy hook family — the `woo_feed_get_*` filters

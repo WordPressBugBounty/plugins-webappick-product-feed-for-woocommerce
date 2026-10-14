@@ -8,6 +8,7 @@
 namespace CTXFeed\Compat\Shims;
 
 use CTXFeed\Compat\Support\Helper;
+use CTXFeed\Compat\Support\PriceStage;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -36,12 +37,14 @@ class Wdr_ConfigurationCompatibility {
 
 		// phpcs:disable Squiz.PHP.CommentedOutCode, Squiz.Commenting.InlineComment -- The two disabled registrations below are kept from the V5 original: regular_price (and its with-tax twin) is deliberately NOT discounted, and keeping the calls commented out documents that decision at the point it matters.
 		// Get price with discount.
-		// add_filter( 'woo_feed_filter_product_regular_price', array( $this, 'get_discounted_price' ), 999, 5 );
-		add_filter( 'woo_feed_filter_product_price', array( $this, 'get_discounted_price' ), 999, 5 );
-		add_filter( 'woo_feed_filter_product_sale_price', array( $this, 'get_discounted_price' ), 999, 5 );
-		// add_filter( 'woo_feed_filter_product_regular_price_with_tax', array( $this, 'get_discounted_price' ), 999, 5 );
-		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_discounted_price' ), 999, 5 );
-		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_discounted_price' ), 999, 5 );
+		// Discount stage of the price pipeline (CBT-795): after the bundle /
+		// composite models, before currency conversion.
+		// add_filter( 'woo_feed_filter_product_regular_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_sale_price', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		// add_filter( 'woo_feed_filter_product_regular_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
+		add_filter( 'woo_feed_filter_product_sale_price_with_tax', array( $this, 'get_discounted_price' ), PriceStage::DISCOUNT, 5 );
 		// phpcs:enable Squiz.PHP.CommentedOutCode, Squiz.Commenting.InlineComment
 	}
 

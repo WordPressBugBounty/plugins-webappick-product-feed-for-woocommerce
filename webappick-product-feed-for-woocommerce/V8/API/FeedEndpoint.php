@@ -2328,6 +2328,11 @@ class FeedEndpoint extends RestController {
 			// `$config->get_feed_language()`. Empty when no multilingual
 			// plugin is active (the UI renders no Language select then).
 			'feedLanguage'      => sanitize_text_field( $form['feedLanguage'] ?? '' ),
+			// Vendor feed (V5 key: `vendors`, CBT-753) — the Feed settings
+			// "Vendors" selector (multi-vendor plugins only). A list of vendor
+			// user ids; ProductQuery limits the feed to their products.
+			// Was dropped on save, so vendor feeds exported every vendor.
+			'vendors'           => self::sanitize_vendor_ids( $form['vendors'] ?? array() ),
 			// CBT-584 (BUG-0085): persist the UI's default when the API omits
 			// or blanks the field. The UI form REQUIRES a choice, so '' can
 			// only come from an API/MCP caller — it used to persist verbatim,
@@ -2701,6 +2706,40 @@ class FeedEndpoint extends RestController {
 	}
 
 	/**
+	 * Sanitize the Feed settings "Vendors" value to a list of user ids.
+	 *
+	 * Accepts an array of ids or a comma-separated string (V5 shape);
+	 * non-positive values are dropped. Stored as strings, matching V5
+	 * feedrules (the My Account feed list compares loosely).
+	 *
+	 * @since 8.0.36
+	 *
+	 * @param mixed $value Raw form value.
+	 * @return string[]
+	 */
+	private static function sanitize_vendor_ids( $value ): array {
+		if ( is_string( $value ) ) {
+			$value = explode( ',', $value );
+		}
+		if ( ! is_array( $value ) ) {
+			return array();
+		}
+
+		$ids = array();
+		foreach ( $value as $vendor ) {
+			if ( ! is_scalar( $vendor ) ) {
+				continue;
+			}
+			$id = (int) trim( (string) $vendor );
+			if ( $id > 0 ) {
+				$ids[ $id ] = (string) $id;
+			}
+		}
+
+		return array_values( $ids );
+	}
+
+	/**
 	 * Sanitize a variation-strategy value (`variable_price` /
 	 * `variable_quantity` feedrules), defaulting to V5's form default.
 	 *
@@ -3065,6 +3104,24 @@ class FeedEndpoint extends RestController {
 	 * @return \WP_REST_Response
 	 */
 	public function debug_feed_product( \WP_REST_Request $request ): \WP_REST_Response {
+		// Same guest context as a feed run, so the debugger shows the values
+		// the feed really carries (CBT-739).
+		return \CTXFeed\V8\Utility\GuestContext::run(
+			function () use ( $request ): \WP_REST_Response {
+				return $this->debug_feed_product_row( $request );
+			}
+		);
+	}
+
+	/**
+	 * Body of debug_feed_product(), already in guest context.
+	 *
+	 * @since 8.0.36
+	 *
+	 * @param \WP_REST_Request $request REST request object.
+	 * @return \WP_REST_Response
+	 */
+	private function debug_feed_product_row( \WP_REST_Request $request ): \WP_REST_Response {
 		$feed = $this->find_feed( $request->get_param( 'id' ) );
 		if ( ! $feed ) {
 			return $this->error( __( 'Feed not found.', 'woo-feed' ), 404 );

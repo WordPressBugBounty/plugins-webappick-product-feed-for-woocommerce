@@ -1168,7 +1168,9 @@ class ProductEndpoint extends RestController {
 	}
 
 	/**
-	 * Count products with empty _price meta.
+	 * Count products with an empty or zero _price — exactly the products the
+	 * Pro "Remove Empty Price Products" filter removes (CBT-800: '0' / '0.00'
+	 * were missing from the count).
 	 *
 	 * @since 8.0.0
 	 *
@@ -1191,6 +1193,7 @@ class ProductEndpoint extends RestController {
 				   AND pm.meta_key = '_price'
 				   AND pm.meta_value != ''
 				   AND pm.meta_value IS NOT NULL
+				   AND CAST( pm.meta_value AS DECIMAL( 20, 6 ) ) > 0
 			   )"
 		);
 		// phpcs:enable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared

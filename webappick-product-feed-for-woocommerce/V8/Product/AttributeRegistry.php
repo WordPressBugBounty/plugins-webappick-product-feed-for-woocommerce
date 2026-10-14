@@ -609,7 +609,13 @@ class AttributeRegistry {
 	private function get_unit_price_attributes(): array {
 		// Base unit price attribute — always available (matches V5 behavior).
 		$options = array(
-			'unit_price_unit' => __( 'Unit', 'woo-feed' ),
+			'unit_price_unit'         => __( 'Unit', 'woo-feed' ),
+			// "{measure} {unit}" (e.g. "150 g") — the format Google's
+			// unit_pricing_measure / unit_pricing_base_measure require. Reads
+			// the CTX Feed unit fields, then WooCommerce Germanized
+			// (CBT-787: only the bare Germanized number was selectable).
+			'unit_price_measure'      => __( 'Unit Price Measure + Unit', 'woo-feed' ),
+			'unit_price_base_measure' => __( 'Unit Price Base Measure + Unit', 'woo-feed' ),
 		);
 
 		/**

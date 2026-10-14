@@ -208,11 +208,59 @@ class ExcludeCaching {
 			return;
 		}
 
-		$paths = maybe_unserialize( get_option( 'litespeed.conf.cdn-exc' ) );
-		if ( is_array( $paths ) && ! in_array( $this->feed_path, $paths, true ) ) {
-			$paths[] = $this->feed_path;
-			update_option( 'litespeed.conf.cdn-exc', $paths );
+		$updated = self::litespeed_exclusions_with( get_option( 'litespeed.conf.cdn-exc' ), $this->feed_path );
+		if ( null !== $updated ) {
+			update_option( 'litespeed.conf.cdn-exc', $updated );
 		}
+	}
+
+	/**
+	 * Add a path to LiteSpeed's stored CDN exclusion list (CBT-789).
+	 *
+	 * LiteSpeed (4.0+) stores array settings JSON-encoded (`["…"]`) and
+	 * json_decodes them on read; older versions stored a serialized/raw
+	 * array. The previous code only handled the array shape, so on current
+	 * LiteSpeed it never wrote the feed path. Reads every shape, writes
+	 * LiteSpeed's own JSON format.
+	 *
+	 * @since 8.0.36
+	 *
+	 * @param mixed  $stored Raw `litespeed.conf.cdn-exc` option value.
+	 * @param string $path   Feed directory path.
+	 * @return string|null JSON list to store, or null when nothing changes
+	 *                     (already listed, empty path, unreadable value).
+	 */
+	public static function litespeed_exclusions_with( $stored, string $path ): ?string {
+		if ( '' === $path ) {
+			return null;
+		}
+
+		if ( false === $stored || null === $stored || '' === $stored ) {
+			$paths = array();
+		} elseif ( is_array( $stored ) ) {
+			$paths = $stored;
+		} else {
+			$paths = json_decode( (string) $stored, true );
+			if ( ! is_array( $paths ) ) {
+				$paths = maybe_unserialize( $stored );
+			}
+		}
+
+		// Never overwrite a value we cannot read — that would wipe the
+		// site's own exclusions.
+		if ( ! is_array( $paths ) ) {
+			return null;
+		}
+
+		$paths = array_values( array_filter( $paths, 'is_string' ) );
+		if ( in_array( $path, $paths, true ) ) {
+			return null;
+		}
+
+		$paths[] = $path;
+		$json    = wp_json_encode( $paths );
+
+		return is_string( $json ) ? $json : null;
 	}
 
 	/**

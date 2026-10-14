@@ -126,8 +126,25 @@ class ProductTypeCompatibilityProvider {
 			return $value;
 		}
 
-		$unit    = (string) get_post_meta( $product->get_id(), '_unit', true );
-		$measure = (string) get_post_meta( $product->get_id(), (string) $germanized_meta, true );
+		// A Germanized variation may leave its unit / measures empty and
+		// inherit them from the parent; read the variation first, then the
+		// parent, so the value keeps its unit (CBT-787 — Google rejects a
+		// bare number for unit_pricing_measure).
+		$ids = array( $product->get_id() );
+		if ( $product->is_type( 'variation' ) && $product->get_parent_id() ) {
+			$ids[] = $product->get_parent_id();
+		}
+
+		$unit    = '';
+		$measure = '';
+		foreach ( $ids as $id ) {
+			if ( '' === $unit ) {
+				$unit = (string) get_post_meta( $id, '_unit', true );
+			}
+			if ( '' === $measure ) {
+				$measure = (string) get_post_meta( $id, (string) $germanized_meta, true );
+			}
+		}
 
 		return '' !== $measure ? trim( $measure . ' ' . $unit ) : $value;
 	}

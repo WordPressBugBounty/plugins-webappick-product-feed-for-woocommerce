@@ -358,6 +358,63 @@ class AttributeResolver {
 	}
 
 	/**
+	 * SEO title / description keys and the product attribute they fall back
+	 * to when the SEO plugin has no value for the product (CBT-757).
+	 *
+	 * V5 seeded the Yoast and AIOSEO filters with the product title /
+	 * description, so an empty SEO value fell back to them; V8 resolved the
+	 * picker keys to '' and the feed shipped an empty title (Google rejects
+	 * the item). Applied AFTER the Legacy Bridge filter — the Rank Math shim
+	 * returns any non-empty incoming value as-is, so seeding it beforehand
+	 * would hide the real SEO value.
+	 *
+	 * @since 8.0.36
+	 * @var array<string,string>
+	 */
+	private const SEO_FALLBACKS = array(
+		'yoast_wpseo_title'     => 'title',
+		'yoast_wpseo_metadesc'  => 'description',
+		'rank_math_title'       => 'title',
+		'rank_math_description' => 'description',
+		'_aioseop_title'        => 'title',
+		'_aioseop_description'  => 'description',
+	);
+
+	/**
+	 * Fill an empty SEO title / description with the product's own title /
+	 * description (CBT-757). Any other attribute, or a non-empty value, is
+	 * returned unchanged.
+	 *
+	 * @since 8.0.36
+	 *
+	 * @param mixed       $value   Value after the Legacy Bridge filter.
+	 * @param \WC_Product $product WooCommerce product.
+	 * @param string      $attr    Source attribute key.
+	 * @param Config      $config  Feed configuration.
+	 * @return mixed
+	 */
+	public function apply_seo_fallback( $value, \WC_Product $product, string $attr, Config $config ) {
+		if ( ! isset( self::SEO_FALLBACKS[ $attr ] ) ) {
+			return $value;
+		}
+		if ( is_scalar( $value ) && '' !== trim( (string) $value ) ) {
+			return $value;
+		}
+
+		$fallback = $this->resolve(
+			$product,
+			array(
+				'type'    => 'attribute',
+				'wc_attr' => self::SEO_FALLBACKS[ $attr ],
+				'default' => '',
+			),
+			$config
+		);
+
+		return is_scalar( $fallback ) ? (string) $fallback : '';
+	}
+
+	/**
 	 * Source attributes whose Legacy Bridge hook is fired ONCE by
 	 * PriceResolver on the raw value (V5 timing). Firing it again on a
 	 * resolved value double-applies a multiplicative currency shim
@@ -445,6 +502,8 @@ class AttributeResolver {
 			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.DynamicHooknameFound -- Built above as "woo_feed_filter_product_{$attr}", always carrying the registered woo_feed prefix; the sniff cannot resolve the variable.
 			$value = apply_filters( $legacy_filter, $value, $product, $config, $parent_product );
 		}
+
+		$value = $this->apply_seo_fallback( $value, $product, $attr, $config );
 
 		return is_scalar( $value ) ? (string) $value : '';
 	}

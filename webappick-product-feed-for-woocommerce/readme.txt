@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.35
+Stable tag: 8.0.36
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -217,7 +217,7 @@ Works with all WooCommerce product types and popular extensions:
 * WooCommerce Bundles (Pro Feature)
 * WooCommerce Composite Products (Pro Feature)
 
-**Multi-Vendor Plugins (Pro Feature):**
+**Multi-Vendor Plugins:**
 
 * Dokan Multivendor
 * WCFM Marketplace
@@ -285,7 +285,6 @@ Upgrade to [CTXFeed Pro](https://webappick.com/plugin/woocommerce-product-feed-p
 
 * **Dynamic Attribute Creation** – Create custom attributes on-the-fly
 * **Advanced Filtering** – Include/exclude products by any condition
-* **Multi-Vendor Feeds** – Generate vendor-specific feeds
 * **Custom XML Templates** – Build any complex feed structure
 * **FTP/SFTP Auto-Upload** – Automatically push feeds to channels
 * **Google Content API** – Direct Merchant Center integration
@@ -450,7 +449,7 @@ CTX Feed supports **6 file formats** – more than any other WooCommerce feed pl
 
 = Is there a product limit in the free version? =
 
-No! CTX Feed free version supports **unlimited products** and **unlimited feeds**. There are no artificial limits. The Pro version adds advanced features like dynamic attributes, custom XML templates, and multi-vendor support.
+No! CTX Feed free version supports **unlimited products** and **unlimited feeds**. There are no artificial limits. The Pro version adds advanced features like dynamic attributes and custom XML templates.
 
 = How do I add GTIN, MPN, or Brand to my products? =
 
@@ -492,6 +491,21 @@ If your feed fails to generate:
 11. XML Feed: Preview a WooCommerce XML feed
 
 == Changelog ==
+
+= Version 8.0.36 =
+* Fix: prices with discount plugins (Acowebs, RightPress, Woo Discount Rules, Conditional Discounts) are worked out in a fixed order: the discount first, then the currency conversion. Tax is added once. Currency plugins need CTX Feed Pro 8.0.27.
+* Fix: Conditional Discounts (WAD) discounts reach the current price, which the Google template uses as the sale price.
+* Fix: every feed run uses the prices a logged-out visitor sees. Member, role and B2B prices no longer appear in feeds you run by hand.
+* Fix: Rank Math variables such as %title% and %sitename% are filled in the SEO title and description.
+* Fix: an empty Yoast, Rank Math or All in One SEO title or description uses the product's own title or description.
+* Fix: "GTIN [RankMath Pro SEO]" is filled again.
+* Fix: a vendor feed only lists the selected vendor's products, and "Vendor Store Name" is in the attribute list.
+* Fix: Germanized unit prices can be picked with their unit, such as "150 g".
+* Fix: WoodMart variation galleries are included without a separate gallery plugin.
+* Fix: the feed folder is excluded from the LiteSpeed CDN on current LiteSpeed versions.
+* Fix: the tax column header of Google CSV, TSV and TXT feeds lists the four parts its value has.
+* Fix: text parts in Attribute Mapping stay text after saving, in the list and when duplicated. Needs CTX Feed Pro 8.0.27.
+* Fix: the Filters tab counts products priced 0.00 as empty-price products.
 
 = Version 8.0.35 =
 * Changed: "First Variation Price" uses the price of the first variation in the product's variation order, the same variation "First Variation Quantity" uses. Before, it gave the lowest price, the same as "Min Variation Price".
@@ -550,6 +564,9 @@ If your feed fails to generate:
 * Improved: the External services section of this readme lists every remote service the plugin contacts.
 
 == Upgrade Notice ==
+
+= 8.0.36 =
+Maintenance update with fixes for some third-party plugins (discount, currency, SEO and multi-vendor). If your feeds work well, there is no need to update now. When you update, update CTX Feed first, then CTX Feed Pro, and regenerate your feeds.
 
 = 8.0.35 =
 CTX Feed is going through a major update. Back up your site, update CTX Feed and CTX Feed Pro together, then regenerate your feeds and check them: titles, prices, brand and shipping. "First Variation Price" now uses the first variation's price, not the lowest.
