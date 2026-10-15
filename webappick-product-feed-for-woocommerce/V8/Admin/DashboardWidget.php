@@ -207,6 +207,11 @@ final class DashboardWidget {
 	 * @return void
 	 */
 	public function render(): void {
+		// Halloween 2026 sale banner on top while it runs (CBT-804).
+		if ( SaleCampaign::active() ) {
+			SaleCampaign::render_banner();
+		}
+
 		printf(
 			'<p><a style="text-decoration:none;font-weight:bold;" href="%s" target="_blank" rel="noopener noreferrer">%s</a></p><hr>',
 			esc_url( 'https://webappick.com' ),

@@ -626,28 +626,10 @@ class SupportEndpoint extends RestController {
 	 * @return string Log slug, or '' when the feed is not found.
 	 */
 	private function feed_slug( string $feed ): string {
-		global $wpdb;
+		// Same safe lookup as the feed endpoints (CBT-695, CBT-805).
+		$row = \CTXFeed\V8\Feed\FeedLookup::row( $feed );
 
-		if ( is_numeric( $feed ) ) {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Feed configs live in wp_options under wf_feed_ (shared with V5, no migration); get_option cannot enumerate by prefix and these rows are non-autoloaded. Admin-only, on demand, bound via prepare().
-			$option_name = $wpdb->get_var(
-				$wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_id = %d", absint( $feed ) )
-			);
-		} else {
-			$candidate = 0 === strpos( $feed, 'wf_feed_' ) ? $feed : 'wf_feed_' . $feed;
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- See note above; verifies the wf_feed_ option exists before deriving its log slug.
-			$option_name = $wpdb->get_var(
-				$wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name = %s", $candidate )
-			);
-		}
-
-		// Only a wf_feed_ row is a feed — a stale numeric id can point at
-		// another plugin's option (CBT-695).
-		if ( ! $option_name || 0 !== strpos( (string) $option_name, 'wf_feed_' ) ) {
-			return '';
-		}
-
-		return substr( (string) $option_name, strlen( 'wf_feed_' ) );
+		return $row ? substr( (string) $row['option_name'], strlen( \CTXFeed\V8\Feed\FeedLookup::PREFIX ) ) : '';
 	}
 
 	/**

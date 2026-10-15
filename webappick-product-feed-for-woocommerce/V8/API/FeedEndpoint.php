@@ -16,6 +16,7 @@ namespace CTXFeed\V8\API;
 use CTXFeed\V8\Common\DropdownRegistry;
 use CTXFeed\V8\Channel\TemplateInfo;
 use CTXFeed\V8\Core\Container;
+use CTXFeed\V8\Feed\FeedLookup;
 use CTXFeed\V8\Feed\FeedScheduler;
 use CTXFeed\V8\Utility\Sanitizer;
 
@@ -130,8 +131,10 @@ class FeedEndpoint extends RestController {
 							'description'       => __( 'Feed ids/slugs the action applies to.', 'woo-feed' ),
 						),
 						'names'  => array(
-							'type'        => 'array',
-							'description' => __( 'Optional display names aligned with ids (duplicate uses them for the copies).', 'woo-feed' ),
+							// { feedId: name } — keyed by slug since CBT-805, which
+							// is a JSON object (a numeric-keyed one passed as "array").
+							'type'        => 'object',
+							'description' => __( 'Optional display names keyed by feed id/slug (duplicate uses them for the copies).', 'woo-feed' ),
 						),
 					),
 				),
@@ -503,7 +506,10 @@ class FeedEndpoint extends RestController {
 			}
 
 			$feeds[] = array(
-				'id'               => $row['option_id'],
+				// The slug, not the option_id: ids are not unique on a
+				// wp_options table that lost AUTO_INCREMENT (CBT-805).
+				'id'               => FeedLookup::ref( $option_name, $row['option_id'] ),
+				'option_id'        => (int) $row['option_id'],
 				'option_name'      => $option_name,
 				'feed_name'        => isset( $rules['filename'] ) ? $rules['filename'] : $feed_name,
 				'slug'             => $feed_name,
@@ -800,7 +806,7 @@ class FeedEndpoint extends RestController {
 
 			return $this->success(
 				array(
-					'id'          => $feed_data['option_id'],
+					'id'          => FeedLookup::ref( $option_name, $feed_data['option_id'] ),
 					'auto_update' => 1 === (int) $config['status'],
 				) 
 			);
@@ -1866,7 +1872,12 @@ class FeedEndpoint extends RestController {
 		$duplicated = array();
 
 		foreach ( $ids as $id ) {
-			$id = absint( $id );
+			// A slug or an option_id (CBT-805: the list hands out slugs;
+			// absint() turned every slug into 0).
+			$id = is_scalar( $id ) ? sanitize_text_field( (string) $id ) : '';
+			if ( '' === $id ) {
+				continue;
+			}
 
 			switch ( $action ) {
 				case 'delete':
@@ -3294,7 +3305,8 @@ class FeedEndpoint extends RestController {
 		}
 
 		return array(
-			'id'               => $raw['option_id'],
+			'id'               => FeedLookup::ref( (string) $raw['option_name'], $raw['option_id'] ),
+			'option_id'        => (int) $raw['option_id'],
 			'option_name'      => $raw['option_name'],
 			'feed_name'        => isset( $rules['filename'] ) ? $rules['filename'] : $feed_name,
 			'slug'             => $feed_name,
@@ -3321,43 +3333,10 @@ class FeedEndpoint extends RestController {
 	 * @return array|null Raw database row or null.
 	 */
 	private function find_feed_raw( $id ): ?array {
-		global $wpdb;
-
-		if ( is_numeric( $id ) ) {
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Feed configs live in wp_options under the wf_feed_ prefix (shared with V5 — no migration). get_option() cannot enumerate by prefix and these rows are deliberately non-autoloaded, so a direct prepared query is the only way to list them. Admin REST route only; never on the feed-generation path.
-			$row = $wpdb->get_row(
-				$wpdb->prepare(
-					"SELECT option_id, option_name, option_value FROM {$wpdb->options} WHERE option_id = %d",
-					absint( $id )
-				),
-				ARRAY_A
-			);
-		} else {
-			$option_name = $id;
-
-			// Add prefix if not already present.
-			if ( 0 !== strpos( $option_name, 'wf_feed_' ) ) {
-				$option_name = 'wf_feed_' . $option_name;
-			}
-
-			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Feed configs live in wp_options under the wf_feed_ prefix (shared with V5 — no migration). get_option() cannot enumerate by prefix and these rows are deliberately non-autoloaded, so a direct prepared query is the only way to list them. Admin REST route only; never on the feed-generation path.
-			$row = $wpdb->get_row(
-				$wpdb->prepare(
-					"SELECT option_id, option_name, option_value FROM {$wpdb->options} WHERE option_name = %s",
-					$option_name
-				),
-				ARRAY_A
-			);
-		}
-
-		// A numeric id is an option_id; only a wf_feed_ row is a feed. A stale
-		// id from the list can belong to another plugin's option by now —
-		// never generate, edit or DELETE that row (CBT-695).
-		if ( ! $row || 0 !== strpos( (string) $row['option_name'], 'wf_feed_' ) ) {
-			return null;
-		}
-
-		return $row;
+		// By option NAME first; a numeric option_id only when it is unique
+		// and not 0 (a broken wp_options table gives every row id 0 —
+		// CBT-805), and only a wf_feed_ row ever (CBT-695).
+		return FeedLookup::row( $id );
 	}
 
 	/**

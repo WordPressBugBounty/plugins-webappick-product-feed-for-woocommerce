@@ -33,6 +33,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Bootstrap {
 
 	/**
+	 * Option holding the last boot failure (CBT-802).
+	 *
+	 * @since 8.0.37
+	 */
+	const BOOT_FAILURE_OPTION = 'ctxfeed_boot_failure';
+
+	/**
 	 * The DI container instance.
 	 *
 	 * @since 8.0.0
@@ -57,7 +64,195 @@ class Bootstrap {
 			return; // V5 continues normally.
 		}
 
-		$this->boot_v8();
+		$booted = self::guarded(
+			function () {
+				$this->boot_v8();
+			}
+		);
+		if ( $booted ) {
+			self::notify_recent_boot_failure();
+		}
+	}
+
+	/**
+	 * Run a boot step so a failure can never take the site down (CBT-802).
+	 *
+	 * Live (#69543, Hostinger, PHP 8.3): every 40-90 minutes one CTX Feed
+	 * class could not be loaded although its file was on disk, and the
+	 * uncaught "Class not found" error in a provider's boot() fataled every
+	 * request — Elementor, WooCommerce and the rest never finished loading,
+	 * CPU sat near 100% for hours. Now any Throwable from the step is caught:
+	 * the hooks the step had already added are removed again (they would
+	 * resolve the same missing class later in the request and fatal there),
+	 * the failure is recorded for administrators, and CTX Feed simply stays
+	 * off for that page load while the rest of the site works.
+	 *
+	 * @since 8.0.37
+	 *
+	 * @param callable $step Boot step.
+	 * @return bool True when the step completed.
+	 */
+	public static function guarded( callable $step ): bool {
+		global $wp_filter;
+
+		// Arrays copy on write: this keeps the current callback lists
+		// without copying anything unless a hook changes afterwards.
+		$before = array();
+		if ( is_array( $wp_filter ) ) {
+			foreach ( $wp_filter as $hook => $hook_object ) {
+				if ( is_object( $hook_object ) && isset( $hook_object->callbacks ) && is_array( $hook_object->callbacks ) ) {
+					$before[ $hook ] = $hook_object->callbacks;
+				}
+			}
+		}
+
+		try {
+			call_user_func( $step );
+			return true;
+		} catch ( \Throwable $e ) {
+			self::remove_hooks_added_since( $before );
+			self::record_boot_failure( $e );
+			return false;
+		}
+	}
+
+	/**
+	 * Remove every hook callback added since the snapshot was taken.
+	 *
+	 * @since 8.0.37
+	 *
+	 * @param array<string,array> $before Hook name => callbacks (by priority) before the step.
+	 * @return void
+	 */
+	private static function remove_hooks_added_since( array $before ): void {
+		global $wp_filter;
+
+		if ( ! is_array( $wp_filter ) || ! function_exists( 'remove_filter' ) ) {
+			return;
+		}
+		foreach ( $wp_filter as $hook => $hook_object ) {
+			if ( ! is_object( $hook_object ) || ! isset( $hook_object->callbacks ) || ! is_array( $hook_object->callbacks ) ) {
+				continue;
+			}
+			foreach ( $hook_object->callbacks as $priority => $callbacks ) {
+				foreach ( (array) $callbacks as $id => $callback ) {
+					if ( isset( $before[ $hook ][ $priority ][ $id ] ) || ! isset( $callback['function'] ) ) {
+						continue;
+					}
+					remove_filter( $hook, $callback['function'], $priority );
+				}
+			}
+		}
+	}
+
+	/**
+	 * Record a failed boot: an admin notice for this page load, and a
+	 * stored record (at most one write per 10 minutes) so administrators
+	 * also learn about failures that happened in background requests.
+	 *
+	 * The record says whether the class file was on disk when the error
+	 * was caught — "missing" means something removed it (a reinstall is
+	 * needed), "on disk" means the server failed to read it for a moment.
+	 *
+	 * @since 8.0.37
+	 *
+	 * @param \Throwable $error The error.
+	 * @return void
+	 */
+	private static function record_boot_failure( \Throwable $error ): void {
+		$message = $error->getMessage();
+		$file    = '';
+		if ( preg_match( '/(?:Class|Interface|Trait|Enum) ["\']?\\\\?CTXFeed\\\\V8\\\\([A-Za-z0-9_\\\\]+)["\']? not found/', $message, $match ) ) {
+			$file = 'V8/' . str_replace( '\\', '/', $match[1] ) . '.php';
+		}
+		$on_disk = '' !== $file && is_readable( dirname( __DIR__ ) . '/' . $file );
+
+		$record = array(
+			'time'    => time(),
+			'message' => substr( $message, 0, 300 ),
+			'file'    => $file,
+			'on_disk' => $on_disk,
+			'version' => defined( 'CTXFEED_V8_VERSION' ) ? CTXFEED_V8_VERSION : '',
+		);
+
+		if ( function_exists( 'get_option' ) && function_exists( 'update_option' ) ) {
+			$stored = get_option( self::BOOT_FAILURE_OPTION, array() );
+			if ( ! is_array( $stored ) || empty( $stored['time'] ) || time() - (int) $stored['time'] >= 600 ) {
+				update_option( self::BOOT_FAILURE_OPTION, $record, false );
+				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- One line per 10 minutes so the host's PHP log shows the failure next to its own errors.
+				error_log( 'CTX Feed paused for this request: ' . $record['message'] . ( '' !== $file ? ' (' . $file . ( $on_disk ? ' is on disk' : ' is missing' ) . ')' : '' ) );
+			}
+		}
+
+		if ( function_exists( 'add_action' ) ) {
+			add_action(
+				'admin_notices',
+				static function () use ( $record ) {
+					self::render_boot_failure_notice( $record );
+				}
+			);
+		}
+	}
+
+	/**
+	 * Show administrators a recent boot failure (within 24 hours), also on
+	 * page loads that booted fine — failures in background requests are
+	 * otherwise invisible.
+	 *
+	 * @since 8.0.37
+	 *
+	 * @return void
+	 */
+	public static function notify_recent_boot_failure(): void {
+		if ( ! function_exists( 'is_admin' ) || ! is_admin() || ! function_exists( 'get_option' ) ) {
+			return;
+		}
+		$stored = get_option( self::BOOT_FAILURE_OPTION, array() );
+		if ( ! is_array( $stored ) || empty( $stored['time'] ) || time() - (int) $stored['time'] > DAY_IN_SECONDS ) {
+			return;
+		}
+		add_action(
+			'admin_notices',
+			static function () use ( $stored ) {
+				self::render_boot_failure_notice( $stored );
+			}
+		);
+	}
+
+	/**
+	 * Print the boot-failure notice (administrators only, once per page).
+	 *
+	 * @since 8.0.37
+	 *
+	 * @param array $record Failure record.
+	 * @return void
+	 */
+	private static function render_boot_failure_notice( array $record ): void {
+		static $shown = false;
+		if ( $shown || ! function_exists( 'current_user_can' ) || ! current_user_can( 'activate_plugins' ) ) {
+			return;
+		}
+		$shown = true;
+
+		$file = isset( $record['file'] ) ? (string) $record['file'] : '';
+		$when = function_exists( 'wp_date' ) && ! empty( $record['time'] ) ? wp_date( 'Y-m-d H:i', (int) $record['time'] ) : '';
+
+		echo '<div class="notice notice-warning"><p><strong>' . esc_html__( 'CTX Feed paused itself on a page load', 'woo-feed' ) . '</strong> ';
+		echo esc_html(
+			sprintf(
+				/* translators: 1: date and time, 2: plugin file path */
+				__( '(last: %1$s) because one of its files could not be loaded: %2$s. Your site kept working; CTX Feed was off for that page load only.', 'woo-feed' ),
+				$when,
+				'' !== $file ? $file : ( isset( $record['message'] ) ? (string) $record['message'] : '' )
+			)
+		);
+		echo ' ';
+		if ( '' !== $file && empty( $record['on_disk'] ) ) {
+			echo esc_html__( 'The file is missing. Please reinstall CTX Feed, and check whether a security or malware scanner on your server removed it.', 'woo-feed' );
+		} else {
+			echo esc_html__( 'The file is on disk, so the server could not read it for a moment. If this keeps happening, please contact your host and our support with this message.', 'woo-feed' );
+		}
+		echo '</p></div>';
 	}
 
 	/**
@@ -149,7 +344,7 @@ class Bootstrap {
 	private function define_constants(): void {
 
 		if ( ! defined( 'CTXFEED_V8_VERSION' ) ) {
-			define( 'CTXFEED_V8_VERSION', '8.0.36' );
+			define( 'CTXFEED_V8_VERSION', '8.0.37' );
 		}
 
 		if ( ! defined( 'CTXFEED_V8_PATH' ) ) {

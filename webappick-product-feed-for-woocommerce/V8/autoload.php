@@ -37,6 +37,12 @@ spl_autoload_register(
 		$relative_class = substr( $class_name, $prefix_len );
 		$file_path      = __DIR__ . DIRECTORY_SEPARATOR . str_replace( '\\', DIRECTORY_SEPARATOR, $relative_class ) . '.php';
 
+		// A miss is re-checked once with PHP's file status cache cleared: a
+		// host that briefly fails to see a file must not lose the class
+		// (CBT-802). Misses are rare — only classes that really don't exist.
+		if ( ! file_exists( $file_path ) ) {
+			clearstatcache( true, $file_path );
+		}
 		if ( file_exists( $file_path ) ) {
 			// phpcs:ignore WordPressVIPMinimum.Files.IncludingFile.UsingVariable -- A PSR-4 autoloader resolves the path from the class name by definition; the path is built from __DIR__ plus the namespace segment, never from user input.
 			require_once $file_path;

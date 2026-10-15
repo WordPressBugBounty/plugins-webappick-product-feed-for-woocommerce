@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.36
+Stable tag: 8.0.37
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -492,6 +492,11 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.37 =
+* Fix: if a CTX Feed file can't be read on your server, CTX Feed pauses itself for that page load and shows administrators a notice. Before, the whole site could stop working.
+* Fix: deleting, regenerating and duplicating feeds works on sites whose database settings table lost its automatic numbering, for example after a site migration.
+* Added: a limited-time Halloween offer for CTX Feed Pro in the plugin's sidebar and on the WordPress dashboard, until November 5.
+
 = Version 8.0.36 =
 * Fix: prices with discount plugins (Acowebs, RightPress, Woo Discount Rules, Conditional Discounts) are worked out in a fixed order: the discount first, then the currency conversion. Tax is added once. Currency plugins need CTX Feed Pro 8.0.27.
 * Fix: Conditional Discounts (WAD) discounts reach the current price, which the Google template uses as the sale price.
@@ -564,6 +569,9 @@ If your feed fails to generate:
 * Improved: the External services section of this readme lists every remote service the plugin contacts.
 
 == Upgrade Notice ==
+
+= 8.0.37 =
+Fixes a rare site-wide error when a CTX Feed file can't be read, and deleting or regenerating feeds on sites with a damaged settings table. If your feeds work well, there is no need to update now.
 
 = 8.0.36 =
 Maintenance update with fixes for some third-party plugins (discount, currency, SEO and multi-vendor). If your feeds work well, there is no need to update now. When you update, update CTX Feed first, then CTX Feed Pro, and regenerate your feeds.
