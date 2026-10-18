@@ -50,6 +50,21 @@ class FeedManager {
 		'upload_total'    => 0,
 	);
 
+	/**
+	 * Waiting fields of the progress record (CBT-807): `waiting` ('' when
+	 * not waiting, 'pro' = CTX Feed Pro, 'free' = CTX Feed's own
+	 * compatibility layer) and `waiting_since` (epoch the wait started). Set
+	 * while a run is held because the plugin stack is not ready; the status
+	 * stays 'generating'. Reset at the start of every run.
+	 *
+	 * @since 8.0.38
+	 * @var array<string, string|int>
+	 */
+	const WAIT_DEFAULTS = array(
+		'waiting'       => '',
+		'waiting_since' => 0,
+	);
+
 	const BATCH_COUNTERS = array(
 		'last_batch_written',
 		'last_batch_skipped',
@@ -350,8 +365,17 @@ class FeedManager {
 			'kept_previous'   => isset( $data['kept_previous'] ) ? (bool) $data['kept_previous'] : ! empty( $existing['kept_previous'] ),
 		);
 
-		// Upload fields (CBT-737) — fixed-key list, like everything above.
-		foreach ( self::UPLOAD_DEFAULTS as $key => $default ) {
+		// When the run last turned completed (UTC epoch) — a generation-only
+		// stamp: a save, an upload write or a later progress write never
+		// moves it. A held auto-update compares it with when it was held
+		// (CBT-807).
+		$progress['completed_ts'] = 'completed' === $progress['status'] && 'completed' !== ( $existing['status'] ?? '' )
+			? time()
+			: (int) ( $existing['completed_ts'] ?? 0 );
+
+		// Upload fields (CBT-737) and waiting fields (CBT-807) — fixed-key
+		// list, like everything above.
+		foreach ( self::UPLOAD_DEFAULTS + self::WAIT_DEFAULTS as $key => $default ) {
 			$value            = array_key_exists( $key, $data ) ? $data[ $key ] : ( $existing[ $key ] ?? $default );
 			$progress[ $key ] = is_int( $default ) ? (int) $value : (string) $value;
 		}
@@ -403,6 +427,21 @@ class FeedManager {
 				 * @param array  $progress Progress record.
 				 */
 				do_action( 'ctxfeed_feed_run_failed', $feed_id, $progress );
+			}
+
+			// This feed completed a run: the plugin stack loaded again for it,
+			// so its "feed update was stopped" record has done its job — only
+			// this feed's (CBT-807). Isolated: a throw here (a half-written
+			// class file while CTX Feed itself is updated) must not swallow
+			// the outcome events around it.
+			if ( 'completed' === $progress['status'] && 'completed' !== ( $existing['status'] ?? '' ) ) {
+				try {
+					if ( class_exists( \CTXFeed\V8\Status\UpdateWaitNotice::class ) ) {
+						\CTXFeed\V8\Status\UpdateWaitNotice::clear( $feed_id );
+					}
+				} catch ( \Throwable $e ) {
+					Logger::warning( "Could not clear the stopped-update record (non-fatal): {$feed_id}", array( 'error' => $e->getMessage() ) );
+				}
 			}
 
 			if ( ! empty( $data['kept_previous'] ) && 'completed' === $progress['status'] ) {
@@ -470,7 +509,8 @@ class FeedManager {
 				'eta_seconds'     => 0,
 				'avg_batch_time'  => 0.0,
 				'invalid_reasons' => array(),
-			) + array_fill_keys( self::BATCH_COUNTERS, 0 ) + self::UPLOAD_DEFAULTS;
+				'completed_ts'    => 0,
+			) + array_fill_keys( self::BATCH_COUNTERS, 0 ) + self::UPLOAD_DEFAULTS + self::WAIT_DEFAULTS;
 		}
 
 		// Backfill any missing keys for backwards compatibility.
@@ -489,7 +529,8 @@ class FeedManager {
 				'eta_seconds'     => 0,
 				'avg_batch_time'  => 0.0,
 				'invalid_reasons' => array(),
-			) + array_fill_keys( self::BATCH_COUNTERS, 0 ) + self::UPLOAD_DEFAULTS,
+				'completed_ts'    => 0,
+			) + array_fill_keys( self::BATCH_COUNTERS, 0 ) + self::UPLOAD_DEFAULTS + self::WAIT_DEFAULTS,
 			$progress
 		);
 	}

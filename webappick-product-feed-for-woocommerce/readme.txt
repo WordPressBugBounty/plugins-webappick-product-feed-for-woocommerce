@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.37
+Stable tag: 8.0.38
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -492,6 +492,11 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.38 =
+* Fix: no more "critical error" emails when WordPress updates CTX Feed while visitors are on your site. A page that loads during the few seconds the plugin files are being replaced now loads without CTX Feed instead of failing.
+* Fix: while CTX Feed Pro is being updated, feed runs wait for it instead of publishing a feed without Pro's settings (prices, languages, attribute rules). If Pro is still not ready after 10 minutes, the run stops and your previous feed file is kept.
+* Fix: image links keep file names with Polish and other non-English letters (ł, ą, ś, ü …). On some servers part of each letter was turned into "_", so Google could not open the image.
+
 = Version 8.0.37 =
 * Fix: if a CTX Feed file can't be read on your server, CTX Feed pauses itself for that page load and shows administrators a notice. Before, the whole site could stop working.
 * Fix: deleting, regenerating and duplicating feeds works on sites whose database settings table lost its automatic numbering, for example after a site migration.
@@ -556,19 +561,10 @@ If your feed fails to generate:
 * Fix: no PHP 8.4 deprecation notice when writing CSV feeds; availability dates use the store's time zone.
 * Added: an AI connection (MCP) switch on the AI assistant page to turn the AI connection off completely. Needs CTX Feed Pro 8.0.23.
 
-= Version 8.0.31 =
-* Fix: no fatal error when Action Scheduler or Rank Math's settings API is not loaded — feed generation and scheduling check that they are available first, and a feed that cannot be scheduled is marked failed instead of breaking the page.
-* Added: stores using WooPayments Multi-Currency, YayCurrency or X-Currency get the Feed Currency field in the feed editor, and System Status reports them as a multi-currency site. Converting prices to the feed currency needs CTX Feed Pro 8.0.22.
-* Fix: when a feed currency is selected before choosing a template, the template's price rows use that currency (for example EUR) instead of the store currency.
-* Fix: Google category mappings saved by version 6 as full text paths are converted to Google category IDs once on update, and older untouched rows no longer block saving a mapping.
-* Security: FTP/SFTP passwords are never sent inside feed configurations.
-* Fix: the deactivation feedback form sends only what you agree to share.
-* Added: the License menu is always shown, with a page explaining how to get CTX Feed Pro when it is not installed.
-* Improved: the "Pro features" menu is now "Premium", with current CTX Feed Pro prices.
-* Fix: the "Activate" links on the Our Plugins page and the "Update CTX Feed Pro now" link for old Pro versions work again.
-* Improved: the External services section of this readme lists every remote service the plugin contacts.
-
 == Upgrade Notice ==
+
+= 8.0.38 =
+Fixes a site error that could appear while plugins update, and image links with non-English letters in the file name. If your feeds work well, there is no need to update now. When you update, update CTX Feed first, then CTX Feed Pro.
 
 = 8.0.37 =
 Fixes a rare site-wide error when a CTX Feed file can't be read, and deleting or regenerating feeds on sites with a damaged settings table. If your feeds work well, there is no need to update now.

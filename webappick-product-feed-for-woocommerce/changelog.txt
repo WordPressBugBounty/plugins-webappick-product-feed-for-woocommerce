@@ -1,6 +1,18 @@
 CTX Feed — changelog archive
 The most recent releases are listed in readme.txt; this file carries the full history.
 
+= Version 8.0.31 =
+* Fix: no fatal error when Action Scheduler or Rank Math's settings API is not loaded — feed generation and scheduling check that they are available first, and a feed that cannot be scheduled is marked failed instead of breaking the page.
+* Added: stores using WooPayments Multi-Currency, YayCurrency or X-Currency get the Feed Currency field in the feed editor, and System Status reports them as a multi-currency site. Converting prices to the feed currency needs CTX Feed Pro 8.0.22.
+* Fix: when a feed currency is selected before choosing a template, the template's price rows use that currency (for example EUR) instead of the store currency.
+* Fix: Google category mappings saved by version 6 as full text paths are converted to Google category IDs once on update, and older untouched rows no longer block saving a mapping.
+* Security: FTP/SFTP passwords are never sent inside feed configurations.
+* Fix: the deactivation feedback form sends only what you agree to share.
+* Added: the License menu is always shown, with a page explaining how to get CTX Feed Pro when it is not installed.
+* Improved: the "Pro features" menu is now "Premium", with current CTX Feed Pro prices.
+* Fix: the "Activate" links on the Our Plugins page and the "Update CTX Feed Pro now" link for old Pro versions work again.
+* Improved: the External services section of this readme lists every remote service the plugin contacts.
+
 = Version 8.0.30 =
 * Fix: products that have no product type saved — often added by an import, a supplier sync or a migration — are included in feeds again as simple products, as they were in version 6. WooCommerce shows these products normally, but feeds (and WooCommerce's own product export) skipped them. A product WooCommerce cannot read properly is left out instead of breaking the feed. Stores without such products are not affected.
 * Improved: on the Version Control page, updating CTX Feed while a newer CTX Feed Pro is available offers to update both in one step, CTX Feed first and then Pro.

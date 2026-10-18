@@ -26,25 +26,60 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @category   MyCategory
  */
 class CompatibilityFactory {
+
+	/**
+	 * The `Shims/{Key}Compatibility.php` shims, by key, in file-name order.
+	 *
+	 * A fixed list instead of reading the Shims/ folder on every request
+	 * (CBT-806): the folder read cost a directory scan per page view, and
+	 * while an update replaces the plugin folder it returns false — PHP 8
+	 * then throws a TypeError. A unit test keeps this list equal to the
+	 * files in Shims/, so a new shim cannot be forgotten here.
+	 *
+	 * @since 8.0.38
+	 * @var string[]
+	 */
+	const SHIMS = array(
+		'ACF',
+		'AIOSEO',
+		'CTX_AWDP_Discount',
+		'RP_WCDPD',
+		'RankMath',
+		'VariationGallery',
+		'WAD_Discount',
+		'WCCS_Pricing',
+		'WPSEO_Frontend',
+		'Wdr_Configuration',
+	);
+
 	/**
 	 * Initialize the compatibility classes
+	 *
+	 * @throws \RuntimeException When the shim of an active plugin or theme cannot be loaded (CBT-807).
 	 */
 	public static function init() {
 		// Caching-plugin exclusions are always-on: the shim self-guards per
 		// caching plugin (and behind the `ctxfeed_cache_exclude_enabled`
 		// filter), so it is instantiated directly rather than through the
-		// per-plugin `{Key}Compatibility` scan below. Runs front-end + admin
+		// per-plugin `{Key}Compatibility` loop below. Runs front-end + admin
 		// (plugins_loaded:25) so its template_redirect / runtime-filter
 		// exclusions register on public feed requests, not just wp-admin.
-		new Shims\ExcludeCaching();
+		// class_exists() first: its file can vanish while an update replaces
+		// the plugin folder, and that must never be a fatal (CBT-806).
+		if ( class_exists( Shims\ExcludeCaching::class ) ) {
+			new Shims\ExcludeCaching();
+		}
 
-		$classes            = self::get_classes();
+		// woo-feed.php loads wp-admin/includes/plugin.php at include time;
+		// without it no plugin can be detected, so no shim applies.
+		if ( ! function_exists( 'is_plugin_active' ) ) {
+			return;
+		}
+
 		$compatible_plugins = self::compatible_plugins_grouped();
-		foreach ( $classes as $class ) {
-			$class_name = __NAMESPACE__ . '\\Shims\\' . $class . 'Compatibility';
-
-			// Skip if no plugins are mapped to this class or class doesn't exist.
-			if ( ! isset( $compatible_plugins[ $class ] ) || ! class_exists( $class_name ) ) {
+		foreach ( self::get_classes() as $class ) {
+			// Skip if no plugins are mapped to this class.
+			if ( ! isset( $compatible_plugins[ $class ] ) ) {
 				continue;
 			}
 
@@ -65,6 +100,22 @@ class CompatibilityFactory {
 
 			if ( ! $is_any_plugin_active ) {
 				continue;
+			}
+
+			// Load the shim only now, for an active plugin or theme: checking
+			// class_exists() first autoloaded every shim on every page view,
+			// even for plugins the site does not use (CBT-806).
+			//
+			// All or nothing (CBT-807, same as Pro's factory): the plugin is
+			// active, so a shim that cannot load would let feeds go out
+			// without its values. Throw — woo-feed.php's guarded() step rolls
+			// back the shims added so far and marks the stack incomplete, and
+			// feed runs wait instead.
+			$class_name = __NAMESPACE__ . '\\Shims\\' . $class . 'Compatibility';
+			if ( ! class_exists( $class_name ) ) {
+				// No quotes around the name: esc_html() would encode them, and
+				// the boot-failure record maps "Class X not found" to its file.
+				throw new \RuntimeException( esc_html( 'Class ' . $class_name . ' not found' ) );
 			}
 
 			new $class_name();
@@ -192,31 +243,11 @@ class CompatibilityFactory {
 	}
 
 	/**
-	 * Get the compatibility class for the current plugin version
+	 * Get the compatibility class keys: `{Key}` of each `Shims/{Key}Compatibility`.
 	 *
-	 * @return array Array of compatibility classes
+	 * @return string[] Shim keys, in file-name order (see SHIMS).
 	 */
 	public static function get_classes() {
-		// Scan the Shims/ subfolder for the rewritten compatibility classes.
-		$directory = plugin_dir_path( __FILE__ ) . 'Shims/';
-
-		// Scan the directory for files.
-		$all_files = scandir( $directory );
-
-		// Filter files to get only those ending with 'Compatibility.php'.
-		$filtered_files = array_filter(
-			$all_files,
-			static function ( $file ) {
-				return strpos( $file, 'Compatibility.php' ) && substr( $file, - strlen( 'Compatibility.php' ) ) === 'Compatibility.php';
-			}
-		);
-
-		// Extract the part of the filename before 'Compatibility'.
-		return array_map(
-			static function ( $file ) {
-				return str_replace( 'Compatibility.php', '', $file );
-			},
-			$filtered_files
-		);
+		return self::SHIMS;
 	}
 }

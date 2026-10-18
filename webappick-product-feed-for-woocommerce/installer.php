@@ -33,6 +33,18 @@ if ( ! class_exists( 'CTXFeed_Installer' ) ) {
 	class CTXFeed_Installer {
 
 		/**
+		 * Option row used as the install mutex (CBT-806).
+		 */
+		const INSTALL_LOCK = 'woo_feed_install_lock';
+
+		/**
+		 * Value of the install lock this request holds (null: none).
+		 *
+		 * @var string|null
+		 */
+		private static $held_lock = null;
+
+		/**
 		 * Register activation, deactivation, and upgrade-detection hooks.
 		 *
 		 * @return void
@@ -57,23 +69,50 @@ if ( ! class_exists( 'CTXFeed_Installer' ) ) {
 			if ( defined( 'IFRAME_REQUEST' ) ) {
 				return;
 			}
-			if ( version_compare( (string) get_option( 'woo_feed_free_version' ), WOO_FEED_FREE_VERSION, '<' ) ) {
-				if ( ! defined( 'WOO_FEED_UPDATING' ) ) {
-					define( 'WOO_FEED_UPDATING', true );
+			$previous = get_option( 'woo_feed_free_version' );
+			if ( ! version_compare( (string) $previous, WOO_FEED_FREE_VERSION, '<' ) ) {
+				return;
+			}
+			// Upgrade only from a request whose engine booted. A request that
+			// raced the update (files half-replaced) has the upgrade listeners
+			// rolled back; writing the new version there would lose their
+			// migrations for good. The version stays behind, so the next request
+			// retries (CBT-806).
+			if ( class_exists( '\CTXFeed\V8\Bootstrap', false ) && method_exists( '\CTXFeed\V8\Bootstrap', 'booted' ) && ! \CTXFeed\V8\Bootstrap::booted() ) {
+				return;
+			}
+			if ( ! defined( 'WOO_FEED_UPDATING' ) ) {
+				define( 'WOO_FEED_UPDATING', true );
+			}
+			try {
+				// Only the request that ran the install fires the upgrade
+				// listeners — two first requests after an update must not run
+				// the migrations twice.
+				if ( self::install() ) {
+					do_action( 'woo_feed_plugin_updated' );
 				}
-				self::install();
-				do_action( 'woo_feed_plugin_updated' );
+			} catch ( \Throwable $e ) {
+				// Put the version back so the next request retries the upgrade.
+				if ( false === $previous ) {
+					delete_option( 'woo_feed_free_version' );
+				} else {
+					update_option( 'woo_feed_free_version', $previous, false );
+				}
+				self::release_install_lock();
+				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- An upgrade that failed is retried on the next request; log why.
+				error_log( 'CTX Feed upgrade will be retried: ' . substr( $e->getMessage(), 0, 300 ) );
 			}
 		}
 
 		/**
 		 * Activation + upgrade routine.
 		 *
-		 * @return void
+		 * @return bool True when this request ran it (false: not installed yet,
+		 *              or another request is running it right now).
 		 */
 		public static function install() {
 			if ( ! is_blog_installed() ) {
-				return;
+				return false;
 			}
 
 			// Minimum PHP guard — abort activation with a readable notice.
@@ -83,11 +122,11 @@ if ( ! class_exists( 'CTXFeed_Installer' ) ) {
 				die();
 			}
 
-			// Re-entrancy guard.
-			if ( 'yes' === get_transient( 'woo_feed_installing' ) ) {
-				return;
+			// Re-entrancy guard — atomic, so two concurrent first requests after
+			// an update cannot both run it (a transient check-then-set could).
+			if ( ! self::acquire_install_lock() ) {
+				return false;
 			}
-			set_transient( 'woo_feed_installing', 'yes', 10 * MINUTE_IN_SECONDS );
 
 			// Must run BEFORE update_version() writes the version option —
 			// the option's absence is what identifies a genuinely fresh install.
@@ -97,7 +136,77 @@ if ( ! class_exists( 'CTXFeed_Installer' ) ) {
 			self::create_files();
 			self::update_version();
 
-			delete_transient( 'woo_feed_installing' );
+			self::release_install_lock();
+
+			return true;
+		}
+
+		/**
+		 * Take the install lock: one INSERT IGNORE, so the database guarantees
+		 * a single winner. A lock older than 10 minutes (a request that died
+		 * mid-install) is taken over.
+		 *
+		 * @since 8.0.38
+		 *
+		 * @return bool
+		 */
+		private static function acquire_install_lock() {
+			global $wpdb;
+
+			for ( $attempt = 0; $attempt < 2; $attempt++ ) {
+				// A value no other request can hold, so a release never
+				// deletes a lock taken over since.
+				$value = time() . '-' . uniqid( '', true );
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- An atomic mutex; add_option() checks then inserts and cannot guarantee one winner.
+				$inserted = $wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')", self::INSTALL_LOCK, $value ) );
+				if ( $inserted ) {
+					self::$held_lock = $value;
+					wp_cache_delete( self::INSTALL_LOCK, 'options' );
+					wp_cache_delete( 'notoptions', 'options' );
+					return true;
+				}
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Reads the mutex row directly; the options cache may be stale.
+				$held  = (string) $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::INSTALL_LOCK ) );
+				$since = (int) $held;
+				if ( $since > 0 && time() - $since < 10 * MINUTE_IN_SECONDS ) {
+					return false;
+				}
+				// Take the stale lock over — only the row as read: another
+				// request may have taken it over a moment ago.
+				self::delete_install_lock( $held );
+			}
+
+			return false;
+		}
+
+		/**
+		 * Release the install lock.
+		 *
+		 * @since 8.0.38
+		 *
+		 * @return void
+		 */
+		private static function release_install_lock() {
+			if ( null === self::$held_lock ) {
+				return;
+			}
+			self::delete_install_lock( self::$held_lock );
+			self::$held_lock = null;
+		}
+
+		/**
+		 * Delete the install lock row, only while it still holds $value.
+		 *
+		 * @since 8.0.38
+		 *
+		 * @param string $value Lock value as taken or read.
+		 * @return void
+		 */
+		private static function delete_install_lock( $value ) {
+			global $wpdb;
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Removes the mutex row taken by acquire_install_lock().
+			$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s", self::INSTALL_LOCK, $value ) );
+			wp_cache_delete( self::INSTALL_LOCK, 'options' );
 		}
 
 		/**

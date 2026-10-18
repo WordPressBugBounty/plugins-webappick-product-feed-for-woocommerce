@@ -158,14 +158,19 @@ class Client {
 	 * Initialize insights class.
 	 *
 	 * @return Insights
+	 * @throws \RuntimeException When the class file is missing (mid-update).
 	 */
 	public function insights() {
 		if ( ! is_null( $this->insights ) ) {
 			return $this->insights;
 		}
 
+		// Autoloaded (V8/autoload.php). Never require: a file that vanished
+		// while the plugin is being updated must stay a catchable error
+		// (CBT-806).
 		if ( ! class_exists( __NAMESPACE__ . '\Insights' ) ) {
-			require_once __DIR__ . '/Insights.php';
+			// The message PHP itself gives, so the boot-failure record names the file.
+			throw new \RuntimeException( 'Class "' . __NAMESPACE__ . '\\Insights" not found' );
 		}
 		$this->insights = new Insights( $this );
 
@@ -176,13 +181,18 @@ class Client {
 	 * Initialize Promotions class.
 	 *
 	 * @return Promotions
+	 * @throws \RuntimeException When the class file is missing (mid-update).
 	 */
 	public function promotions() {
 		if ( ! is_null( $this->promotions ) ) {
 			return $this->promotions;
 		}
+		// Autoloaded (V8/autoload.php). Never require: a file that vanished
+		// while the plugin is being updated must stay a catchable error
+		// (CBT-806).
 		if ( ! class_exists( __NAMESPACE__ . '\Promotions' ) ) {
-			require_once __DIR__ . '/Promotions.php';
+			// The message PHP itself gives, so the boot-failure record names the file.
+			throw new \RuntimeException( 'Class "' . __NAMESPACE__ . '\\Promotions" not found' );
 		}
 		$this->promotions = new Promotions( $this );
 

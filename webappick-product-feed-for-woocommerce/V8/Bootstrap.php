@@ -40,6 +40,40 @@ class Bootstrap {
 	const BOOT_FAILURE_OPTION = 'ctxfeed_boot_failure';
 
 	/**
+	 * Whether the V8 engine booted completely in this request (CBT-806).
+	 *
+	 * @since 8.0.38
+	 * @var bool
+	 */
+	private static $booted = false;
+
+	/**
+	 * Parts of the stack that shape feeds and failed to load in this request,
+	 * as keys (CBT-807): 'compat' (free's compatibility layer), 'pro' (a Pro
+	 * part free resolves at boot).
+	 *
+	 * @since 8.0.38
+	 * @var array<string,bool>
+	 */
+	private static $incomplete = array();
+
+	/**
+	 * A "not found" error naming a CTX Feed Pro class.
+	 *
+	 * @since 8.0.38
+	 */
+	const PRO_CLASS_PATTERN = '/(?:Class|Interface|Trait|Enum) ["\']?\\\\?CTXFeed\\\\Pro\\\\/';
+
+	/**
+	 * How old the automatic updater's lock may be and still count as an
+	 * update in progress (= Status\ProState::EVIDENCE_WINDOW; an own copy, as
+	 * this is read after a failure, when another class may not load).
+	 *
+	 * @since 8.0.38
+	 */
+	private const UPDATER_LOCK_WINDOW = 600;
+
+	/**
 	 * The DI container instance.
 	 *
 	 * @since 8.0.0
@@ -64,13 +98,248 @@ class Bootstrap {
 			return; // V5 continues normally.
 		}
 
-		$booted = self::guarded(
+		$booted       = self::guarded(
 			function () {
 				$this->boot_v8();
 			}
 		);
+		self::$booted = $booted;
 		if ( $booted ) {
 			self::notify_recent_boot_failure();
+		}
+	}
+
+	/**
+	 * Whether the V8 engine booted completely in this request. False while
+	 * the plugin's files are being replaced by an update, or after any boot
+	 * failure — the upgrade routine and CTX Feed Pro wait for a request that
+	 * booted (CBT-806). did_action( 'ctxfeed_v8_booted' ) cannot tell: the
+	 * action counter rises before its listeners run.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @return bool
+	 */
+	public static function booted(): bool {
+		return self::$booted;
+	}
+
+	/**
+	 * Record that a part of the stack which shapes feeds did not load in this
+	 * request (CBT-807): a feed run then waits instead of writing rows
+	 * without it. 'compat' = free's compatibility layer (a guarded step
+	 * failed or its autoloader is missing); 'pro' = a Pro part free resolves
+	 * at boot (the Custom Template 2 renderer).
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $part Part name.
+	 * @return void
+	 */
+	public static function mark_incomplete( string $part ): void {
+		self::$incomplete[ $part ] = true;
+	}
+
+	/**
+	 * The parts marked incomplete in this request (see mark_incomplete()),
+	 * in the order they were marked; empty when the stack is complete. A
+	 * 'pro' entry is Pro's reason to wait; any other entry is free's.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @return string[]
+	 */
+	public static function incomplete(): array {
+		return array_map( 'strval', array_keys( self::$incomplete ) );
+	}
+
+	/**
+	 * Whether an error thrown during a feed run means a plugin's files are
+	 * being replaced right now (CBT-807), so the run must wait instead of
+	 * skipping the product or failing:
+	 * - 'pro': a "Class … not found" naming CTXFeed\Pro, or a ParseError in a
+	 *   file under WOO_FEED_PRO_PATH — while Pro's main file is unreadable,
+	 *   the 8.x Pro's src/ folder is gone, maintenance mode is on or the
+	 *   automatic updater took its lock within the last 10 minutes;
+	 * - 'free': a "not found" naming one of free's classes (file_for()), or a
+	 *   ParseError in free's folder — while files_in_flux();
+	 * - '' for anything else (a permanently missing class stays a skipped
+	 *   product, never a stalled feed).
+	 * Previous errors in the chain count too. Never throws.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param \Throwable $e The error.
+	 * @return string 'pro', 'free' or ''.
+	 */
+	public static function in_flux_reason( \Throwable $e ): string {
+		try {
+			$pro   = false;
+			$free  = false;
+			$error = $e;
+			for ( $depth = 0; null !== $error && $depth < 5; $depth++ ) {
+				if ( self::is_pro_error( $error ) ) {
+					$pro = true;
+				} elseif ( self::is_free_error( $error ) ) {
+					$free = true;
+				}
+				$error = $error->getPrevious();
+			}
+			if ( $pro && self::pro_files_in_flux( true ) ) {
+				return 'pro';
+			}
+			if ( $free && self::files_in_flux() ) {
+				return 'free';
+			}
+		} catch ( \Throwable $ignored ) {
+			return '';
+		}
+
+		return '';
+	}
+
+	/**
+	 * Whether a plugin's files are missing right now, by stat calls only
+	 * (CBT-807) — for a check after each batch, so a value an inner catch
+	 * turned into a wrong default is never kept: 'pro' when Pro is loaded
+	 * and its main file is unreadable or (the 8.x Pro only) its src/ folder
+	 * is gone; 'free'
+	 * when free's main file is unreadable or its V8/ folder is gone; ''
+	 * otherwise. Maintenance mode and the updater lock are not read here
+	 * (any plugin's update sets them); in_flux_reason() reads them after an
+	 * error. Never throws.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @return string 'pro', 'free' or ''.
+	 */
+	public static function files_in_flux_reason(): string {
+		try {
+			if ( self::pro_files_in_flux( false ) ) {
+				return 'pro';
+			}
+			$root = dirname( __DIR__ );
+
+			return ! is_readable( $root . '/woo-feed.php' ) || ! is_dir( $root . '/V8' ) ? 'free' : '';
+		} catch ( \Throwable $e ) {
+			return '';
+		}
+	}
+
+	/**
+	 * Whether the error names a CTX Feed Pro class that was not found, or is
+	 * a ParseError in one of Pro's files.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param \Throwable $error The error.
+	 * @return bool
+	 */
+	private static function is_pro_error( \Throwable $error ): bool {
+		if ( preg_match( self::PRO_CLASS_PATTERN, $error->getMessage() ) ) {
+			return true;
+		}
+
+		return $error instanceof \ParseError && defined( 'WOO_FEED_PRO_PATH' ) && self::path_under( $error->getFile(), (string) WOO_FEED_PRO_PATH );
+	}
+
+	/**
+	 * Whether the error names one of free's classes that was not found, or
+	 * is a ParseError in one of free's files.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param \Throwable $error The error.
+	 * @return bool
+	 */
+	private static function is_free_error( \Throwable $error ): bool {
+		if ( '' !== self::file_for( $error->getMessage() ) ) {
+			return true;
+		}
+
+		return $error instanceof \ParseError && self::path_under( $error->getFile(), dirname( __DIR__ ) );
+	}
+
+	/**
+	 * Whether $file lies inside $folder (slashes normalised).
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $file   File path.
+	 * @param string $folder Folder path.
+	 * @return bool
+	 */
+	private static function path_under( string $file, string $folder ): bool {
+		$folder = rtrim( str_replace( '\\', '/', $folder ), '/' );
+
+		return '' !== $folder && 0 === strpos( str_replace( '\\', '/', $file ), $folder . '/' );
+	}
+
+	/**
+	 * Whether Pro's files are being replaced: Pro is loaded and its main
+	 * file is unreadable or its src/ folder is gone; with $site_wide also
+	 * maintenance mode or a fresh automatic-updater lock.
+	 *
+	 * The src/ folder is the 8.x Pro's, checked only while its Bootstrap
+	 * class is loaded: a Legacy Pro (7.x and older) defines the same
+	 * WOO_FEED_PRO_FILE / _PATH constants but never had src/ — checking it
+	 * there held every batch, then failed the run (CBT-807 F1).
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param bool $site_wide Also read maintenance mode and the updater lock.
+	 * @return bool
+	 */
+	private static function pro_files_in_flux( bool $site_wide ): bool {
+		if ( defined( 'WOO_FEED_PRO_FILE' ) ) {
+			clearstatcache();
+			if ( ! is_readable( (string) WOO_FEED_PRO_FILE ) ) {
+				return true;
+			}
+			if ( defined( 'WOO_FEED_PRO_PATH' ) && class_exists( 'CTXFeed\\Pro\\Bootstrap', false )
+				&& ! is_dir( rtrim( (string) WOO_FEED_PRO_PATH, '/\\' ) . '/src' ) ) {
+				return true;
+			}
+		}
+		if ( ! $site_wide ) {
+			return false;
+		}
+		if ( function_exists( 'wp_is_maintenance_mode' ) && wp_is_maintenance_mode() ) {
+			return true;
+		}
+
+		return self::updater_locked();
+	}
+
+	/**
+	 * Whether WordPress's automatic updater holds its lock and took it
+	 * within the window (UPDATER_LOCK_WINDOW, or a longer wait maximum from
+	 * `ctxfeed_update_wait_max_seconds`). The option's value is the time the
+	 * lock was taken; a killed update leaves it behind for hours, or for
+	 * good once automatic updates are turned off — an old lock, or one with
+	 * no time, is no evidence of an update (CBT-807 F2). Never throws.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @return bool
+	 */
+	private static function updater_locked(): bool {
+		try {
+			if ( ! function_exists( 'get_option' ) ) {
+				return false;
+			}
+			$taken = get_option( 'auto_updater.lock' );
+			if ( ! is_numeric( $taken ) || (int) $taken <= 0 ) {
+				return false;
+			}
+			$window = self::UPDATER_LOCK_WINDOW;
+			if ( function_exists( 'apply_filters' ) ) {
+				$window = min( 1800, max( $window, (int) apply_filters( 'ctxfeed_update_wait_max_seconds', $window ) ) );
+			}
+
+			return time() - (int) $taken <= $window;
+		} catch ( \Throwable $e ) {
+			return false;
 		}
 	}
 
@@ -89,10 +358,14 @@ class Bootstrap {
 	 *
 	 * @since 8.0.37
 	 *
-	 * @param callable $step Boot step.
+	 * The step is not type-hinted `callable`: array( 'Some\\Class', 'method' )
+	 * whose class file has just vanished would throw a TypeError at the call,
+	 * outside the try. Checked inside instead (CBT-806).
+	 *
+	 * @param callable|mixed $step Boot step.
 	 * @return bool True when the step completed.
 	 */
-	public static function guarded( callable $step ): bool {
+	public static function guarded( $step ): bool {
 		global $wp_filter;
 
 		// Arrays copy on write: this keeps the current callback lists
@@ -107,13 +380,81 @@ class Bootstrap {
 		}
 
 		try {
-			call_user_func( $step );
-			return true;
+			// is_callable() autoloads an array( 'Class', 'method' ) step: a
+			// half-written file throws here, a missing one returns false.
+			if ( is_callable( $step ) ) {
+				call_user_func( $step );
+				return true;
+			}
+			$error = self::unloadable( $step, 'CTX Feed boot step could not be loaded.' );
 		} catch ( \Throwable $e ) {
-			self::remove_hooks_added_since( $before );
-			self::record_boot_failure( $e );
-			return false;
+			$error = $e;
 		}
+		self::remove_hooks_added_since( $before );
+		self::record_boot_failure( $error );
+
+		return false;
+	}
+
+	/**
+	 * Run a callback that WordPress calls AFTER boot (admin screens, cron,
+	 * widgets, REST routes) so a failure there is contained too (CBT-806):
+	 * the callback's class files can vanish while an update replaces the
+	 * plugin folder. Unlike guarded() it takes no hook snapshot — it runs on
+	 * ordinary requests and adds no hooks.
+	 *
+	 * Only a file that could not be loaded (a missing class, a half-written
+	 * file) is recorded for the "could not load one of its files" notice.
+	 * Any other error is a bug in that callback, not a file problem: it is
+	 * written to the PHP error log with its file and line, and no notice
+	 * tells the admin to reinstall.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param callable|mixed $callback Callback.
+	 * @param mixed          $fallback Returned when the callback fails.
+	 * @return mixed The callback's result, or $fallback.
+	 */
+	public static function contain( $callback, $fallback = null ) {
+		$unloadable = false;
+		try {
+			if ( is_callable( $callback ) ) {
+				return call_user_func( $callback );
+			}
+			$error      = self::unloadable( $callback, 'CTX Feed callback could not be loaded.' );
+			$unloadable = true;
+		} catch ( \Throwable $e ) {
+			$error = $e;
+		}
+
+		if ( $unloadable || $error instanceof \ParseError || '' !== self::file_for( $error->getMessage() ) ) {
+			self::record_boot_failure( $error );
+		} else {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- A contained error must still reach the host's PHP log, as the fatal it replaces would have.
+			error_log( 'CTX Feed contained an error: ' . get_class( $error ) . ': ' . substr( $error->getMessage(), 0, 300 ) . ' in ' . $error->getFile() . ':' . $error->getLine() );
+		}
+
+		return $fallback;
+	}
+
+	/**
+	 * The error for a step that is not callable. An array( 'Class', 'method' )
+	 * step whose class file is missing gets PHP's own "not found" message,
+	 * so the record names the file — and is dropped once an update has
+	 * finished copying it (notify_recent_boot_failure()).
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param mixed  $step     The step.
+	 * @param string $fallback Message for any other step.
+	 * @return \RuntimeException
+	 */
+	private static function unloadable( $step, string $fallback ): \RuntimeException {
+		if ( is_array( $step ) && isset( $step[0] ) && is_string( $step[0] ) && ! class_exists( $step[0], false ) ) {
+			return new \RuntimeException( 'Class "' . ltrim( $step[0], '\\' ) . '" not found' );
+		}
+
+		return new \RuntimeException( $fallback );
 	}
 
 	/**
@@ -161,10 +502,32 @@ class Bootstrap {
 	 */
 	private static function record_boot_failure( \Throwable $error ): void {
 		$message = $error->getMessage();
-		$file    = '';
-		if ( preg_match( '/(?:Class|Interface|Trait|Enum) ["\']?\\\\?CTXFeed\\\\V8\\\\([A-Za-z0-9_\\\\]+)["\']? not found/', $message, $match ) ) {
-			$file = 'V8/' . str_replace( '\\', '/', $match[1] ) . '.php';
+		$file    = self::file_for( $message );
+
+		// While WordPress replaces the plugin folder (an update), every request
+		// in that window fails the same way and the next one boots the new
+		// version: log it, but store and show nothing — a "reinstall CTX Feed"
+		// notice after every ordinary update would be false (CBT-806).
+		if ( self::files_in_flux() ) {
+			static $logged = false;
+			if ( ! $logged ) {
+				$logged = true;
+				// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- One line per request while the plugin is being updated.
+				error_log( 'CTX Feed paused for this request while its files are being updated: ' . substr( $message, 0, 300 ) );
+			}
+			return;
 		}
+
+		// A CTX Feed Pro class (Pro hooks into this boot), or a half-written
+		// file in Pro's folder (a ParseError names no class, CBT-807): Pro's
+		// folder is the one being replaced or broken, and Pro shows its own
+		// notice — never tell the admin to reinstall CTX Feed for it.
+		if ( self::is_pro_error( $error ) ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- The fatal this replaces would have been logged the same way.
+			error_log( 'CTX Feed paused for this request, a CTX Feed Pro file could not be loaded: ' . substr( $message, 0, 300 ) );
+			return;
+		}
+
 		$on_disk = '' !== $file && is_readable( dirname( __DIR__ ) . '/' . $file );
 
 		$record = array(
@@ -195,6 +558,54 @@ class Bootstrap {
 	}
 
 	/**
+	 * The plugin file of a "Class … not found" error, relative to the plugin
+	 * folder ('' for other errors): CTXFeed\\V8\\X → V8/X.php,
+	 * CTXFeed\\Compat\\X → compatibility/X.php, CTXFeed\\AppServices\\X →
+	 * V8/AppServices/X.php.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $message Error message.
+	 * @return string
+	 */
+	private static function file_for( string $message ): string {
+		if ( ! preg_match( '/(?:Class|Interface|Trait|Enum) ["\']?\\\\?CTXFeed\\\\(V8|Compat|AppServices)\\\\([A-Za-z0-9_\\\\]+)["\']? not found/', $message, $match ) ) {
+			return '';
+		}
+		// The relocated telemetry SDK keeps its CTXFeed\AppServices namespace.
+		$folders = array(
+			'V8'          => 'V8/',
+			'Compat'      => 'compatibility/',
+			'AppServices' => 'V8/AppServices/',
+		);
+
+		return $folders[ $match[1] ] . str_replace( '\\', '/', $match[2] ) . '.php';
+	}
+
+	/**
+	 * Whether the plugin's files are being replaced right now (an update):
+	 * the main file or the V8 folder is gone, maintenance mode is on, or the
+	 * automatic updater took its lock within the window (updater_locked()).
+	 * Read only after a failure — never a gate on ordinary requests.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @return bool
+	 */
+	private static function files_in_flux(): bool {
+		$root = dirname( __DIR__ );
+		clearstatcache();
+		if ( ! is_readable( $root . '/woo-feed.php' ) || ! is_dir( $root . '/V8' ) ) {
+			return true;
+		}
+		if ( function_exists( 'wp_is_maintenance_mode' ) && wp_is_maintenance_mode() ) {
+			return true;
+		}
+
+		return self::updater_locked();
+	}
+
+	/**
 	 * Show administrators a recent boot failure (within 24 hours), also on
 	 * page loads that booted fine — failures in background requests are
 	 * otherwise invisible.
@@ -209,6 +620,20 @@ class Bootstrap {
 		}
 		$stored = get_option( self::BOOT_FAILURE_OPTION, array() );
 		if ( ! is_array( $stored ) || empty( $stored['time'] ) || time() - (int) $stored['time'] > DAY_IN_SECONDS ) {
+			return;
+		}
+		// Recorded by an older version and its file is back: an update raced a
+		// request and has finished since — nothing for the admin to do.
+		$file     = isset( $stored['file'] ) ? (string) $stored['file'] : '';
+		$readable = '' !== $file && is_readable( dirname( __DIR__ ) . '/' . $file );
+		$older    = defined( 'CTXFEED_V8_VERSION' ) && isset( $stored['version'] ) && CTXFEED_V8_VERSION !== $stored['version'];
+		// Or the file was missing and is there now: an update was still
+		// copying files when the record was written (an upload over the
+		// old version shows neither maintenance mode nor the updater lock).
+		// A file that was on disk and still failed to load stays shown.
+		$copied = $readable && isset( $stored['on_disk'] ) && false === $stored['on_disk'];
+		if ( $copied || ( $older && ( '' === $file || $readable ) ) ) {
+			delete_option( self::BOOT_FAILURE_OPTION );
 			return;
 		}
 		add_action(
@@ -308,8 +733,12 @@ class Bootstrap {
 
 		$this->define_constants();
 
-		// Require PSR-4 autoloader.
-		require_once __DIR__ . '/autoload.php';
+		// woo-feed.php registered the PSR-4 autoloader; load it only when the
+		// class is used on its own (tests). Never require: a file that vanished
+		// mid-update must stay a catchable error (CBT-806).
+		if ( ! class_exists( Container::class ) && is_readable( __DIR__ . '/autoload.php' ) ) {
+			include_once __DIR__ . '/autoload.php';
+		}
 
 		// A Pro build older than the engine migration (CBT-649) flips the
 		// gates but ships no engines — close them so the UI never unlocks
@@ -344,7 +773,7 @@ class Bootstrap {
 	private function define_constants(): void {
 
 		if ( ! defined( 'CTXFEED_V8_VERSION' ) ) {
-			define( 'CTXFEED_V8_VERSION', '8.0.37' );
+			define( 'CTXFEED_V8_VERSION', '8.0.38' );
 		}
 
 		if ( ! defined( 'CTXFEED_V8_PATH' ) ) {

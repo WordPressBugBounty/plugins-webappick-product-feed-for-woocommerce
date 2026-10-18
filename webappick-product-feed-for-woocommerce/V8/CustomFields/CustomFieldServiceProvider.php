@@ -75,6 +75,14 @@ class CustomFieldServiceProvider extends ServiceProvider {
 	 * @return void
 	 */
 	public function boot( Container $container ): void {
+		// Load CustomFieldHelper now, inside the guarded boot (CBT-806). Both
+		// init@5 callbacks below need it on EVERY request, storefront page
+		// views included; loaded lazily there, it was the first CTX Feed file
+		// read after boot, so a request that overlapped an update (WordPress
+		// moves the plugin folder away for a moment) died with "Class not
+		// found". Here a failure is caught by the boot guard instead.
+		class_exists( CustomFieldHelper::class );
+
 		// Seed `woo_feed_settings` with default custom-field toggles BEFORE
 		// the registrar reads the option. Idempotent: only fills missing
 		// keys, never overwrites user preferences. PROD-FRD-10.3.

@@ -86,7 +86,12 @@ class ExcludeCaching {
 	private function compute_feed_path(): string {
 		$upload   = wp_upload_dir();
 		$base_url = isset( $upload['baseurl'] ) ? (string) $upload['baseurl'] : '';
-		$path     = trim( (string) wp_parse_url( $base_url, PHP_URL_PATH ), '/' );
+		// Utility\Url keeps non-ASCII bytes intact under any locale; plain
+		// wp_parse_url() is the fallback for a partly-updated plugin (CBT-808).
+		$path = class_exists( '\CTXFeed\V8\Utility\Url' )
+			? \CTXFeed\V8\Utility\Url::parse( $base_url, PHP_URL_PATH )
+			: wp_parse_url( $base_url, PHP_URL_PATH );
+		$path = trim( (string) $path, '/' );
 
 		if ( '' === $path ) {
 			$path = 'wp-content/uploads';

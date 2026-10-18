@@ -208,9 +208,7 @@ final class DashboardWidget {
 	 */
 	public function render(): void {
 		// Halloween 2026 sale banner on top while it runs (CBT-804).
-		if ( SaleCampaign::active() ) {
-			SaleCampaign::render_banner();
-		}
+		echo $this->sale_banner(); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- Markup printed (and escaped) by SaleCampaign::render_banner().
 
 		printf(
 			'<p><a style="text-decoration:none;font-weight:bold;" href="%s" target="_blank" rel="noopener noreferrer">%s</a></p><hr>',
@@ -244,6 +242,43 @@ final class DashboardWidget {
 			esc_url( 'https://webappick.com/blog/' ),
 			esc_html__( 'Get more woocommerce tips & news on our blog...', 'woo-feed' )
 		);
+	}
+
+	/**
+	 * The sale banner's markup, or '' when no sale runs or it cannot render.
+	 *
+	 * The banner loads classes the dashboard has not used yet (SaleCampaign,
+	 * LegacyPro, ProPricing). The wp-admin Dashboard is the default landing
+	 * page, so a request that overlaps an update of the plugin folder must not
+	 * die on one of them (CBT-806): the failure is contained and recorded, and
+	 * the widget renders without the banner. The markup is buffered so a
+	 * failure part-way never prints half a banner.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @return string
+	 */
+	private function sale_banner(): string {
+		$render = static function (): string {
+			if ( ! SaleCampaign::active() ) {
+				return '';
+			}
+			ob_start();
+			try {
+				SaleCampaign::render_banner();
+			} catch ( \Throwable $e ) {
+				ob_end_clean();
+				throw $e;
+			}
+
+			return (string) ob_get_clean();
+		};
+
+		if ( class_exists( '\\CTXFeed\\V8\\Bootstrap', false ) && method_exists( '\\CTXFeed\\V8\\Bootstrap', 'contain' ) ) {
+			return (string) \CTXFeed\V8\Bootstrap::contain( $render, '' );
+		}
+
+		return $render();
 	}
 
 	/**

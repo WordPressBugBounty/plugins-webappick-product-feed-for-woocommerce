@@ -268,6 +268,33 @@ class Insights {
 	 * @return void
 	 */
 	public function send_tracking_data( $override = false ) {
+		// Runs from the weekly {slug}_tracker_send_event WP-Cron event, and
+		// wp-cron.php catches nothing. The payload loads classes the request
+		// has not used yet (Redactor), and that cron request can be the very
+		// one that just updated the plugin — contain a failure instead of a
+		// fatal (CBT-806); the next weekly run sends. Wrapped here, not at
+		// add_action(), so the registered callback stays removable.
+		if ( class_exists( '\\CTXFeed\\V8\\Bootstrap', false ) && method_exists( '\\CTXFeed\\V8\\Bootstrap', 'contain' ) ) {
+			\CTXFeed\V8\Bootstrap::contain(
+				function () use ( $override ) {
+					$this->send_tracking_data_now( $override );
+				}
+			);
+			return;
+		}
+		$this->send_tracking_data_now( $override );
+	}
+
+	/**
+	 * Send tracking data to WebAppick server (the body of send_tracking_data()).
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param boolean $override override current settings.
+	 *
+	 * @return void
+	 */
+	private function send_tracking_data_now( $override ) {
 		// skip on AJAX Requests.
 		if ( defined( 'DOING_AJAX' ) && DOING_AJAX ) {
 			return;

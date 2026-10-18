@@ -45,7 +45,7 @@ spl_autoload_register(
 		}
 		if ( file_exists( $file_path ) ) {
 			// phpcs:ignore WordPressVIPMinimum.Files.IncludingFile.UsingVariable -- A PSR-4 autoloader resolves the path from the class name by definition; the path is built from __DIR__ plus the namespace segment, never from user input.
-			require_once $file_path;
+			include_once $file_path;
 		}
 	}
 );
@@ -76,7 +76,7 @@ spl_autoload_register(
 
 		if ( file_exists( $file_path ) ) {
 			// phpcs:ignore WordPressVIPMinimum.Files.IncludingFile.UsingVariable -- A PSR-4 autoloader resolves the path from the class name by definition; the path is built from __DIR__ plus the namespace segment, never from user input.
-			require_once $file_path;
+			include_once $file_path;
 		}
 	}
 );

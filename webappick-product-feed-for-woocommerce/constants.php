@@ -87,7 +87,7 @@ if( ! class_exists("Woo_Feed_Constants") ) {
 				// Per-site random folder (CBT-725) — loaded directly: the V8
 				// autoloader is not registered yet at this point.
 				if ( ! class_exists( '\\CTXFeed\\V8\\Utility\\LogDirGuard', false ) && is_readable( __DIR__ . '/V8/Utility/LogDirGuard.php' ) ) {
-					require_once __DIR__ . '/V8/Utility/LogDirGuard.php';
+					include_once __DIR__ . '/V8/Utility/LogDirGuard.php';
 				}
 				define( 'WOO_FEED_LOG_DIR', class_exists( '\\CTXFeed\\V8\\Utility\\LogDirGuard', false ) ? \CTXFeed\V8\Utility\LogDirGuard::dir() : $upload_dir['basedir'] . '/woo-feed/logs/' );
 			}

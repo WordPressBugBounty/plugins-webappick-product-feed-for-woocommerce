@@ -81,6 +81,7 @@ class NoticeProvider {
 		$notices = array();
 
 		$notices = array_merge( $notices, $this->old_pro_notice() );
+		$notices = array_merge( $notices, $this->update_wait_notice() );
 		$notices = array_merge( $notices, $this->outdated_pro_notice() );
 		$notices = array_merge( $notices, $this->debug_logging_notice() );
 		$notices = array_merge( $notices, $this->scheduler_stalled_notice() );
@@ -236,6 +237,23 @@ class NoticeProvider {
 				'dismissible' => false,
 			),
 		);
+	}
+
+	/**
+	 * Feed runs waiting for CTX Feed Pro (or CTX Feed's own compatibility
+	 * layer) to load, or one stopped after the wait cap in the last 24 h
+	 * (CBT-807). Pro's own paused / boot-failure notices are hidden on CTX
+	 * Feed screens, so this is where a held feed is explained.
+	 *
+	 * @since 8.0.38
+	 * @return array Zero or one notice.
+	 */
+	private function update_wait_notice(): array {
+		try {
+			return class_exists( UpdateWaitNotice::class ) ? UpdateWaitNotice::notices() : array();
+		} catch ( \Throwable $e ) {
+			return array();
+		}
 	}
 
 	/**

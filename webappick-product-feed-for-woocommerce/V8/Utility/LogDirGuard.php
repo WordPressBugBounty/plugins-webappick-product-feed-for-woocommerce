@@ -255,6 +255,12 @@ class LogDirGuard {
 			return;
 		}
 
+		// The scrubber's helper must be loadable; otherwise retry next time
+		// without marking the scrub done (CBT-806: files mid-update).
+		if ( ! class_exists( Redactor::class ) ) {
+			return;
+		}
+
 		$dir   = rtrim( $dir, '/\\' );
 		$files = is_dir( $dir ) ? (array) glob( $dir . '/*.log' ) : array();
 		if ( ! empty( $files ) ) {

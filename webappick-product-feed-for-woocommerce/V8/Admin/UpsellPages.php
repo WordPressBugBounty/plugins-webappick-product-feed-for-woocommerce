@@ -119,6 +119,29 @@ final class UpsellPages {
 	}
 
 	/**
+	 * Include an admin view. Never require: a view that vanished while the
+	 * plugin is being updated prints a short notice instead of a fatal
+	 * error (CBT-806).
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $view Absolute path of the view.
+	 * @return void
+	 */
+	private static function render_view( string $view ): void {
+		try {
+			// A half-written view (an update copying it right now) is a
+			// ParseError here, caught like a missing one.
+			if ( is_readable( $view ) && false !== include $view ) { // phpcs:ignore WordPressVIPMinimum.Files.IncludingFile.UsingVariable -- Path built from __DIR__ by the two callers above, never from input.
+				return;
+			}
+		} catch ( \Throwable $e ) {
+			unset( $e );
+		}
+		echo '<div class="wrap"><p>' . esc_html__( 'This page is being updated. Please reload it in a moment.', 'woo-feed' ) . '</p></div>';
+	}
+
+	/**
 	 * Render the Premium (pro-vs-free) page.
 	 *
 	 * @since 8.0.0
@@ -126,7 +149,7 @@ final class UpsellPages {
 	 * @return void
 	 */
 	public function render_premium(): void {
-		require __DIR__ . '/views/premium.php';
+		self::render_view( __DIR__ . '/views/premium.php' );
 	}
 
 	/**
@@ -137,7 +160,7 @@ final class UpsellPages {
 	 * @return void
 	 */
 	public function render_our_plugins(): void {
-		require __DIR__ . '/views/our-plugins.php';
+		self::render_view( __DIR__ . '/views/our-plugins.php' );
 	}
 
 	/**

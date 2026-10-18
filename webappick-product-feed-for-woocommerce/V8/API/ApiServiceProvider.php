@@ -34,6 +34,26 @@ if ( ! defined( 'ABSPATH' ) ) {
 class ApiServiceProvider extends ServiceProvider {
 
 	/**
+	 * Option-name prefixes of Attribute Mappings, Dynamic Attributes and
+	 * Category Mappings — the same values as AttributeRegistry::PREFIX_*
+	 * (a unit test keeps them equal).
+	 *
+	 * Plain strings on purpose (CBT-806): the option hooks below run on any
+	 * option write of any request, the storefront included (transients, the
+	 * cron spawn at shutdown). Reading AttributeRegistry's constants there
+	 * loaded that class for the first time after boot — a "Class not found"
+	 * fatal whenever the request overlapped an update of the plugin folder.
+	 *
+	 * @since 8.0.38
+	 * @var string[]
+	 */
+	const MAPPING_OPTION_PREFIXES = array(
+		'wp_attr_mapping_', // AttributeRegistry::PREFIX_ATTR_MAPPING.
+		'wf_dattribute_',   // AttributeRegistry::PREFIX_DYN_ATTRIBUTE.
+		'wf_cmapping_',     // AttributeRegistry::PREFIX_CAT_MAPPING.
+	);
+
+	/**
 	 * Register endpoint singletons in the container.
 	 *
 	 * Phase 1: Only bind factories — no resolution.
@@ -227,6 +247,12 @@ class ApiServiceProvider extends ServiceProvider {
 			}
 		);
 
+		// Contain failures of every /ctxfeed/v8 route callback (free and Pro
+		// share the namespace): a Throwable becomes a 500 WP_Error for that
+		// one call instead of WordPress's critical-error page (CBT-806).
+		// Registered here so its class loads during the guarded boot.
+		RestDispatchGuard::register();
+
 		// admin-ajax fallback for the REST API — lets the admin keep working
 		// when a CDN/WAF (e.g. Cloudflare) intermittently 403-challenges
 		// /wp-json/. The React app only routes through it on a challenge, so
@@ -297,12 +323,7 @@ class ApiServiceProvider extends ServiceProvider {
 				$invalidate_attribute_dropdown();
 				return;
 			}
-			$prefixes = array(
-				\CTXFeed\V8\Product\AttributeRegistry::PREFIX_ATTR_MAPPING,  // wp_attr_mapping_ prefix.
-				\CTXFeed\V8\Product\AttributeRegistry::PREFIX_DYN_ATTRIBUTE, // wf_dattribute_ prefix.
-				\CTXFeed\V8\Product\AttributeRegistry::PREFIX_CAT_MAPPING,   // wf_cmapping_ prefix.
-			);
-			foreach ( $prefixes as $prefix ) {
+			foreach ( self::MAPPING_OPTION_PREFIXES as $prefix ) {
 				if ( 0 === strpos( $option, $prefix ) ) {
 					$invalidate_attribute_dropdown();
 					return;

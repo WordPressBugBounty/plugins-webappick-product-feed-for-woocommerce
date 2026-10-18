@@ -219,6 +219,29 @@ class FeedGenerator {
 	private $variations_builder = null;
 
 	/**
+	 * Whether the current finalize() got as far as writing the footer — from
+	 * then on the working file changed for good, so an error after it can no
+	 * longer be waited out and retried (CBT-807).
+	 *
+	 * @since 8.0.38
+	 * @var bool
+	 */
+	private $wrote_footer = false;
+
+	/**
+	 * Whether the last finalize() call reached the footer write (CBT-807).
+	 * FeedScheduler holds a finalize that failed because a plugin's files
+	 * were being replaced only when this is false.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @return bool
+	 */
+	public function wrote_footer(): bool {
+		return $this->wrote_footer;
+	}
+
+	/**
 	 * Set the Skroutz variations builder.
 	 *
 	 * Injected via a setter (not the constructor) so the 14-arg DI signature
@@ -361,6 +384,8 @@ class FeedGenerator {
 	 * @param array  $context    Additional context data.
 	 *
 	 * @return array Batch result with 'count' and 'next_batch_size' keys.
+	 *
+	 * @throws FilesInFlux When a product failed because a plugin's files are being replaced right now (CBT-807).
 	 */
 	private function run_batch( string $feed_name, int $offset, int $batch_size, array $context = array() ): array {
 		// WooCommerce skips its cart helpers on cron/REST requests, which is
@@ -521,7 +546,7 @@ class FeedGenerator {
 		// A run's first batch starts a fresh promotion set (CBT-716).
 		if ( 0 === $offset ) {
 			unset( $this->promotions_seen[ $feed_name ] );
-			delete_transient( 'ctxfeed_promotions_seen_' . $feed_name );
+			delete_transient( $this->promotions_key( $feed_name ) );
 		}
 
 		// NOTE: the canonical per-channel XML item/items wrapper (Google →
@@ -594,7 +619,9 @@ class FeedGenerator {
 		// working file — so a retried batch shipped partially duplicated. Record
 		// the working-file length before this offset writes anything and, when
 		// the same offset comes round again, roll the file back to it first.
-		$this->arm_batch_marker( $feed_name, $offset );
+		// Google Promotions also roll back the promotion ids the batch saw
+		// (CBT-807): otherwise the redo drops them all as duplicates.
+		$this->arm_batch_marker( $feed_name, $offset, 'google_promotions' === $provider );
 
 		// Step 5: V5 product-loop hooks — fired before the actual iteration
 		// begins so compat shims like the Pro `MultiCurrency` orchestrator
@@ -836,6 +863,17 @@ class FeedGenerator {
 						);
 					}
 				} catch ( \Throwable $e ) {
+					// A class or file of CTX Feed Pro (or CTX Feed) missing
+					// because the plugin is being replaced right now: skipping
+					// would publish the feed without this product — stop the
+					// batch so the scheduler waits and redoes it (CBT-807).
+					// Error path only; a permanently missing class returns ''
+					// and the product is skipped as before.
+					$in_flux = is_callable( array( \CTXFeed\V8\Bootstrap::class, 'in_flux_reason' ) ) ? \CTXFeed\V8\Bootstrap::in_flux_reason( $e ) : '';
+					if ( '' !== $in_flux ) {
+						throw new FilesInFlux( $in_flux, $e );
+					}
+
 					// Isolate this one product: record it and keep the batch going.
 					++$error_count;
 					if ( $this->feed_logger ) {
@@ -1146,6 +1184,8 @@ class FeedGenerator {
 	 * @return void
 	 */
 	public function finalize( string $feed_name ): void {
+		$this->wrote_footer = false;
+
 		$config = $this->manager->get_config( $feed_name );
 		if ( ! $config ) {
 			return;
@@ -1199,7 +1239,12 @@ class FeedGenerator {
 			$this->stream_writer->trim_trailing( ',' . PHP_EOL );
 		}
 
-		$this->stream_writer->write_footer( $template->render_footer( $config ) );
+		// Render first (Custom Template 2 is a Pro engine and can throw while
+		// Pro is being replaced), then mark the point of no return: from the
+		// footer write on, the working file is no longer a clean body.
+		$footer             = $template->render_footer( $config );
+		$this->wrote_footer = true;
+		$this->stream_writer->write_footer( $footer );
 		$this->stream_writer->close();
 		$footer_write_failed = $this->stream_writer->has_write_error();
 		$this->clear_batch_marker( $feed_name );
@@ -1679,11 +1724,8 @@ class FeedGenerator {
 	 * @return bool
 	 */
 	private function is_new_promotion( string $feed_name, array $row ): bool {
-		$key = 'ctxfeed_promotions_seen_' . $feed_name;
-		if ( ! isset( $this->promotions_seen[ $feed_name ] ) ) {
-			$stored                              = get_transient( $key );
-			$this->promotions_seen[ $feed_name ] = is_array( $stored ) ? $stored : array();
-		}
+		$key = $this->promotions_key( $feed_name );
+		$this->promotions_seen_now( $feed_name );
 
 		$id = '';
 		foreach ( array( 'promotion_id', 'g:promotion_id' ) as $name ) {
@@ -1703,6 +1745,36 @@ class FeedGenerator {
 		set_transient( $key, $this->promotions_seen[ $feed_name ], DAY_IN_SECONDS );
 
 		return true;
+	}
+
+	/**
+	 * Transient key of a run's promotion seen-set.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return string
+	 */
+	private function promotions_key( string $feed_name ): string {
+		return 'ctxfeed_promotions_seen_' . $feed_name;
+	}
+
+	/**
+	 * The promotion ids this run has written so far (loaded once per
+	 * process from the transient).
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return array<string,bool>
+	 */
+	private function promotions_seen_now( string $feed_name ): array {
+		if ( ! isset( $this->promotions_seen[ $feed_name ] ) ) {
+			$stored                              = function_exists( 'get_transient' ) ? get_transient( $this->promotions_key( $feed_name ) ) : false;
+			$this->promotions_seen[ $feed_name ] = is_array( $stored ) ? $stored : array();
+		}
+
+		return $this->promotions_seen[ $feed_name ];
 	}
 
 	/**
@@ -1815,11 +1887,12 @@ class FeedGenerator {
 	 *
 	 * @since 8.0.10
 	 *
-	 * @param string $feed_name Feed slug.
-	 * @param int    $offset    Batch offset about to be written.
+	 * @param string $feed_name  Feed slug.
+	 * @param int    $offset     Batch offset about to be written.
+	 * @param bool   $promotions Google Promotions feed: the marker also carries the promotion ids seen before this batch, restored on a redo. @since 8.0.38.
 	 * @return void
 	 */
-	private function arm_batch_marker( string $feed_name, int $offset ): void {
+	private function arm_batch_marker( string $feed_name, int $offset, bool $promotions = false ): void {
 		if ( ! $this->stream_writer || ! function_exists( 'get_transient' ) || ! function_exists( 'set_transient' ) ) {
 			return;
 		}
@@ -1838,17 +1911,72 @@ class FeedGenerator {
 					sprintf( 'Retry at offset %d: rolled the working file back to %d bytes so the retried rows are not duplicated.', $offset, $bytes )
 				);
 			}
+			// The rows are gone again — so are the promotion ids they added.
+			if ( $promotions && isset( $marker['promotions'] ) && is_array( $marker['promotions'] ) ) {
+				$this->promotions_seen[ $feed_name ] = $marker['promotions'];
+				set_transient( $this->promotions_key( $feed_name ), $marker['promotions'], defined( 'DAY_IN_SECONDS' ) ? DAY_IN_SECONDS : 86400 );
+			}
 			return;
 		}
 
-		set_transient(
-			$key,
-			array(
-				'offset' => $offset,
-				'bytes'  => $this->stream_writer->current_size(),
-			),
-			defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600
+		$value = array(
+			'offset' => $offset,
+			'bytes'  => $this->stream_writer->current_size(),
 		);
+		if ( $promotions ) {
+			$value['promotions'] = $this->promotions_seen_now( $feed_name );
+		}
+		set_transient( $key, $value, defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600 );
+	}
+
+	/**
+	 * Keep a run's batch marker alive while the run waits for the plugin
+	 * stack (CBT-807): the same value, a fresh 1-hour TTL. Without it a
+	 * batch redone after a long wait finds no marker and appends its rows a
+	 * second time. The scheduler also keeps the returned marker in the
+	 * run's (non-expiring) wait clock, for a redo more than an hour later.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return array|null The marker kept, null when there is none.
+	 */
+	public function keep_batch_marker( string $feed_name ): ?array {
+		if ( ! function_exists( 'get_transient' ) || ! function_exists( 'set_transient' ) ) {
+			return null;
+		}
+		$key    = $this->batch_marker_key( $feed_name );
+		$marker = get_transient( $key );
+		if ( ! is_array( $marker ) ) {
+			return null;
+		}
+		set_transient( $key, $marker, defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600 );
+
+		return $marker;
+	}
+
+	/**
+	 * Put a batch marker kept by a wait back when its transient expired
+	 * (a redo more than an hour after the last hold), so the redo rolls the
+	 * working file back instead of appending the batch twice (CBT-807).
+	 * A marker that still exists is never replaced.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @param array  $marker    Marker as keep_batch_marker() returned it.
+	 * @return bool True when the marker was put back.
+	 */
+	public function restore_batch_marker( string $feed_name, array $marker ): bool {
+		if ( ! isset( $marker['offset'], $marker['bytes'] ) || ! function_exists( 'get_transient' ) || ! function_exists( 'set_transient' ) ) {
+			return false;
+		}
+		$key = $this->batch_marker_key( $feed_name );
+		if ( is_array( get_transient( $key ) ) ) {
+			return false;
+		}
+
+		return (bool) set_transient( $key, $marker, defined( 'HOUR_IN_SECONDS' ) ? HOUR_IN_SECONDS : 3600 );
 	}
 
 	/**

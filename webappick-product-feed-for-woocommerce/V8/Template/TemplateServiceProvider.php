@@ -163,6 +163,14 @@ class TemplateServiceProvider extends ServiceProvider {
 			$custom2 = $container->resolve( 'template.custom2' );
 		} catch ( \Throwable $e ) {
 			$custom2 = null;
+			// Pro bound the renderer but it could not be built (its class file
+			// is being replaced, or failed to load): a Custom Template 2 feed
+			// would fail for good. Mark the stack incomplete so feed runs wait
+			// for Pro instead (CBT-807) — only for a licensed Pro: an
+			// unlicensed one adds nothing to feeds and never holds them.
+			if ( $container->has( 'template.custom2' ) && self::pro_licensed() && is_callable( array( '\\CTXFeed\\V8\\Bootstrap', 'mark_incomplete' ) ) ) {
+				\CTXFeed\V8\Bootstrap::mark_incomplete( 'pro' );
+			}
 		}
 
 		// Re-register engine with final template map and optional Custom2
@@ -173,5 +181,24 @@ class TemplateServiceProvider extends ServiceProvider {
 				return new TemplateEngine( $templates, $custom2 );
 			} 
 		);
+	}
+
+	/**
+	 * Whether CTX Feed Pro is licensed (Status\ProState::licensed(): Pro's
+	 * License class, or its stored licence record). If that cannot be read:
+	 * true — never publish on a guess (CBT-807).
+	 *
+	 * @since 8.0.38
+	 *
+	 * @return bool
+	 */
+	private static function pro_licensed(): bool {
+		try {
+			$state = '\\CTXFeed\\V8\\Status\\ProState';
+
+			return ! class_exists( $state ) || ! is_callable( array( $state, 'licensed' ) ) || (bool) call_user_func( array( $state, 'licensed' ) );
+		} catch ( \Throwable $e ) {
+			return true;
+		}
 	}
 }

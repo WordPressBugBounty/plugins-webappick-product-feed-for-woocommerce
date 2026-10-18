@@ -140,6 +140,32 @@ class ProductQuery {
 	}
 
 	/**
+	 * Restart a feed's product-ID snapshot TTL (CBT-807).
+	 *
+	 * A run that waits for CTX Feed Pro to load keeps its snapshot: an
+	 * expired one is re-queried silently on the next batch and shifts every
+	 * later offset against the rows already written. One read and one write,
+	 * once per wait.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $feed_name Feed slug.
+	 * @return bool True when a snapshot existed and was stored again.
+	 */
+	public function extend_snapshot( string $feed_name ): bool {
+		if ( '' === $feed_name || ! function_exists( 'get_transient' ) || ! function_exists( 'set_transient' ) ) {
+			return false;
+		}
+
+		$ids = get_transient( self::SNAPSHOT_PREFIX . $feed_name );
+		if ( ! is_array( $ids ) ) {
+			return false;
+		}
+
+		return (bool) set_transient( self::SNAPSHOT_PREFIX . $feed_name, $ids, self::SNAPSHOT_TTL );
+	}
+
+	/**
 	 * Get all product IDs matching feed configuration filters.
 	 *
 	 * Builds WC_Product_Query with ID-only return for lightweight results.

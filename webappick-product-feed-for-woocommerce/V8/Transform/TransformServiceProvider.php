@@ -296,9 +296,19 @@ class TransformServiceProvider extends ServiceProvider {
 	 *
 	 * @param Container $container DI container.
 	 *
+	 * @throws \RuntimeException When the channel transforms' trait cannot be loaded (the guarded boot catches it).
 	 * @return void
 	 */
 	public function boot( Container $container ): void {
+		// Load the trait the channel transforms use before any of them: a
+		// class whose trait is missing or half-written (an update replacing
+		// the files) fails while PHP links it — a fatal no try can catch.
+		// Loaded here, a missing file is a plain exception the guarded boot
+		// handles (CBT-806).
+		if ( ! trait_exists( FeedCurrencyFallbackTrait::class ) ) {
+			throw new \RuntimeException( 'Trait "' . FeedCurrencyFallbackTrait::class . '" not found' );
+		}
+
 		// Build ordered transform array per XFRM-FRD-1.2.
 		// XFRM-FRD-4.6: OutputTypeTransform runs FIRST so V5 numeric codes
 		// (Format Price, ucwords, Strip Tags, etc.) execute before prefix/

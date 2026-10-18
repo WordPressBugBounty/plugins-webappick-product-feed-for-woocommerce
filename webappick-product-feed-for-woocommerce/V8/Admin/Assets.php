@@ -43,6 +43,44 @@ class Assets {
 	 * @hook filter ctxfeed_admin_localize_data — Filter data passed to React.
 	 */
 	public function enqueue(): void {
+		// The boot data loads classes the request has not used yet (FeatureGate,
+		// ProPlugin, ProPricing, ShippingResolver) and runs Pro's
+		// ctxfeed_admin_localize_data callbacks. While an update replaces the
+		// plugin folder one of them can be gone: contain it so the admin page
+		// still renders, with the "CTX Feed paused" notice (CBT-806). The hook
+		// keeps array( $assets, 'enqueue' ), so remove_action() still works.
+		$run = function () {
+			try {
+				$this->enqueue_assets();
+			} catch ( \Throwable $e ) {
+				// A failure part-way leaves the bundle enqueued without its
+				// boot data, and the app would crash on a blank page: take it
+				// off again so the page shows the admin and the notice.
+				if ( function_exists( 'wp_dequeue_script' ) ) {
+					wp_dequeue_script( 'ctxfeed-v8-admin' );
+				}
+				if ( function_exists( 'wp_dequeue_style' ) ) {
+					wp_dequeue_style( 'ctxfeed-v8-admin' );
+				}
+				throw $e;
+			}
+		};
+
+		if ( class_exists( '\\CTXFeed\\V8\\Bootstrap', false ) && method_exists( '\\CTXFeed\\V8\\Bootstrap', 'contain' ) ) {
+			\CTXFeed\V8\Bootstrap::contain( $run );
+			return;
+		}
+		$run();
+	}
+
+	/**
+	 * Enqueue the bundle, stylesheet and localised boot data.
+	 *
+	 * @since 8.0.0
+	 *
+	 * @return void
+	 */
+	private function enqueue_assets(): void {
 		$screen = get_current_screen();
 
 		// Page guard: only load on CTX Feed admin pages.

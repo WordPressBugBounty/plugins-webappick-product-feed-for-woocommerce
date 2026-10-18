@@ -55,15 +55,27 @@ final class ProHandshake {
 	 * class, so callers must run after all plugins are included
 	 * (plugins_loaded and later).
 	 *
+	 * While Pro is mid-update (CBT-807) it is not outdated — its files are
+	 * being replaced, and probing its classes could autoload a half-written
+	 * file inside free's boot. Any error while probing: not outdated.
+	 *
 	 * @since 8.0.27
 	 *
 	 * @return bool
 	 */
 	public static function pro_outdated(): bool {
-		return self::is_outdated(
-			defined( 'WOO_FEED_PRO_VERSION' ) ? (string) WOO_FEED_PRO_VERSION : null,
-			class_exists( '\\CTXFeed\\Pro\\Engine\\EngineRegistry' )
-		);
+		try {
+			if ( ProState::mid_update() ) {
+				return false;
+			}
+
+			return self::is_outdated(
+				defined( 'WOO_FEED_PRO_VERSION' ) ? (string) WOO_FEED_PRO_VERSION : null,
+				class_exists( '\\CTXFeed\\Pro\\Engine\\EngineRegistry' )
+			);
+		} catch ( \Throwable $e ) {
+			return false;
+		}
 	}
 
 	/**

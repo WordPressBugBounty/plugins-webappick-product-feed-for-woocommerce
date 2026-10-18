@@ -18,6 +18,7 @@ use CTXFeed\V8\Channel\TemplateInfo;
 use CTXFeed\V8\Core\Container;
 use CTXFeed\V8\Feed\FeedLookup;
 use CTXFeed\V8\Feed\FeedScheduler;
+use CTXFeed\V8\Status\UpdateWaitNotice;
 use CTXFeed\V8\Utility\Sanitizer;
 
 // Exit if accessed directly.
@@ -980,7 +981,10 @@ class FeedEndpoint extends RestController {
 		// found), and log a stream of errors every interval.
 		$this->sync_feed_schedule( $option_name, array( 'status' => 0 ) );
 
-		// Delete both option keys.
+		// Stop whatever of the feed still runs or waits — while its config
+		// still names the working file to discard (CBT-807) — then delete
+		// both option keys.
+		$this->stop_deleted_feed( $feed_slug );
 		delete_option( $option_name );
 		delete_option( 'wf_config' . $feed_slug );
 
@@ -1042,6 +1046,16 @@ class FeedEndpoint extends RestController {
 			);
 		}
 
+		// CTX Feed Pro (or CTX Feed's compatibility layer) is being updated or
+		// could not start: refuse with 409 `ctxfeed_plugin_updating` (owner
+		// decision 2026-10-16) — BEFORE the validator, whose verdict without
+		// Pro's engines loaded would wrongly mark the feed invalid (CBT-807).
+		// schedule_generation() refuses too, for every other caller.
+		$updating = $this->plugin_updating_error();
+		if ( null !== $updating ) {
+			return $this->wp_error_response( $updating );
+		}
+
 		// Pre-flight validation (FEED-FRD-4.1). FeedValidator was implemented and
 		// DI-registered but never actually called, so a fundamentally invalid
 		// config (no channel selected, an unsupported file format, or zero
@@ -1097,18 +1111,7 @@ class FeedEndpoint extends RestController {
 		}
 
 		if ( is_wp_error( $result ) ) {
-			$error_data = $result->get_error_data();
-			$status     = isset( $error_data['status'] ) ? (int) $error_data['status'] : 409;
-
-			return new \WP_REST_Response(
-				array(
-					'success' => false,
-					'code'    => $result->get_error_code(),
-					'message' => $result->get_error_message(),
-					'data'    => $error_data,
-				),
-				$status 
-			);
+			return $this->wp_error_response( $result );
 		}
 
 		// Check if generation already completed (synchronous fast-path).
@@ -1122,6 +1125,49 @@ class FeedEndpoint extends RestController {
 				'percent'   => $progress['percent'] ?? 0,
 			) 
 		);
+	}
+
+	/**
+	 * A scheduler refusal as the REST response: success false, the error's
+	 * code, message and data, and its HTTP status (409 by default).
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param \WP_Error $error Refusal from FeedScheduler.
+	 * @return \WP_REST_Response
+	 */
+	private function wp_error_response( \WP_Error $error ): \WP_REST_Response {
+		$error_data = $error->get_error_data();
+		$status     = is_array( $error_data ) && isset( $error_data['status'] ) ? (int) $error_data['status'] : 409;
+
+		return new \WP_REST_Response(
+			array(
+				'success' => false,
+				'code'    => $error->get_error_code(),
+				'message' => $error->get_error_message(),
+				'data'    => $error_data,
+			),
+			$status
+		);
+	}
+
+	/**
+	 * The 409 `ctxfeed_plugin_updating` refusal while a feed run would have
+	 * to wait for CTX Feed Pro (or CTX Feed's compatibility layer) to load,
+	 * or null when generation may start (CBT-807). Never throws.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @return \WP_Error|null
+	 */
+	private function plugin_updating_error(): ?\WP_Error {
+		try {
+			$reason = FeedScheduler::wait_reason();
+
+			return '' === $reason ? null : FeedScheduler::waiting_error( $reason );
+		} catch ( \Throwable $e ) {
+			return null;
+		}
 	}
 
 	/**
@@ -1900,6 +1946,8 @@ class FeedEndpoint extends RestController {
 						// missing config.
 						$this->sync_feed_schedule( $feed_data['option_name'], array( 'status' => 0 ) );
 
+						// Its run, held copies and wait go too (CBT-807).
+						$this->stop_deleted_feed( $feed_slug );
 						delete_option( $feed_data['option_name'] );
 						delete_option( 'wf_config' . $feed_slug );
 						( new \CTXFeed\V8\Utility\FeedLogger() )->delete( $feed_slug );
@@ -2063,12 +2111,18 @@ class FeedEndpoint extends RestController {
 	 * ctxfeed-get-feed-status reflects reality), and the reasons are
 	 * returned for the create/update response's warnings array.
 	 *
+	 * CBT-807: while CTX Feed Pro (or CTX Feed's compatibility layer) is
+	 * being updated or could not start, generation is skipped and the
+	 * "plugin updating" message is returned the same way — the feed is NOT
+	 * marked invalid.
+	 *
 	 * @since 8.0.0
 	 *
 	 * @param string $feed_name Feed slug identifier.
-	 * @return string[] Validation reasons that BLOCKED generation (empty
-	 *                  when generation was scheduled, auto-generate is
-	 *                  unavailable, or a non-validation failure occurred).
+	 * @return string[] Reasons that BLOCKED generation — validation errors,
+	 *                  or the plugin-updating message (empty when generation
+	 *                  was scheduled, auto-generate is unavailable, or a
+	 *                  non-validation failure occurred).
 	 */
 	private function schedule_generation_for( string $feed_name ): array {
 		try {
@@ -2082,6 +2136,14 @@ class FeedEndpoint extends RestController {
 				return array();
 			}
 
+			// CTX Feed Pro (or CTX Feed's compatibility layer) is not ready:
+			// the save stands, generation is skipped with the reason as the
+			// response warning — never marked invalid, never queued (CBT-807).
+			$updating = $this->plugin_updating_error();
+			if ( null !== $updating ) {
+				return array( $updating->get_error_message() );
+			}
+
 			if ( $container->has( 'feed.validator' ) ) {
 				$validation = $container->resolve( 'feed.validator' )->validate( $config );
 				if ( empty( $validation['valid'] ) ) {
@@ -2091,7 +2153,10 @@ class FeedEndpoint extends RestController {
 				}
 			}
 
-			$container->resolve( 'feed.scheduler' )->schedule_generation( $feed_name, $config );
+			$result = $container->resolve( 'feed.scheduler' )->schedule_generation( $feed_name, $config );
+			if ( is_wp_error( $result ) && 'ctxfeed_plugin_updating' === $result->get_error_code() ) {
+				return array( $result->get_error_message() );
+			}
 		} catch ( \Throwable $e ) {
 			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Only record of a swallowed scheduling failure inside the bulk loop; the feed still exists and can be regenerated manually.
 			error_log( '[CTXFeed V8] bulk duplicate generation scheduling failed for ' . $feed_name . ': ' . $e->getMessage() );
@@ -3337,6 +3402,45 @@ class FeedEndpoint extends RestController {
 		// and not 0 (a broken wp_options table gives every row id 0 —
 		// CBT-805), and only a wf_feed_ row ever (CBT-695).
 		return FeedLookup::row( $id );
+	}
+
+	/**
+	 * Stop everything of a feed that was just deleted (CBT-807): its queued
+	 * or held batch / finalize copies, its batch cursor (a copy already
+	 * running can no longer hand on), the run state and lock, its wait
+	 * clock and its "update was stopped" record. Without it a run waiting
+	 * at offset 0 kept holding for the whole wait cap, kept the site-wide
+	 * lock, and then reported a stop for a feed that no longer exists.
+	 * Never throws.
+	 *
+	 * @since 8.0.38
+	 *
+	 * @param string $feed_slug Feed slug.
+	 * @return void
+	 */
+	private function stop_deleted_feed( string $feed_slug ): void {
+		try {
+			$container = Container::get_instance();
+			if ( $container->has( 'feed.scheduler' ) ) {
+				$scheduler = $container->resolve( 'feed.scheduler' );
+				if ( is_object( $scheduler ) && method_exists( $scheduler, 'cancel_feed_runs' ) ) {
+					$scheduler->cancel_feed_runs( $feed_slug );
+				}
+			}
+		} catch ( \Throwable $e ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Not debug code: deleting a feed must never fail on its run clean-up, so the exception is swallowed; without this line it would be silent.
+			error_log( '[CTXFeed V8] stopping a deleted feed\'s run failed: ' . $e->getMessage() );
+		}
+
+		try {
+			FeedScheduler::forget_wait( $feed_slug );
+			if ( class_exists( UpdateWaitNotice::class ) ) {
+				UpdateWaitNotice::clear( $feed_slug );
+			}
+		} catch ( \Throwable $e ) {
+			// phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- Same as above.
+			error_log( '[CTXFeed V8] clearing a deleted feed\'s wait failed: ' . $e->getMessage() );
+		}
 	}
 
 	/**

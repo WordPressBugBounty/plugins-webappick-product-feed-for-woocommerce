@@ -15,6 +15,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Url;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -236,13 +237,17 @@ class ImageResolver {
 	 * decoded before re-encoding, so an already-encoded URL is unchanged and
 	 * an encoded slash (`%2F`) inside a segment survives.
 	 *
+	 * Split with Utility\Url, never parse_url(): under a non-C locale
+	 * parse_url() turns bytes 0x80-0x9F into '_' — Polish "anioł.jpg" left
+	 * the feed as "anio%C5_.jpg" (CBT-808, #69627).
+	 *
 	 * @since 8.0.0
 	 *
 	 * @param string $url Absolute URL.
 	 * @return string URL with an encoded path.
 	 */
 	private function encode_url( string $url ): string {
-		$parts = wp_parse_url( $url );
+		$parts = Url::parse( $url );
 		if ( ! is_array( $parts ) || empty( $parts['host'] ) || empty( $parts['path'] ) ) {
 			return $url;
 		}

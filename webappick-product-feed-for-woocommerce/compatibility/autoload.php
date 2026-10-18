@@ -60,7 +60,7 @@ if ( ! class_exists( 'CTXFeed_Compat_Autoloader' ) ) {
 
 			if ( file_exists( $file ) ) {
 				// phpcs:ignore WordPressVIPMinimum.Files.IncludingFile.UsingVariable -- Autoloader by definition resolves a path at runtime; $file is built from the PSR-4 prefix plus __DIR__ and is file_exists()-checked above.
-				require_once $file;
+				include_once $file;
 			}
 		}
 	}
