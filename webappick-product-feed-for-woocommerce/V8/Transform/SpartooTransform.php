@@ -12,6 +12,7 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Ascii;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -63,7 +64,7 @@ class SpartooTransform implements TransformInterface {
 			return $data;
 		}
 
-		$type = strtolower( trim( $data['product_type'] ) );
+		$type = Ascii::lower( trim( $data['product_type'] ) ); // CBT-815: Turkish strtolower() made 'VARIATION' 'varıatıon'.
 
 		$data['product_type'] = ( 'variation' === $type ) ? 'child' : 'parent';
 

@@ -23,6 +23,7 @@ namespace CTXFeed\V8\Feed;
 
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Product\ProductQuery;
+use CTXFeed\V8\Utility\Ascii;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -117,8 +118,8 @@ class FeedReporter {
 		$updated_at = $progress['updated_at'] ?? '';
 		$duration   = '';
 		if ( ! empty( $started_at ) && ! empty( $updated_at ) ) {
-			$start_ts = strtotime( $started_at );
-			$end_ts   = strtotime( $updated_at );
+			$start_ts = strtotime( $started_at ); // tz-safe: a duration — both wall clocks are read in the same zone.
+			$end_ts   = strtotime( $updated_at ); // tz-safe: a duration — both wall clocks are read in the same zone.
 			if ( $start_ts && $end_ts ) {
 				$diff     = $end_ts - $start_ts;
 				$duration = $diff < 60 ? $diff . 's' : round( $diff / 60, 1 ) . 'min';
@@ -140,7 +141,7 @@ class FeedReporter {
 
 		return array(
 			'feed_name'       => isset( $rules['filename'] ) ? $rules['filename'] : $feed_slug,
-			'channel'         => ucwords( str_replace( '_', ' ', $provider ) ),
+			'channel'         => Ascii::ucwords( str_replace( '_', ' ', $provider ) ),
 			'file_type'       => isset( $rules['feedType'] ) ? strtoupper( $rules['feedType'] ) : 'XML',
 			'file_size'       => $file_size > 0 ? size_format( $file_size ) : 'N/A',
 			'total_products'  => $total_products,
@@ -283,7 +284,7 @@ class FeedReporter {
 		$lines[] = '--- Feed Summary ---';
 		$lines[] = '';
 		foreach ( $report['summary'] as $key => $value ) {
-			$label   = ucwords( str_replace( '_', ' ', $key ) );
+			$label   = Ascii::ucwords( str_replace( '_', ' ', $key ) );
 			$lines[] = sprintf( '  %-20s %s', $label . ':', $value );
 		}
 		$lines[] = '';

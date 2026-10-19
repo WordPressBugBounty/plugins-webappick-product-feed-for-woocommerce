@@ -11,6 +11,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Html;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -225,9 +226,11 @@ class TaxonomyResolver {
 			}
 		}
 
+		// ENT_QUOTES on every PHP version (CBT-817 D4): below 8.1 the
+		// default left "Men&#039;s" in product_type.
 		return (string) apply_filters(
 			'woo_feed_filter_product_local_category',
-			htmlspecialchars_decode( $formatted_value ),
+			Html::special_decode( $formatted_value ),
 			$product,
 			$config
 		);

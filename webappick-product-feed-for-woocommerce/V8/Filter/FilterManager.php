@@ -15,6 +15,7 @@
 namespace CTXFeed\V8\Filter;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Ascii;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -141,7 +142,7 @@ class FilterManager {
 		$name = str_replace( 'Filter', '', $short_name );
 
 		// Convert PascalCase to snake_case.
-		$name = strtolower( preg_replace( '/([a-z])([A-Z])/', '$1_$2', $name ) );
+		$name = Ascii::lower( preg_replace( '/([a-z])([A-Z])/', '$1_$2', $name ) );
 
 		return $name;
 	}

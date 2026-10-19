@@ -71,6 +71,15 @@ spl_autoload_register(
 			return;
 		}
 
+		// An old CTX Feed Pro (< 8.0.0, Status\LegacyPro::MIN_VERSION) bundles
+		// the FULL SDK under this same namespace and loads its own copy only
+		// when `class_exists()` says the class is missing. Serving our trimmed
+		// copy (no license()/updater()) fatals every request on its init:1
+		// constructor (CBT-844, #69516), so leave the namespace to it.
+		if ( defined( 'WOO_FEED_PRO_VERSION' ) && version_compare( (string) WOO_FEED_PRO_VERSION, '8.0.0', '<' ) ) {
+			return;
+		}
+
 		$relative_class = substr( $class_name, $prefix_len );
 		$file_path      = __DIR__ . DIRECTORY_SEPARATOR . 'AppServices' . DIRECTORY_SEPARATOR . str_replace( '\\', DIRECTORY_SEPARATOR, $relative_class ) . '.php';
 

@@ -20,6 +20,8 @@ namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Product\ProductMemo;
+use CTXFeed\V8\Utility\Ascii;
+use CTXFeed\V8\Utility\Mb;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -109,8 +111,8 @@ class FacebookTransform implements TransformInterface {
 		// Fire legacy V5 hook for backward compatibility.
 		$title = apply_filters( 'woo_feed_filter_product_title', $title, $data, $config );
 
-		if ( mb_strlen( $title ) > self::TITLE_MAX_LENGTH ) {
-			$title = mb_substr( $title, 0, self::TITLE_MAX_LENGTH );
+		if ( Mb::strlen( $title ) > self::TITLE_MAX_LENGTH ) {
+			$title = Mb::substr( $title, 0, self::TITLE_MAX_LENGTH );
 		}
 
 		$data['title'] = $title;
@@ -146,8 +148,8 @@ class FacebookTransform implements TransformInterface {
 		$description = $this->append_variation_attributes( $description, $data );
 
 		// Truncate to Facebook max.
-		if ( mb_strlen( $description ) > self::DESCRIPTION_MAX_LENGTH ) {
-			$description = mb_substr( $description, 0, self::DESCRIPTION_MAX_LENGTH );
+		if ( Mb::strlen( $description ) > self::DESCRIPTION_MAX_LENGTH ) {
+			$description = Mb::substr( $description, 0, self::DESCRIPTION_MAX_LENGTH );
 		}
 
 		$data['description'] = $description;
@@ -211,7 +213,7 @@ class FacebookTransform implements TransformInterface {
 
 			// Clean up attribute name: remove "attribute_pa_" or "attribute_" prefix.
 			$clean_name = str_replace( array( 'attribute_pa_', 'attribute_' ), '', $attr_name );
-			$clean_name = ucfirst( str_replace( array( '-', '_' ), ' ', $clean_name ) );
+			$clean_name = Ascii::ucfirst( str_replace( array( '-', '_' ), ' ', $clean_name ) );
 
 			$attr_parts[] = $clean_name . ': ' . $attr_value;
 		}
@@ -287,7 +289,7 @@ class FacebookTransform implements TransformInterface {
 				continue;
 			}
 
-			$labels[] = mb_substr( $label, 0, self::INTERNAL_LABEL_MAX_LENGTH );
+			$labels[] = Mb::substr( $label, 0, self::INTERNAL_LABEL_MAX_LENGTH );
 
 			if ( count( $labels ) >= self::INTERNAL_LABEL_MAX_COUNT ) {
 				break;
@@ -346,7 +348,7 @@ class FacebookTransform implements TransformInterface {
 			return $data;
 		}
 
-		$availability = strtolower( trim( $data['availability'] ) );
+		$availability = Ascii::lower( trim( $data['availability'] ) ); // CBT-815: never the locale's fold.
 
 		// Replace underscores with spaces for Facebook format.
 		$availability = str_replace( '_', ' ', $availability );

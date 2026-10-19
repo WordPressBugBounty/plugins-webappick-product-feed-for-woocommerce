@@ -20,6 +20,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\NumberFormat;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -73,7 +74,10 @@ class PriceResolver {
 			return '';
 		}
 
-		return (string) $price;
+		// A float (a tax twin, a discount or currency shim's result) becomes
+		// machine text — never "23,79" (PHP 7 LC_NUMERIC) or
+		// "23.789999999999999" (another plugin's precision). CBT-809 B1.
+		return is_float( $price ) ? NumberFormat::to_machine( $price ) : (string) $price;
 	}
 
 	/**
@@ -349,7 +353,7 @@ class PriceResolver {
 
 		switch ( $strategy ) {
 			case 'max':
-				return (string) max( $prices );
+				return NumberFormat::to_machine( max( $prices ) );
 
 			case 'first':
 				// The first variation in the product's own (menu) order — the
@@ -359,15 +363,15 @@ class PriceResolver {
 				if ( is_object( $product ) && is_callable( array( $product, 'get_visible_children' ) ) ) {
 					foreach ( (array) $product->get_visible_children() as $variation_id ) {
 						if ( isset( $prices[ $variation_id ] ) && '' !== (string) $prices[ $variation_id ] ) {
-							return (string) $prices[ $variation_id ];
+							return NumberFormat::to_machine( $prices[ $variation_id ] );
 						}
 					}
 				}
-				return (string) reset( $prices );
+				return NumberFormat::to_machine( reset( $prices ) );
 
 			case 'min':
 			default:
-				return (string) min( $prices );
+				return NumberFormat::to_machine( min( $prices ) );
 		}
 	}
 
@@ -429,6 +433,8 @@ class PriceResolver {
 			return wc_get_price_excluding_tax( $product, array( 'price' => $total ) );
 		}
 
-		return (string) $total;
+		// 10.1 + 20.2 is 30.299999999999997: "30.3" at PHP's default
+		// precision, whatever another plugin set (CBT-809 B1).
+		return NumberFormat::to_machine( $total );
 	}
 }

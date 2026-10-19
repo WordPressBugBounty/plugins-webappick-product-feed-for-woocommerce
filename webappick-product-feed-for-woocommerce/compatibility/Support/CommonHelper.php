@@ -12,6 +12,9 @@
 
 namespace CTXFeed\Compat\Support;
 
+use CTXFeed\V8\Utility\Html;
+use CTXFeed\V8\Utility\Regex;
+
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -56,10 +59,12 @@ class CommonHelper {
 		$content = strip_shortcodes( do_shortcode( $content ) );
 		$content = self::strip_invalid_xml( $content );
 
-		// Target residual shortcode-like patterns.
-		$expression = '/\[\/*[č?a-zA-Z1-90_| -=\'"\{\}]*\/*\]/m';
-
-		return preg_replace( $expression, '', $content );
+		// Target residual shortcode-like patterns: V5's catch-all with
+		// possessive quantifiers (CBT-822 E4) — the same matches; the
+		// greedy original backtracked to null on "[" + a long run of "/",
+		// and that null became Rank Math's (empty) description. A PCRE
+		// failure now keeps the text.
+		return Regex::replace( Regex::SHORTCODE_CATCH_ALL, '', (string) $content, 'Rank Math description shortcodes' );
 	}
 
 	/**
@@ -112,6 +117,7 @@ class CommonHelper {
 			return '';
 		}
 
-		return wp_strip_all_tags( $value );
+		// Never '' because core's script/style regex gave up (CBT-822 E1).
+		return Html::strip_all_tags( $value );
 	}
 }

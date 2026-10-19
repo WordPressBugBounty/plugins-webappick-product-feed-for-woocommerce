@@ -33,8 +33,10 @@ use CTXFeed\V8\Channel\AutoAttributes;
 use CTXFeed\V8\Template\GroupedAttributeBuilder;
 use CTXFeed\V8\Product\SkroutzVariationsBuilder;
 use CTXFeed\V8\Utility\FeedLogger;
+use CTXFeed\V8\Utility\FeedRuntime;
 use CTXFeed\V8\Utility\Filesystem;
 use CTXFeed\V8\Utility\Memory;
+use CTXFeed\V8\Utility\Regex;
 use CTXFeed\V8\Utility\WooContext;
 
 // Exit if accessed directly.
@@ -366,11 +368,86 @@ class FeedGenerator {
 		// Every run resolves as a logged-out visitor — the price Google sees
 		// on the landing page — whoever started it (CBT-739). Scheduled runs
 		// already have no user; manual and browser-driven runs now match.
+		// Inside the guest switch, FeedRuntime pins the PHP number/case
+		// locale, precision, charset and timezone another plugin may have
+		// changed, and restores them after the batch (CBT-810).
 		return \CTXFeed\V8\Utility\GuestContext::run(
 			function () use ( $feed_name, $offset, $batch_size, $context ): array {
-				return $this->run_batch( $feed_name, $offset, $batch_size, $context );
+				return FeedRuntime::run(
+					function () use ( $feed_name, $offset, $batch_size, $context ): array {
+						return $this->run_batch( $feed_name, $offset, $batch_size, $context );
+					}
+				);
 			}
 		);
+	}
+
+	/**
+	 * Start counting this batch's PCRE failures (Regex::begin_batch_tally()).
+	 * Never throws: a missing helper only means no feed-log line.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @return void
+	 */
+	private static function begin_regex_tally(): void {
+		try {
+			if ( is_callable( array( Regex::class, 'begin_batch_tally' ) ) ) {
+				Regex::begin_batch_tally();
+			}
+		} catch ( \Throwable $e ) {
+			unset( $e );
+		}
+	}
+
+	/**
+	 * Stop counting and return this batch's PCRE failure lines
+	 * (Regex::end_batch_tally()). Runs inside the batch's finally, so it
+	 * never throws.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @return string[]
+	 */
+	private static function end_regex_tally(): array {
+		try {
+			if ( is_callable( array( Regex::class, 'end_batch_tally' ) ) ) {
+				return Regex::end_batch_tally();
+			}
+		} catch ( \Throwable $e ) {
+			unset( $e );
+		}
+
+		return array();
+	}
+
+	/**
+	 * Log a batch-end hook listener that threw (CBT-810).
+	 *
+	 * System trace plus the feed's own log — never the WooCommerce `ctxfeed`
+	 * source, which carries PHP errors only (owner rule).
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param string     $hook      Hook name.
+	 * @param string     $feed_name Feed slug.
+	 * @param \Throwable $error     What the listener threw.
+	 * @return void
+	 */
+	private function log_batch_end_hook_failure( string $hook, string $feed_name, \Throwable $error ): void {
+		try {
+			$message = sprintf( 'A %s listener failed: %s', $hook, $error->getMessage() );
+			if ( $this->logger ) {
+				$this->logger->info( '[BATCH] ' . $feed_name . ': ' . $message );
+			}
+			if ( $this->feed_logger ) {
+				$this->feed_logger->warning( $feed_name, $message );
+			}
+		} catch ( \Throwable $log_error ) {
+			// Logging runs inside the batch's finally: it must never replace
+			// the batch's own exception.
+			unset( $log_error );
+		}
 	}
 
 	/**
@@ -404,6 +481,16 @@ class FeedGenerator {
 		// Fresh product memo per batch — parent objects are reused heavily
 		// WITHIN a batch but must never go stale ACROSS batches.
 		\CTXFeed\V8\Product\ProductMemo::clear();
+
+		// Fresh shipping time budget per batch (CBT-820). Before 8.0.39 the
+		// budget lasted the whole request, so every later batch a runner
+		// processed in the same request shipped 0.00 shipping. Only the
+		// budget resets — the shipping price memo is kept on purpose (a
+		// per-batch flush would recompute every rate). Not loaded yet means
+		// nothing was spent (mid-update rule: no autoload from here).
+		if ( class_exists( '\CTXFeed\V8\Product\ShippingResolver', false ) && is_callable( array( '\CTXFeed\V8\Product\ShippingResolver', 'reset_budget' ) ) ) {
+			\CTXFeed\V8\Product\ShippingResolver::reset_budget();
+		}
 
 		// Inter-batch gap: wall-clock the scheduler chain spent idle between
 		// the previous batch's end and this one's start. CPU traces cannot
@@ -448,458 +535,499 @@ class FeedGenerator {
 		// headers/rows all see the same augmented mapping. CHAN-FRD-4.1.
 		$config = AutoAttributes::apply( $config );
 
-		// Step 4: V5 batch-start hooks — fire AFTER config is loaded so the
-		// compat shims (WPML/SitePress/PolylangCompatibility/WOOCSCompatibility/etc.)
-		// receive the Config object their callbacks expect. V5 fires both
-		// hooks at the same boundary; we mirror that.
-		// @implements FEED-FRD-9.1.
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
-		do_action( 'before_woo_feed_generate_batch_data', $config );
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
-		do_action( 'before_woo_feed_get_product_information', $config );
-
-		// Bind the query to this feed so get_paginated_ids() reads from
-		// the snapshot transient seeded at schedule_generation() time.
-		// Skipping this binding falls back to running the full
-		// WC_Product_Query on every batch, which is the 400×-redundant
-		// behaviour we're avoiding for 200K-product catalogs.
-		$this->product_query->set_feed_name( $feed_name );
-
-		$ids = $this->product_query->get_paginated_ids( $config, $offset, $batch_size );
-
-		/**
-		 * Re-assert the per-run product context before the product loop.
-		 *
-		 * The ID resolution above is not always a transient read: when the
-		 * snapshot is gone — an object cache dropped it between the
-		 * scheduler request and this batch, a cache purge, or the snapshot
-		 * TTL — ProductQuery runs the live WC_Product_Query here and fires
-		 * `ctxfeed_product_query_args` / `ctxfeed_product_ids`. Anything
-		 * hooked there (our own compat shims, or any third-party plugin)
-		 * can leave the request in a different language or currency than
-		 * the feed's, and every row after it then resolves its links,
-		 * category paths and taxonomy text in the wrong context —
-		 * silently, because the run still "succeeds". A
-		 * non-default-language feed whose filters match translated values
-		 * came out EMPTY (HelpScout #69241, CBT-628).
-		 *
-		 * This is a DEDICATED action, not a second fire of the V5
-		 * `before_woo_feed_get_product_information` hook: that hook's
-		 * once-per-batch sequence is a documented V5 compatibility
-		 * contract and third-party listeners rely on it. Compat shims
-		 * hook this one to restate what they set at batch start; every
-		 * shipped listener is an idempotent switch that returns early
-		 * when the context is already the feed's.
-		 *
-		 * @since 8.0.26
-		 *
-		 * @param Config $config    Feed configuration.
-		 * @param string $feed_name Feed slug.
-		 */
-		if ( apply_filters( 'ctxfeed_reassert_batch_context_enabled', true, $config, $feed_name ) ) {
-			do_action( 'ctxfeed_reassert_batch_context', $config, $feed_name );
-		}
-
-		// Products actually SCANNED this batch (the scheduled work). Drives
-		// adaptive batch sizing below — recording the post-filter WRITTEN count
-		// instead made the size ratchet to BATCH_FLOOR on feeds that filter out
-		// many products (a 12K feed collapsed 250 -> 25). @implements FEED-FRD-11.2.
-		$scanned = max( count( $ids ), 1 );
-
-		// Batch position for the log lines and the progress record. The
-		// number is SEQUENTIAL (batches already done + 1), never derived from
-		// offset ÷ batch size: the adaptive size grows mid-run, and dividing
-		// by the new size restarted the numbering ("Batch 1/3 … Batch 1/2").
-		// The total is a projection from the current size, so it shrinks
-		// when the size climbs — that change is logged explicitly.
-		$progress_before = $this->manager->get_progress( $feed_name );
-		$log_total       = isset( $context['total'] ) ? (int) $context['total'] : 0;
-		$log_batch_no    = (int) ( $progress_before['batches_done'] ?? 0 ) + 1;
-		$remaining_after = max( 0, $log_total - ( $offset + $batch_size ) );
-		$log_batches     = ( $batch_size > 0 ) ? $log_batch_no + (int) ceil( $remaining_after / $batch_size ) : $log_batch_no;
-
-		if ( $this->feed_logger ) {
-			$planned = (int) ( $progress_before['batches_total'] ?? 0 );
-			if ( $log_batch_no > 1 && $planned > 0 && $planned !== $log_batches ) {
-				$this->feed_logger->info(
-					$feed_name,
-					sprintf( 'Batch size adjusted to %s — now %s', FeedLogger::products( $batch_size ), FeedLogger::batches( $log_batches ) )
-				);
-			}
-			$this->feed_logger->info( $feed_name, sprintf( 'Batch %d/%d — processing…', $log_batch_no, $log_batches ) );
-			// Flush immediately: FeedLogger buffers until batch end, so a
-			// batch hard-killed mid-run (web-server timeout, OOM) would
-			// otherwise vanish from the log without even a start line —
-			// which is exactly what made the shipping-batch deaths
-			// undiagnosable from the feed log.
-			$this->feed_logger->flush( $feed_name );
-		}
-
-		$this->cache_warmer->warm( $ids );
-
-		// Pre-compute format and provider (used by init, loop, and grouping).
-		$format       = $config->get( 'feedType', 'xml' );
-		$format_lower = strtolower( $format );
-		$provider     = $config->get_provider();
-		$is_xml       = ( 'xml' === $format_lower );
-
-		// A run's first batch starts a fresh promotion set (CBT-716).
-		if ( 0 === $offset ) {
-			unset( $this->promotions_seen[ $feed_name ] );
-			delete_transient( $this->promotions_key( $feed_name ) );
-		}
-
-		// NOTE: the canonical per-channel XML item/items wrapper (Google →
-		// <item>, googlereview → <review>, …) is resolved inside XMLTemplate
-		// from the provider (see Channel\FeedWrapper), so header, rows AND
-		// footer stay consistent — the footer renders in finalize() from a
-		// separately-built Config, so forcing the wrapper here would only fix
-		// the header/rows and leave a mismatched closing tag. TMPL-FRD-4.2.
-
-		// First batch initialization. @implements FEED-FRD-2.3.
-		if ( 0 === $offset ) {
-			// Stream into a .tmp working file — never the live feed. finalize()
-			// atomically swaps it into place, so a mid-run crash leaves the
-			// previous good feed untouched (CTX 1.1.4 / Comp 3.5).
-			$file_path = $this->get_working_file_path( $feed_name, $format, $provider );
-
-			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Writing the feed file IS the product; StreamWriter needs a real handle for chunked output and WP_Filesystem offers no streaming API.
-			$this->stream_writer->open( $file_path, $format );
-
-			// UTF-8 BOM (opt-in) for delimited text feeds — Excel and some
-			// receivers only read them as UTF-8 with a leading BOM. Must land
-			// before the header, so it's written here on the first batch only.
-			if ( in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true )
-				&& 'yes' === $config->get( 'csv_bom', 'no' ) ) {
-				$this->stream_writer->write_bom();
-			}
-
-			// Pass config so the Custom Template 2 (XML) routing can fire
-			// for custom2-merchant providers. PROD-FRD-10.6.
-			$template = $this->template_engine->get_template( $format, $config );
-
-			// For CSV/TSV/TXT: write mapped merchant attribute headers.
-			if ( in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true ) && $this->attribute_mapper ) {
-				$mattributes = $config->get_merchant_attributes();
-
-				// Structured-only attributes (e.g. Facebook `video`, a nested
-				// <video><url> element) have no flat-column form — drop them from
-				// the header so it aligns with the rows, which omit them too.
-				$mattributes = $this->strip_structured_only_headers( $mattributes );
-
-				// Delimited formats put each nested group (tax, shipping,
-				// product_detail, installment, subscription_cost) in ONE
-				// column — collapse the per-member entries so the header
-				// aligns with build_delimited()'d row data. TMPL-FRD-4.5.
-				if ( $this->grouped_builder ) {
-					$mattributes = $this->grouped_builder->collapse_delimited_headers( $mattributes, $provider );
-				}
-
-				$headers = $this->attribute_mapper->get_mapped_headers( $mattributes, $provider, $format );
-				$this->stream_writer->write_header( $this->build_csv_header( $headers, $template, $config ) );
-			} else {
-				$this->stream_writer->write_header( $template->render_header( $config ) );
-			}
-		} elseif ( $this->stream_writer ) {
-			// Batches after the first run in a FRESH PHP process (each
-			// Action Scheduler job is its own request), where the handle
-			// opened at offset 0 does not exist. Reopen the partial file
-			// in APPEND mode — without this every row from batch 2+
-			// wrote to a null handle and was silently dropped, truncating
-			// any catalog larger than one batch. Same-process loops
-			// (tests, WP-CLI) skip the reopen: the handle is still live.
-			$file_path = $this->get_working_file_path( $feed_name, $format, $provider );
-			if ( ! $this->stream_writer->is_open() || $this->stream_writer->get_file_path() !== $file_path ) {
-				$this->stream_writer->open_append( $file_path, $format );
-			}
-		}
-
-		// Retry idempotency: the smaller-batch retry (8.0.7) re-runs the SAME
-		// offset, but the rows the failed attempt already streamed stay in the
-		// working file — so a retried batch shipped partially duplicated. Record
-		// the working-file length before this offset writes anything and, when
-		// the same offset comes round again, roll the file back to it first.
-		// Google Promotions also roll back the promotion ids the batch saw
-		// (CBT-807): otherwise the redo drops them all as duplicates.
-		$this->arm_batch_marker( $feed_name, $offset, 'google_promotions' === $provider );
-
-		// Step 5: V5 product-loop hooks — fired before the actual iteration
-		// begins so compat shims like the Pro `MultiCurrency` orchestrator
-		// can swap currency context for the entire batch. V5 signature:
-		// ($productIds, $feedRules, $config). PROD-FRD-10.7.
-		$feed_rules_array = method_exists( $config, 'to_array' ) ? $config->to_array() : array();
-		do_action( 'woo_feed_before_product_loop', $ids, $feed_rules_array, $config );
-
-		// Product loop — filter → resolve → transform → render → write.
+		// Everything from the batch-start hooks to the end of the product loop
+		// runs inside try/finally so the batch-END hooks fire on every exit
+		// path. The compat shims restore language and currency there (WPML,
+		// Polylang, WOOCS, CURCY, …): when a batch threw, those restores were
+		// skipped and the next feed generated in the same process inherited
+		// the previous feed's language or currency (CBT-810, plan §1.3). The
+		// exception itself still propagates, so the scheduler's hold and
+		// smaller-batch retry behave exactly as before.
 		//
-		// Wrapped in try/finally so the paired `woo_feed_after_product_loop`
-		// teardown ALWAYS fires — even if a row throws — keeping before/after
-		// hook listeners balanced (e.g. FeedTaxLocation, MultiCurrency) so
-		// their state never leaks past the batch. Any exception still
-		// propagates out of the finally.
-		$count       = 0;
-		$error_count = 0;
-
-		// Time box. A batch must finish well inside Action Scheduler's period
-		// (300 s by default) — an action still running past it is stamped
-		// failed and RE-QUEUED, so a second copy of the same batch starts while
-		// the first is still writing (customer site, 2026-09-03: 2,831 products
-		// took 78 s, 3,572 took over 300 s — cost per product is not linear at
-		// scale). Rather than trust a projection, stop scanning when the box is
-		// used up and hand the remaining ids to the next batch; the scheduler
-		// advances by the number actually processed.
-		$time_box_seconds = $this->batch_time_box_seconds();
-		$deadline         = $start_time + $time_box_seconds;
-		$processed_ids    = 0;
-		$time_boxed       = false;
-		$last_heartbeat   = $start_time;
-
-		// Memory box. Same contract as the time box, for the other resource
-		// a batch can exhaust: stop scanning once the request is close to
-		// PHP's memory limit and let the next batch continue from there with
-		// a fresh pool, instead of fatalling mid-write (CBT-629).
-		$memory_box_bytes = $this->batch_memory_box_bytes();
-		$memory_boxed     = false;
-
-		// Per-stage timing (seconds) + the slowest single product. Costs two
-		// microtime() calls per stage per product and answers "where do the
-		// milliseconds go?" from a customer log instead of a guess.
-		$stage_s = array(
-			'load'      => 0.0,
-			'filter'    => 0.0,
-			'resolve'   => 0.0,
-			'transform' => 0.0,
-			'render'    => 0.0,
-			'write'     => 0.0,
-		);
-		$slowest = array(
-			'id' => 0,
-			'ms' => 0.0,
-		);
-
-		// Per-stage query counts ($wpdb->num_queries deltas — maintained by
-		// WP without SAVEQUERIES). A resolve stage issuing more than a
-		// handful of queries per product is the signal for a cache-priming
-		// gap; free to collect.
-		global $wpdb;
-		$track_q = is_object( $wpdb ) && isset( $wpdb->num_queries );
-		$stage_q = array_fill_keys( array_keys( $stage_s ), 0 );
-		$q_start = $track_q ? (int) $wpdb->num_queries : 0;
-
-		// Exclusion accounting. Products dropped by a filter or that fail to
-		// load are NOT errors, so they never appeared in "written / skipped"
-		// — a feed could report "3 in batch, 0 written, 0 skipped" with no
-		// trace of WHY (support #68913: every product silently excluded).
-		// Tally by filter name via FilterManager's ctxfeed_filter_excluded
-		// action so the batch log names the responsible filter.
-		$excluded_by = array();
-		$unloadable  = 0;
-		$tally       = static function ( $filter_name ) use ( &$excluded_by ) {
-			$key                 = (string) $filter_name;
-			$excluded_by[ $key ] = ( $excluded_by[ $key ] ?? 0 ) + 1;
-		};
-		add_action( 'ctxfeed_filter_excluded', $tally, 10, 1 );
-
+		// PCRE failures inside this batch (a value kept because a regex hit
+		// pcre.backtrack_limit, …) are counted from here and written to the
+		// feed's own log below (CBT-822, plan amendment 40).
+		self::begin_regex_tally();
 		try {
-			foreach ( $ids as $product_id ) {
-				$now_ts = microtime( true );
-				if ( $processed_ids > 0 && $now_ts >= $deadline ) {
-					$time_boxed = true;
-					break;
-				}
-				if ( $processed_ids > 0 && $memory_box_bytes > 0 && Memory::usage() >= $memory_box_bytes ) {
-					// Reuses the time-box path: the offset advances by what
-					// was scanned and the rest goes to the next batch.
-					$time_boxed   = true;
-					$memory_boxed = true;
-					break;
-				}
-				++$processed_ids;
+			// Step 4: V5 batch-start hooks — fire AFTER config is loaded so the
+			// compat shims (WPML/SitePress/PolylangCompatibility/WOOCSCompatibility/etc.)
+			// receive the Config object their callbacks expect. V5 fires both
+			// hooks at the same boundary; we mirror that.
+			// @implements FEED-FRD-9.1.
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
+			do_action( 'before_woo_feed_generate_batch_data', $config );
+			// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
+			do_action( 'before_woo_feed_get_product_information', $config );
 
-				// Heartbeat: touch the progress record every few seconds so the
-				// admin sees the count climbing inside a long batch and the
-				// stall detector never mistakes a working batch for a dead one.
-				if ( ( $now_ts - $last_heartbeat ) >= self::HEARTBEAT_SECONDS ) {
-					$last_heartbeat = $now_ts;
-					$this->manager->heartbeat( $feed_name, $offset + $processed_ids - 1 );
+			// Bind the query to this feed so get_paginated_ids() reads from
+			// the snapshot transient seeded at schedule_generation() time.
+			// Skipping this binding falls back to running the full
+			// WC_Product_Query on every batch, which is the 400×-redundant
+			// behaviour we're avoiding for 200K-product catalogs.
+			$this->product_query->set_feed_name( $feed_name );
+
+			$ids = $this->product_query->get_paginated_ids( $config, $offset, $batch_size );
+
+			/**
+			 * Re-assert the per-run product context before the product loop.
+			 *
+			 * The ID resolution above is not always a transient read: when the
+			 * snapshot is gone — an object cache dropped it between the
+			 * scheduler request and this batch, a cache purge, or the snapshot
+			 * TTL — ProductQuery runs the live WC_Product_Query here and fires
+			 * `ctxfeed_product_query_args` / `ctxfeed_product_ids`. Anything
+			 * hooked there (our own compat shims, or any third-party plugin)
+			 * can leave the request in a different language or currency than
+			 * the feed's, and every row after it then resolves its links,
+			 * category paths and taxonomy text in the wrong context —
+			 * silently, because the run still "succeeds". A
+			 * non-default-language feed whose filters match translated values
+			 * came out EMPTY (HelpScout #69241, CBT-628).
+			 *
+			 * This is a DEDICATED action, not a second fire of the V5
+			 * `before_woo_feed_get_product_information` hook: that hook's
+			 * once-per-batch sequence is a documented V5 compatibility
+			 * contract and third-party listeners rely on it. Compat shims
+			 * hook this one to restate what they set at batch start; every
+			 * shipped listener is an idempotent switch that returns early
+			 * when the context is already the feed's.
+			 *
+			 * @since 8.0.26
+			 *
+			 * @param Config $config    Feed configuration.
+			 * @param string $feed_name Feed slug.
+			 */
+			if ( apply_filters( 'ctxfeed_reassert_batch_context_enabled', true, $config, $feed_name ) ) {
+				do_action( 'ctxfeed_reassert_batch_context', $config, $feed_name );
+			}
+
+			// Products actually SCANNED this batch (the scheduled work). Drives
+			// adaptive batch sizing below — recording the post-filter WRITTEN count
+			// instead made the size ratchet to BATCH_FLOOR on feeds that filter out
+			// many products (a 12K feed collapsed 250 -> 25). @implements FEED-FRD-11.2.
+			$scanned = max( count( $ids ), 1 );
+
+			// Batch position for the log lines and the progress record. The
+			// number is SEQUENTIAL (batches already done + 1), never derived from
+			// offset ÷ batch size: the adaptive size grows mid-run, and dividing
+			// by the new size restarted the numbering ("Batch 1/3 … Batch 1/2").
+			// The total is a projection from the current size, so it shrinks
+			// when the size climbs — that change is logged explicitly.
+			$progress_before = $this->manager->get_progress( $feed_name );
+			$log_total       = isset( $context['total'] ) ? (int) $context['total'] : 0;
+			$log_batch_no    = (int) ( $progress_before['batches_done'] ?? 0 ) + 1;
+			$remaining_after = max( 0, $log_total - ( $offset + $batch_size ) );
+			$log_batches     = ( $batch_size > 0 ) ? $log_batch_no + (int) ceil( $remaining_after / $batch_size ) : $log_batch_no;
+
+			if ( $this->feed_logger ) {
+				$planned = (int) ( $progress_before['batches_total'] ?? 0 );
+				if ( $log_batch_no > 1 && $planned > 0 && $planned !== $log_batches ) {
+					$this->feed_logger->info(
+						$feed_name,
+						sprintf( 'Batch size adjusted to %s — now %s', FeedLogger::products( $batch_size ), FeedLogger::batches( $log_batches ) )
+					);
+				}
+				$this->feed_logger->info( $feed_name, sprintf( 'Batch %d/%d — processing…', $log_batch_no, $log_batches ) );
+				// Flush immediately: FeedLogger buffers until batch end, so a
+				// batch hard-killed mid-run (web-server timeout, OOM) would
+				// otherwise vanish from the log without even a start line —
+				// which is exactly what made the shipping-batch deaths
+				// undiagnosable from the feed log.
+				$this->feed_logger->flush( $feed_name );
+			}
+
+			$this->cache_warmer->warm( $ids );
+
+			// Pre-compute format and provider (used by init, loop, and grouping).
+			$format       = $config->get( 'feedType', 'xml' );
+			$format_lower = strtolower( $format );
+			$provider     = $config->get_provider();
+			$is_xml       = ( 'xml' === $format_lower );
+
+			// A run's first batch starts a fresh promotion set (CBT-716).
+			if ( 0 === $offset ) {
+				unset( $this->promotions_seen[ $feed_name ] );
+				delete_transient( $this->promotions_key( $feed_name ) );
+			}
+
+			// NOTE: the canonical per-channel XML item/items wrapper (Google →
+			// <item>, googlereview → <review>, …) is resolved inside XMLTemplate
+			// from the provider (see Channel\FeedWrapper), so header, rows AND
+			// footer stay consistent — the footer renders in finalize() from a
+			// separately-built Config, so forcing the wrapper here would only fix
+			// the header/rows and leave a mismatched closing tag. TMPL-FRD-4.2.
+
+			// First batch initialization. @implements FEED-FRD-2.3.
+			if ( 0 === $offset ) {
+				// Stream into a .tmp working file — never the live feed. finalize()
+				// atomically swaps it into place, so a mid-run crash leaves the
+				// previous good feed untouched (CTX 1.1.4 / Comp 3.5).
+				$file_path = $this->get_working_file_path( $feed_name, $format, $provider );
+
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fopen -- Writing the feed file IS the product; StreamWriter needs a real handle for chunked output and WP_Filesystem offers no streaming API.
+				$this->stream_writer->open( $file_path, $format );
+
+				// UTF-8 BOM (opt-in) for delimited text feeds — Excel and some
+				// receivers only read them as UTF-8 with a leading BOM. Must land
+				// before the header, so it's written here on the first batch only.
+				if ( in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true )
+					&& 'yes' === $config->get( 'csv_bom', 'no' ) ) {
+					$this->stream_writer->write_bom();
 				}
 
-				// Per-product error isolation. A throw anywhere in ONE
-				// product's work — loading it, deciding whether it belongs in
-				// the feed, resolving, transforming, rendering, writing — must
-				// NOT abort the batch; that would drop every remaining product
-				// in it. Log the product id + reason, count it, and move on, so
-				// a single malformed product can't break the whole feed
-				// (the resilience the V5 engine relied on, made explicit here).
-				//
-				// The load and filter stages are INSIDE the guard (CBT-632):
-				// `should_include()` runs our own filters and the public
-				// `ctxfeed_product_should_include` hook, so it executes other
-				// plugins' code. A throw there used to escape the loop and kill
-				// the batch, which the scheduler then retried at a halved size
-				// until it gave up — the whole feed lost to one listener.
-				try {
-					$p0               = microtime( true );
-					$q0               = $track_q ? (int) $wpdb->num_queries : 0;
-					$product          = wc_get_product( $product_id );
-					$p1               = microtime( true );
-					$q1               = $track_q ? (int) $wpdb->num_queries : 0;
-					$stage_s['load'] += $p1 - $p0;
-					$stage_q['load'] += $q1 - $q0;
-					if ( ! $product ) {
-						++$unloadable;
-						continue;
+				// Pass config so the Custom Template 2 (XML) routing can fire
+				// for custom2-merchant providers. PROD-FRD-10.6.
+				$template = $this->template_engine->get_template( $format, $config );
+
+				// For CSV/TSV/TXT: write mapped merchant attribute headers.
+				if ( in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true ) && $this->attribute_mapper ) {
+					$mattributes = $config->get_merchant_attributes();
+
+					// Structured-only attributes (e.g. Facebook `video`, a nested
+					// <video><url> element) have no flat-column form — drop them from
+					// the header so it aligns with the rows, which omit them too.
+					$mattributes = $this->strip_structured_only_headers( $mattributes );
+
+					// Delimited formats put each nested group (tax, shipping,
+					// product_detail, installment, subscription_cost) in ONE
+					// column — collapse the per-member entries so the header
+					// aligns with build_delimited()'d row data. TMPL-FRD-4.5.
+					if ( $this->grouped_builder ) {
+						$mattributes = $this->grouped_builder->collapse_delimited_headers( $mattributes, $provider );
 					}
 
-					// One-slot register: transforms that re-load "their own"
-					// product by ID get this object back from ProductMemo.
-					\CTXFeed\V8\Product\ProductMemo::remember_current( $product );
+					$headers = $this->attribute_mapper->get_mapped_headers( $mattributes, $provider, $format );
+					$this->stream_writer->write_header( $this->build_csv_header( $headers, $template, $config ) );
+				} else {
+					$this->stream_writer->write_header( $template->render_header( $config ) );
+				}
+			} elseif ( $this->stream_writer ) {
+				// Batches after the first run in a FRESH PHP process (each
+				// Action Scheduler job is its own request), where the handle
+				// opened at offset 0 does not exist. Reopen the partial file
+				// in APPEND mode — without this every row from batch 2+
+				// wrote to a null handle and was silently dropped, truncating
+				// any catalog larger than one batch. Same-process loops
+				// (tests, WP-CLI) skip the reopen: the handle is still live.
+				$file_path = $this->get_working_file_path( $feed_name, $format, $provider );
+				if ( ! $this->stream_writer->is_open() || $this->stream_writer->get_file_path() !== $file_path ) {
+					$this->stream_writer->open_append( $file_path, $format );
+				}
+			}
 
-					$included           = $this->filter_manager->should_include( $product, $config );
-					$p2                 = microtime( true );
-					$q2                 = $track_q ? (int) $wpdb->num_queries : 0;
-					$stage_s['filter'] += $p2 - $p1;
-					$stage_q['filter'] += $q2 - $q1;
-					if ( ! $included ) {
-						continue;
+			// Retry idempotency: the smaller-batch retry (8.0.7) re-runs the SAME
+			// offset, but the rows the failed attempt already streamed stay in the
+			// working file — so a retried batch shipped partially duplicated. Record
+			// the working-file length before this offset writes anything and, when
+			// the same offset comes round again, roll the file back to it first.
+			// Google Promotions also roll back the promotion ids the batch saw
+			// (CBT-807): otherwise the redo drops them all as duplicates.
+			$this->arm_batch_marker( $feed_name, $offset, 'google_promotions' === $provider );
+
+			// Step 5: V5 product-loop hooks — fired before the actual iteration
+			// begins so compat shims like the Pro `MultiCurrency` orchestrator
+			// can swap currency context for the entire batch. V5 signature:
+			// ($productIds, $feedRules, $config). PROD-FRD-10.7.
+			$feed_rules_array = method_exists( $config, 'to_array' ) ? $config->to_array() : array();
+			do_action( 'woo_feed_before_product_loop', $ids, $feed_rules_array, $config );
+
+			// Product loop — filter → resolve → transform → render → write.
+			//
+			// Wrapped in try/finally so the paired `woo_feed_after_product_loop`
+			// teardown ALWAYS fires — even if a row throws — keeping before/after
+			// hook listeners balanced (e.g. FeedTaxLocation, MultiCurrency) so
+			// their state never leaks past the batch. Any exception still
+			// propagates out of the finally.
+			$count       = 0;
+			$error_count = 0;
+
+			// Time box. A batch must finish well inside Action Scheduler's period
+			// (300 s by default) — an action still running past it is stamped
+			// failed and RE-QUEUED, so a second copy of the same batch starts while
+			// the first is still writing (customer site, 2026-09-03: 2,831 products
+			// took 78 s, 3,572 took over 300 s — cost per product is not linear at
+			// scale). Rather than trust a projection, stop scanning when the box is
+			// used up and hand the remaining ids to the next batch; the scheduler
+			// advances by the number actually processed.
+			$time_box_seconds = $this->batch_time_box_seconds();
+			$deadline         = $start_time + $time_box_seconds;
+			$processed_ids    = 0;
+			$time_boxed       = false;
+			$last_heartbeat   = $start_time;
+
+			// Memory box. Same contract as the time box, for the other resource
+			// a batch can exhaust: stop scanning once the request is close to
+			// PHP's memory limit and let the next batch continue from there with
+			// a fresh pool, instead of fatalling mid-write (CBT-629).
+			$memory_box_bytes = $this->batch_memory_box_bytes();
+			$memory_boxed     = false;
+
+			// Shipping box. Same contract again: once shipping pricing has used
+			// the batch's shipping time budget, stop before the next product and
+			// let the next batch (fresh budget) price the rest — never write a
+			// product with unpriced 0.00 shipping (owner decision, CBT-820).
+			$shipping_boxed = false;
+
+			// Per-stage timing (seconds) + the slowest single product. Costs two
+			// microtime() calls per stage per product and answers "where do the
+			// milliseconds go?" from a customer log instead of a guess.
+			$stage_s = array(
+				'load'      => 0.0,
+				'filter'    => 0.0,
+				'resolve'   => 0.0,
+				'transform' => 0.0,
+				'render'    => 0.0,
+				'write'     => 0.0,
+			);
+			$slowest = array(
+				'id' => 0,
+				'ms' => 0.0,
+			);
+
+			// Per-stage query counts ($wpdb->num_queries deltas — maintained by
+			// WP without SAVEQUERIES). A resolve stage issuing more than a
+			// handful of queries per product is the signal for a cache-priming
+			// gap; free to collect.
+			global $wpdb;
+			$track_q = is_object( $wpdb ) && isset( $wpdb->num_queries );
+			$stage_q = array_fill_keys( array_keys( $stage_s ), 0 );
+			$q_start = $track_q ? (int) $wpdb->num_queries : 0;
+
+			// Exclusion accounting. Products dropped by a filter or that fail to
+			// load are NOT errors, so they never appeared in "written / skipped"
+			// — a feed could report "3 in batch, 0 written, 0 skipped" with no
+			// trace of WHY (support #68913: every product silently excluded).
+			// Tally by filter name via FilterManager's ctxfeed_filter_excluded
+			// action so the batch log names the responsible filter.
+			$excluded_by = array();
+			$unloadable  = 0;
+			$tally       = static function ( $filter_name ) use ( &$excluded_by ) {
+				$key                 = (string) $filter_name;
+				$excluded_by[ $key ] = ( $excluded_by[ $key ] ?? 0 ) + 1;
+			};
+			add_action( 'ctxfeed_filter_excluded', $tally, 10, 1 );
+
+			try {
+				foreach ( $ids as $product_id ) {
+					$now_ts = microtime( true );
+					if ( $processed_ids > 0 && $now_ts >= $deadline ) {
+						$time_boxed = true;
+						break;
+					}
+					if ( $processed_ids > 0 && $memory_box_bytes > 0 && Memory::usage() >= $memory_box_bytes ) {
+						// Reuses the time-box path: the offset advances by what
+						// was scanned and the rest goes to the next batch.
+						$time_boxed   = true;
+						$memory_boxed = true;
+						break;
+					}
+					if ( $processed_ids > 0 && self::shipping_budget_exhausted() ) {
+						// Reuses the time-box path, like the memory box.
+						$time_boxed     = true;
+						$shipping_boxed = true;
+						break;
+					}
+					++$processed_ids;
+
+					// Heartbeat: touch the progress record every few seconds so the
+					// admin sees the count climbing inside a long batch and the
+					// stall detector never mistakes a working batch for a dead one.
+					if ( ( $now_ts - $last_heartbeat ) >= self::HEARTBEAT_SECONDS ) {
+						$last_heartbeat = $now_ts;
+						$this->manager->heartbeat( $feed_name, $offset + $processed_ids - 1 );
 					}
 
-					// Google Product Review feeds export the product's REVIEWS,
-					// not a product row — one <review> entry per approved comment
-					// with content and a star rating (V5 GooglereviewStructure).
-					// Review entries carry final tag names and bypass the product
-					// transform/mapping pipeline.
-					if ( 'googlereview' === $provider && $is_xml && $this->review_resolver ) {
-						foreach ( $this->review_resolver->resolve( $product, $config ) as $review_entry ) {
-							$this->stream_writer->write_row(
-								$this->template_engine->render_row( $review_entry, $config, $product )
+					// Per-product error isolation. A throw anywhere in ONE
+					// product's work — loading it, deciding whether it belongs in
+					// the feed, resolving, transforming, rendering, writing — must
+					// NOT abort the batch; that would drop every remaining product
+					// in it. Log the product id + reason, count it, and move on, so
+					// a single malformed product can't break the whole feed
+					// (the resilience the V5 engine relied on, made explicit here).
+					//
+					// The load and filter stages are INSIDE the guard (CBT-632):
+					// `should_include()` runs our own filters and the public
+					// `ctxfeed_product_should_include` hook, so it executes other
+					// plugins' code. A throw there used to escape the loop and kill
+					// the batch, which the scheduler then retried at a halved size
+					// until it gave up — the whole feed lost to one listener.
+					try {
+						$p0               = microtime( true );
+						$q0               = $track_q ? (int) $wpdb->num_queries : 0;
+						$product          = wc_get_product( $product_id );
+						$p1               = microtime( true );
+						$q1               = $track_q ? (int) $wpdb->num_queries : 0;
+						$stage_s['load'] += $p1 - $p0;
+						$stage_q['load'] += $q1 - $q0;
+						if ( ! $product ) {
+							++$unloadable;
+							continue;
+						}
+
+						// One-slot register: transforms that re-load "their own"
+						// product by ID get this object back from ProductMemo.
+						\CTXFeed\V8\Product\ProductMemo::remember_current( $product );
+
+						$included           = $this->filter_manager->should_include( $product, $config );
+						$p2                 = microtime( true );
+						$q2                 = $track_q ? (int) $wpdb->num_queries : 0;
+						$stage_s['filter'] += $p2 - $p1;
+						$stage_q['filter'] += $q2 - $q1;
+						if ( ! $included ) {
+							continue;
+						}
+
+						// Google Product Review feeds export the product's REVIEWS,
+						// not a product row — one <review> entry per approved comment
+						// with content and a star rating (V5 GooglereviewStructure).
+						// Review entries carry final tag names and bypass the product
+						// transform/mapping pipeline.
+						if ( 'googlereview' === $provider && $is_xml && $this->review_resolver ) {
+							foreach ( $this->review_resolver->resolve( $product, $config ) as $review_entry ) {
+								$this->stream_writer->write_row(
+									$this->template_engine->render_row( $review_entry, $config, $product )
+								);
+							}
+							// $count tracks PRODUCTS for pagination, not rows written.
+							++$count;
+							continue;
+						}
+
+						$product_data        = $this->product_repo->resolve_single( $product, $config );
+						$p3                  = microtime( true );
+						$q3                  = $track_q ? (int) $wpdb->num_queries : 0;
+						$stage_s['resolve'] += $p3 - $p2;
+						$stage_q['resolve'] += $q3 - $q2;
+						$transformed         = $this->transform->apply( $product_data, $config );
+
+						// Skroutz native nested <variations>: build per-child variation
+						// blocks from a variable parent's children. Config-gated inside
+						// the builder (provider=skroutz + variation_* mapped) — a no-op
+						// for every other feed. XML-only (Skroutz has no CSV map).
+						if ( $this->variations_builder && $is_xml ) {
+							$transformed = $this->variations_builder->build( $transformed, $product, $config );
+						}
+
+						// For XML: restructure grouped attributes into nested arrays before name mapping.
+						// GroupedAttributeBuilder works with internal names and outputs nested groups
+						// with merchant-specific sub-element names. @implements TMPL-FRD-4.5.
+						if ( $this->grouped_builder && $is_xml ) {
+							$transformed = $this->grouped_builder->build( $transformed, $provider );
+						} elseif ( $this->grouped_builder && in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true ) ) {
+							// Delimited formats: collapse each nested group into one
+							// colon-joined column value ("US:CA:8.25:y"), repeated
+							// instances comma-joined — Google delimited spec + V5
+							// GoogleStructure::get_csv_structure() parity.
+							$transformed = $this->grouped_builder->build_delimited( $transformed, $provider );
+						}
+
+						// Structured-only attributes (e.g. Facebook `video`) have no
+						// flat-column form — strip them from delimited rows so the data
+						// stays aligned with the header, which omits them too. XML and
+						// JSON/API keep them.
+						if ( in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true ) ) {
+							$transformed = $this->strip_structured_only_row( $transformed );
+						}
+
+						// Map remaining flat attribute names to merchant-specific format (e.g., id → g:id for Google XML).
+						if ( $this->attribute_mapper ) {
+							$transformed = $this->attribute_mapper->map_product_data( $transformed, $provider, $format );
+						}
+
+						// Forward the live product so Custom Template 2 (XML) can walk
+						// sub-loops (variations/images/categories) defined in the
+						// user-supplied template. Other templates ignore this arg.
+						// PROD-FRD-10.6.
+						$p4                    = microtime( true );
+						$q4                    = $track_q ? (int) $wpdb->num_queries : 0;
+						$stage_s['transform'] += $p4 - $p3;
+						$stage_q['transform'] += $q4 - $q3;
+						// Google Promotions: one row per promotion, not per product
+						// (CBT-716). A static promotion mapped on every product
+						// collapses to a single row; per-product promotion ids stay.
+						if ( 'google_promotions' === $provider && ! $this->is_new_promotion( $feed_name, $transformed ) ) {
+							$excluded_by['duplicate promotion_id'] = ( $excluded_by['duplicate promotion_id'] ?? 0 ) + 1;
+							continue;
+						}
+
+						$row                = $this->template_engine->render_row( $transformed, $config, $product );
+						$p5                 = microtime( true );
+						$q5                 = $track_q ? (int) $wpdb->num_queries : 0;
+						$stage_s['render'] += $p5 - $p4;
+						$stage_q['render'] += $q5 - $q4;
+
+						// JSON: rows stream with a trailing comma (a streaming writer
+						// cannot know which row is last); finalize() trims the final
+						// comma before the closing bracket so the document parses.
+						if ( 'json' === $format_lower ) {
+							$row .= ',';
+						}
+
+						$this->stream_writer->write_row( $row );
+						$stage_s['write'] += microtime( true ) - $p5;
+						$stage_q['write'] += ( $track_q ? (int) $wpdb->num_queries : 0 ) - $q5;
+						++$count;
+
+						$product_ms = ( microtime( true ) - $p0 ) * 1000;
+						if ( $product_ms > $slowest['ms'] ) {
+							$slowest = array(
+								'id' => (int) $product_id,
+								'ms' => $product_ms,
 							);
 						}
-						// $count tracks PRODUCTS for pagination, not rows written.
-						++$count;
+					} catch ( \Throwable $e ) {
+						// A class or file of CTX Feed Pro (or CTX Feed) missing
+						// because the plugin is being replaced right now: skipping
+						// would publish the feed without this product — stop the
+						// batch so the scheduler waits and redoes it (CBT-807).
+						// Error path only; a permanently missing class returns ''
+						// and the product is skipped as before.
+						$in_flux = is_callable( array( \CTXFeed\V8\Bootstrap::class, 'in_flux_reason' ) ) ? \CTXFeed\V8\Bootstrap::in_flux_reason( $e ) : '';
+						if ( '' !== $in_flux ) {
+							throw new FilesInFlux( $in_flux, $e );
+						}
+
+						// Isolate this one product: record it and keep the batch going.
+						++$error_count;
+						if ( $this->feed_logger ) {
+							$this->feed_logger->error(
+								$feed_name,
+								sprintf( 'Product #%d skipped — %s', (int) $product_id, $e->getMessage() )
+							);
+						}
 						continue;
 					}
-
-					$product_data        = $this->product_repo->resolve_single( $product, $config );
-					$p3                  = microtime( true );
-					$q3                  = $track_q ? (int) $wpdb->num_queries : 0;
-					$stage_s['resolve'] += $p3 - $p2;
-					$stage_q['resolve'] += $q3 - $q2;
-					$transformed         = $this->transform->apply( $product_data, $config );
-
-					// Skroutz native nested <variations>: build per-child variation
-					// blocks from a variable parent's children. Config-gated inside
-					// the builder (provider=skroutz + variation_* mapped) — a no-op
-					// for every other feed. XML-only (Skroutz has no CSV map).
-					if ( $this->variations_builder && $is_xml ) {
-						$transformed = $this->variations_builder->build( $transformed, $product, $config );
-					}
-
-					// For XML: restructure grouped attributes into nested arrays before name mapping.
-					// GroupedAttributeBuilder works with internal names and outputs nested groups
-					// with merchant-specific sub-element names. @implements TMPL-FRD-4.5.
-					if ( $this->grouped_builder && $is_xml ) {
-						$transformed = $this->grouped_builder->build( $transformed, $provider );
-					} elseif ( $this->grouped_builder && in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true ) ) {
-						// Delimited formats: collapse each nested group into one
-						// colon-joined column value ("US:CA:8.25:y"), repeated
-						// instances comma-joined — Google delimited spec + V5
-						// GoogleStructure::get_csv_structure() parity.
-						$transformed = $this->grouped_builder->build_delimited( $transformed, $provider );
-					}
-
-					// Structured-only attributes (e.g. Facebook `video`) have no
-					// flat-column form — strip them from delimited rows so the data
-					// stays aligned with the header, which omits them too. XML and
-					// JSON/API keep them.
-					if ( in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true ) ) {
-						$transformed = $this->strip_structured_only_row( $transformed );
-					}
-
-					// Map remaining flat attribute names to merchant-specific format (e.g., id → g:id for Google XML).
-					if ( $this->attribute_mapper ) {
-						$transformed = $this->attribute_mapper->map_product_data( $transformed, $provider, $format );
-					}
-
-					// Forward the live product so Custom Template 2 (XML) can walk
-					// sub-loops (variations/images/categories) defined in the
-					// user-supplied template. Other templates ignore this arg.
-					// PROD-FRD-10.6.
-					$p4                    = microtime( true );
-					$q4                    = $track_q ? (int) $wpdb->num_queries : 0;
-					$stage_s['transform'] += $p4 - $p3;
-					$stage_q['transform'] += $q4 - $q3;
-					// Google Promotions: one row per promotion, not per product
-					// (CBT-716). A static promotion mapped on every product
-					// collapses to a single row; per-product promotion ids stay.
-					if ( 'google_promotions' === $provider && ! $this->is_new_promotion( $feed_name, $transformed ) ) {
-						$excluded_by['duplicate promotion_id'] = ( $excluded_by['duplicate promotion_id'] ?? 0 ) + 1;
-						continue;
-					}
-
-					$row                = $this->template_engine->render_row( $transformed, $config, $product );
-					$p5                 = microtime( true );
-					$q5                 = $track_q ? (int) $wpdb->num_queries : 0;
-					$stage_s['render'] += $p5 - $p4;
-					$stage_q['render'] += $q5 - $q4;
-
-					// JSON: rows stream with a trailing comma (a streaming writer
-					// cannot know which row is last); finalize() trims the final
-					// comma before the closing bracket so the document parses.
-					if ( 'json' === $format_lower ) {
-						$row .= ',';
-					}
-
-					$this->stream_writer->write_row( $row );
-					$stage_s['write'] += microtime( true ) - $p5;
-					$stage_q['write'] += ( $track_q ? (int) $wpdb->num_queries : 0 ) - $q5;
-					++$count;
-
-					$product_ms = ( microtime( true ) - $p0 ) * 1000;
-					if ( $product_ms > $slowest['ms'] ) {
-						$slowest = array(
-							'id' => (int) $product_id,
-							'ms' => $product_ms,
-						);
-					}
-				} catch ( \Throwable $e ) {
-					// A class or file of CTX Feed Pro (or CTX Feed) missing
-					// because the plugin is being replaced right now: skipping
-					// would publish the feed without this product — stop the
-					// batch so the scheduler waits and redoes it (CBT-807).
-					// Error path only; a permanently missing class returns ''
-					// and the product is skipped as before.
-					$in_flux = is_callable( array( \CTXFeed\V8\Bootstrap::class, 'in_flux_reason' ) ) ? \CTXFeed\V8\Bootstrap::in_flux_reason( $e ) : '';
-					if ( '' !== $in_flux ) {
-						throw new FilesInFlux( $in_flux, $e );
-					}
-
-					// Isolate this one product: record it and keep the batch going.
-					++$error_count;
-					if ( $this->feed_logger ) {
-						$this->feed_logger->error(
-							$feed_name,
-							sprintf( 'Product #%d skipped — %s', (int) $product_id, $e->getMessage() )
-						);
-					}
-					continue;
 				}
+			} finally {
+				remove_action( 'ctxfeed_filter_excluded', $tally, 10 );
+
+				// Step 6: V5 product-loop after hook — fires on EVERY exit path
+				// (success or thrown row) so paired before/after listeners always
+				// tear down. PROD-FRD-10.7.
+				do_action( 'woo_feed_after_product_loop', $ids, $feed_rules_array, $config );
 			}
 		} finally {
-			remove_action( 'ctxfeed_filter_excluded', $tally, 10 );
+			// Step 7: V5 batch-end hooks — fired with the Config object on
+			// EVERY exit path. Each in its own try/catch: a failing listener is
+			// logged and never stops the other hook or replaces the batch's
+			// own exception. @implements FEED-FRD-9.1.
+			try {
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
+				do_action( 'after_woo_feed_get_product_information', $config );
+			} catch ( \Throwable $hook_error ) {
+				$this->log_batch_end_hook_failure( 'after_woo_feed_get_product_information', $feed_name, $hook_error );
+			}
+			try {
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
+				do_action( 'after_woo_feed_generate_batch_data', $config );
+			} catch ( \Throwable $hook_error ) {
+				$this->log_batch_end_hook_failure( 'after_woo_feed_generate_batch_data', $feed_name, $hook_error );
+			}
 
-			// Step 6: V5 product-loop after hook — fires on EVERY exit path
-			// (success or thrown row) so paired before/after listeners always
-			// tear down. PROD-FRD-10.7.
-			do_action( 'woo_feed_after_product_loop', $ids, $feed_rules_array, $config );
+			// Stop counting on every exit path, so nothing outside a batch
+			// (previews, REST) is ever counted against it.
+			$regex_failures = self::end_regex_tally();
 		}
-
-		// Step 7: V5 batch-end hooks — fired with the Config object.
-		// @implements FEED-FRD-9.1.
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
-		do_action( 'after_woo_feed_get_product_information', $config );
-		// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Exact V5 legacy hook name; Legacy Bridge compatibility requires it unchanged.
-		do_action( 'after_woo_feed_generate_batch_data', $config );
 
 		// Step 8: V8 after hook. @implements FEED-FRD-8.1.
 		do_action( 'ctxfeed_after_generate_batch', $feed_name, $offset, $count );
@@ -945,6 +1073,14 @@ class FeedGenerator {
 					sprintf( 'Batch %d/%d — %s could not be loaded', $log_batch_no, $log_batches, FeedLogger::products( $unloadable ) )
 				);
 			}
+			// A regex that gave up on long values: what was kept instead, per
+			// site + pattern (CBT-822). Info, never the WooCommerce log.
+			foreach ( $regex_failures as $regex_failure ) {
+				$this->feed_logger->info(
+					$feed_name,
+					sprintf( 'Batch %d/%d — %s', $log_batch_no, $log_batches, $regex_failure )
+				);
+			}
 
 			// A batch that scanned products but wrote NONE is almost always a
 			// filter setting, not a plugin fault — say so, and name the filter.
@@ -967,19 +1103,28 @@ class FeedGenerator {
 		if ( $time_boxed ) {
 			$scanned = max( $processed_ids, 1 );
 			if ( $this->feed_logger ) {
-				$message = $memory_boxed
-					? sprintf(
+				if ( $memory_boxed ) {
+					$message = sprintf(
 						/* translators: 1: products processed in this batch, 2: seconds the batch ran. */
 						__( 'Batch paused after %1$s in %2$ds to stay inside the site\'s PHP memory limit — continuing with the rest in the next batch', 'woo-feed' ),
 						FeedLogger::products( $processed_ids ),
 						(int) round( $batch_time )
-					)
-					: sprintf(
+					);
+				} elseif ( $shipping_boxed ) {
+					$message = sprintf(
+						/* translators: 1: products processed in this batch, 2: seconds the batch ran. */
+						__( 'Batch paused after %1$s in %2$ds to stay inside the shipping price time budget — continuing with the rest in the next batch', 'woo-feed' ),
+						FeedLogger::products( $processed_ids ),
+						(int) round( $batch_time )
+					);
+				} else {
+					$message = sprintf(
 						/* translators: 1: products processed in this batch, 2: seconds the batch ran. */
 						__( 'Batch paused after %1$s in %2$ds to stay inside the scheduler time limit — continuing with the rest in the next batch', 'woo-feed' ),
 						FeedLogger::products( $processed_ids ),
 						(int) round( $batch_time )
 					);
+				}
 
 				$this->feed_logger->info( $feed_name, $message );
 			}
@@ -1105,6 +1250,8 @@ class FeedGenerator {
 			'time_boxed'      => $time_boxed,
 			// True when the pause was the memory box rather than the clock.
 			'memory_boxed'    => $memory_boxed,
+			// True when the pause was the shipping time budget (CBT-820).
+			'shipping_boxed'  => $shipping_boxed,
 			// Where the batch's time went (ms per pipeline stage) and the
 			// single most expensive product — the same data the [PERF] trace
 			// logs, exposed for callers and tests.
@@ -1114,6 +1261,22 @@ class FeedGenerator {
 			'slowest_product' => $slowest['id'],
 			'slowest_ms'      => round( $slowest['ms'], 1 ),
 		);
+	}
+
+	/**
+	 * Whether this batch's shipping time budget is used up (CBT-820).
+	 *
+	 * False while ShippingResolver is not loaded: nothing has been spent.
+	 * Checked with autoload off and is_callable(), per the mid-update rule.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @return bool
+	 */
+	private static function shipping_budget_exhausted(): bool {
+		return class_exists( '\CTXFeed\V8\Product\ShippingResolver', false )
+			&& is_callable( array( '\CTXFeed\V8\Product\ShippingResolver', 'budget_exhausted' ) )
+			&& \CTXFeed\V8\Product\ShippingResolver::budget_exhausted();
 	}
 
 	/**
@@ -1184,6 +1347,25 @@ class FeedGenerator {
 	 * @return void
 	 */
 	public function finalize( string $feed_name ): void {
+		// Same pinned PHP state as the batches: the footer, promotion, upload
+		// and ctx_feed_after_save_feed_file listeners run here (CBT-810).
+		FeedRuntime::run(
+			function () use ( $feed_name ): void {
+				$this->run_finalize( $feed_name );
+			}
+		);
+	}
+
+	/**
+	 * Body of finalize(), already inside FeedRuntime.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param string $feed_name Feed slug identifier.
+	 *
+	 * @return void
+	 */
+	private function run_finalize( string $feed_name ): void {
 		$this->wrote_footer = false;
 
 		$config = $this->manager->get_config( $feed_name );

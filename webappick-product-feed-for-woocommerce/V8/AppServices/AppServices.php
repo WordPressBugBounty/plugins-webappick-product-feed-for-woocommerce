@@ -45,7 +45,7 @@ final class AppServices {
 	 * SDK client.
 	 *
 	 * @since 8.0.0
-	 * @var Client
+	 * @var Client|null
 	 */
 	private $client;
 
@@ -53,7 +53,7 @@ final class AppServices {
 	 * Insights (usage tracking) service.
 	 *
 	 * @since 8.0.0
-	 * @var \CTXFeed\AppServices\Insights
+	 * @var \CTXFeed\AppServices\Insights|null
 	 */
 	private $insights;
 
@@ -61,7 +61,7 @@ final class AppServices {
 	 * Promotions service.
 	 *
 	 * @since 8.0.0
-	 * @var \CTXFeed\AppServices\Promotions
+	 * @var \CTXFeed\AppServices\Promotions|null
 	 */
 	private $promotion;
 
@@ -85,6 +85,13 @@ final class AppServices {
 	 * @since 8.0.0
 	 */
 	private function __construct() {
+		// An old Pro (< 8) owns the CTXFeed\AppServices namespace with its
+		// own SDK copy (CBT-844): stay inert rather than drive another
+		// plugin's classes. Every public method below is null-safe.
+		if ( self::legacy_pro_active() ) {
+			return;
+		}
+
 		$this->client    = new Client( '4e68acba-cbdc-476b-b4bf-eab176ac6a16', 'CTX Feed', WOO_FEED_FREE_FILE );
 		$this->insights  = $this->client->insights();
 		$this->promotion = $this->client->promotions();
@@ -224,7 +231,7 @@ final class AppServices {
 	 * @return bool
 	 */
 	public function is_tracking_allowed(): bool {
-		return (bool) $this->insights->is_tracking_allowed();
+		return null !== $this->insights && (bool) $this->insights->is_tracking_allowed();
 	}
 
 	/**
@@ -236,7 +243,9 @@ final class AppServices {
 	 * @return void
 	 */
 	public function opt_in( bool $override = false ): void {
-		$this->insights->optIn( $override );
+		if ( null !== $this->insights ) {
+			$this->insights->optIn( $override );
+		}
 	}
 
 	/**
@@ -247,7 +256,9 @@ final class AppServices {
 	 * @return void
 	 */
 	public function opt_out(): void {
-		$this->insights->optOut();
+		if ( null !== $this->insights ) {
+			$this->insights->optOut();
+		}
 	}
 
 	/**
@@ -258,6 +269,17 @@ final class AppServices {
 	 * @return array
 	 */
 	public function get_data_collection_description(): array {
-		return (array) $this->insights->get_data_collection_description();
+		return null !== $this->insights ? (array) $this->insights->get_data_collection_description() : array();
+	}
+
+	/**
+	 * Whether an old CTX Feed Pro (< 8.0.0) is loaded (CBT-844).
+	 *
+	 * @since 8.0.39
+	 *
+	 * @return bool
+	 */
+	private static function legacy_pro_active(): bool {
+		return class_exists( '\\CTXFeed\\V8\\Status\\LegacyPro' ) && \CTXFeed\V8\Status\LegacyPro::is_active();
 	}
 }

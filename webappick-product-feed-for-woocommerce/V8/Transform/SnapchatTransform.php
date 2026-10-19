@@ -12,6 +12,9 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Ascii;
+use CTXFeed\V8\Utility\Date;
+use CTXFeed\V8\Utility\Mb;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -67,6 +70,7 @@ class SnapchatTransform implements TransformInterface {
 	 * Convert availability date to ISO 8601.
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.39 A date without a zone is read in the store timezone (CBT-819).
 	 *
 	 * @param array $data Product data.
 	 *
@@ -77,17 +81,9 @@ class SnapchatTransform implements TransformInterface {
 			return $data;
 		}
 
-		$date = $data['availability_date'];
-
-		if ( preg_match( '/^\d{4}-\d{2}-\d{2}T/', $date ) ) {
-			return $data;
-		}
-
-		$timestamp = strtotime( $date );
-
-		if ( false !== $timestamp ) {
-			$data['availability_date'] = gmdate( 'c', $timestamp );
-		}
+		// ISO input passes through; anything else is read in the STORE
+		// timezone, never PHP's default (CBT-819, H4); unparseable stays.
+		$data['availability_date'] = Date::iso8601( $data['availability_date'] );
 
 		return $data;
 	}
@@ -110,7 +106,7 @@ class SnapchatTransform implements TransformInterface {
 			return $data;
 		}
 
-		$availability = strtolower( trim( str_replace( array( '_', '-' ), ' ', $data['availability'] ) ) );
+		$availability = Ascii::lower( trim( str_replace( array( '_', '-' ), ' ', $data['availability'] ) ) ); // CBT-815: never the locale's fold.
 
 		$map = array(
 			'instock'             => 'in stock',
@@ -141,11 +137,11 @@ class SnapchatTransform implements TransformInterface {
 	 * @return array Modified product data.
 	 */
 	private function transform_lengths( array $data ): array {
-		if ( ! empty( $data['title'] ) && is_string( $data['title'] ) && mb_strlen( $data['title'] ) > self::TITLE_MAX_LENGTH ) {
-			$data['title'] = mb_substr( $data['title'], 0, self::TITLE_MAX_LENGTH );
+		if ( ! empty( $data['title'] ) && is_string( $data['title'] ) && Mb::strlen( $data['title'] ) > self::TITLE_MAX_LENGTH ) {
+			$data['title'] = Mb::substr( $data['title'], 0, self::TITLE_MAX_LENGTH );
 		}
-		if ( ! empty( $data['description'] ) && is_string( $data['description'] ) && mb_strlen( $data['description'] ) > self::DESCRIPTION_MAX_LENGTH ) {
-			$data['description'] = mb_substr( $data['description'], 0, self::DESCRIPTION_MAX_LENGTH );
+		if ( ! empty( $data['description'] ) && is_string( $data['description'] ) && Mb::strlen( $data['description'] ) > self::DESCRIPTION_MAX_LENGTH ) {
+			$data['description'] = Mb::substr( $data['description'], 0, self::DESCRIPTION_MAX_LENGTH );
 		}
 
 		return $data;

@@ -13,6 +13,15 @@
  * Url::parse() splits with the RFC 3986 appendix B pattern instead: plain
  * byte classes, no locale, every byte kept exactly as given.
  *
+ * Url::with_query_args() sets and removes query parameters without touching
+ * any other byte (CBT-818). WordPress's add_query_arg()/remove_query_arg()
+ * decode every existing KEY one level per call (wp_parse_str), so the five
+ * UTM passes turned WooCommerce's own variation key
+ * `attribute_%25d1%2580…` into raw UTF-8 `attribute_р…`. Url::is_http_url()
+ * replaces FILTER_VALIDATE_URL, which rejects every byte ≥ 0x80 and an `_`
+ * in the host, so stores with a non-Latin product base or an IDN host lost
+ * their UTMs.
+ *
  * @package    CTXFeed
  * @subpackage V8/Utility
  * @since      8.0.38
@@ -99,6 +108,147 @@ class Url {
 		$key = self::COMPONENTS[ $component ] ?? null;
 
 		return null !== $key && isset( $parts[ $key ] ) ? $parts[ $key ] : null;
+	}
+
+	/**
+	 * Set and remove query parameters, keeping every other byte of the URL.
+	 *
+	 * The fragment is split off first, then the query. Each existing pair
+	 * whose key — decoded with `+` as a space, then rawurldecode() — is in
+	 * $set is replaced IN PLACE (the original key bytes are kept; later
+	 * duplicates are dropped); a pair whose decoded key is in $remove_keys
+	 * is dropped; every other pair is kept verbatim. Keys of $set that were
+	 * not in the URL are appended in order as `rawurlencode( key )=value`.
+	 * Values are encoded exactly once: rawurlencode() with `%20` turned back
+	 * into `+` (the UTM encoding since BUG-0036, V5's space → `+`). Values
+	 * must therefore be passed RAW, never pre-encoded. A non-scalar value is
+	 * ignored. When nothing changes the URL is returned as given; when the
+	 * last pair is removed the `?` goes too.
+	 *
+	 * Unlike add_query_arg() it never decodes an existing key or value, never
+	 * reads $_SERVER['REQUEST_URI'] and does not depend on the locale.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param string               $url         URL (absolute or relative).
+	 * @param array<string, mixed> $set         Parameters to set: raw key => raw value.
+	 * @param string[]             $remove_keys Raw keys to drop (keys in $set are set, not dropped).
+	 * @return string
+	 */
+	public static function with_query_args( string $url, array $set, array $remove_keys = array() ): string {
+		$values = array();
+		foreach ( $set as $key => $value ) {
+			if ( is_scalar( $value ) ) {
+				$values[ (string) $key ] = str_replace( '%20', '+', rawurlencode( (string) $value ) );
+			}
+		}
+
+		$remove = array();
+		foreach ( $remove_keys as $key ) {
+			if ( is_scalar( $key ) && ! isset( $values[ (string) $key ] ) ) {
+				$remove[ (string) $key ] = true;
+			}
+		}
+
+		if ( array() === $values && array() === $remove ) {
+			return $url;
+		}
+
+		$fragment = '';
+		$hash     = strpos( $url, '#' );
+		if ( false !== $hash ) {
+			$fragment = (string) substr( $url, $hash );
+			$url      = (string) substr( $url, 0, $hash );
+		}
+
+		$base  = $url;
+		$query = null;
+		$mark  = strpos( $url, '?' );
+		if ( false !== $mark ) {
+			$base  = (string) substr( $url, 0, $mark );
+			$query = (string) substr( $url, $mark + 1 );
+		}
+
+		$pairs   = null === $query || '' === $query ? array() : explode( '&', $query );
+		$kept    = array();
+		$done    = array();
+		$changed = false;
+		foreach ( $pairs as $pair ) {
+			if ( '' === $pair ) {
+				$kept[] = $pair;
+				continue;
+			}
+
+			$eq      = strpos( $pair, '=' );
+			$raw_key = false === $eq ? $pair : (string) substr( $pair, 0, $eq );
+			$key     = rawurldecode( str_replace( '+', ' ', $raw_key ) );
+
+			if ( isset( $values[ $key ] ) ) {
+				if ( ! isset( $done[ $key ] ) ) {
+					$done[ $key ] = true;
+					$kept[]       = $raw_key . '=' . $values[ $key ];
+				}
+				$changed = true;
+				continue;
+			}
+
+			if ( isset( $remove[ $key ] ) ) {
+				$changed = true;
+				continue;
+			}
+
+			$kept[] = $pair;
+		}
+
+		$append = array();
+		foreach ( $values as $key => $value ) {
+			if ( ! isset( $done[ $key ] ) ) {
+				$append[] = rawurlencode( $key ) . '=' . $value;
+			}
+		}
+
+		if ( ! $changed && array() === $append ) {
+			return $url . $fragment;
+		}
+
+		// A trailing '&' must not leave an empty pair in front of the
+		// appended ones, nor dangle after a removed one.
+		while ( array() !== $kept && '' === end( $kept ) ) {
+			array_pop( $kept );
+		}
+
+		$query = implode( '&', array_merge( $kept, $append ) );
+
+		return $base . ( '' === $query ? '' : '?' . $query ) . $fragment;
+	}
+
+	/**
+	 * Whether a value is an absolute http(s) URL with a host.
+	 *
+	 * Byte-safe replacement for filter_var( FILTER_VALIDATE_URL ), which
+	 * rejects raw UTF-8 paths (`/товар/`), IDN hosts and an `_` in a host.
+	 * Rejected: non-strings, any byte ≤ 0x20 or 0x7F (spaces, control
+	 * characters), a URL Url::parse() cannot split, a scheme other than
+	 * http/https (any case), and an empty host.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param mixed $value Candidate URL.
+	 * @return bool
+	 */
+	public static function is_http_url( $value ): bool {
+		if ( ! is_string( $value ) || '' === $value || 1 === preg_match( '/[\x00-\x20\x7F]/', $value ) ) {
+			return false;
+		}
+
+		$parts = self::parse( $value );
+		if ( ! is_array( $parts ) || ! isset( $parts['scheme'], $parts['host'] ) || '' === $parts['host'] ) {
+			return false;
+		}
+
+		$scheme = strtr( (string) $parts['scheme'], 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz' );
+
+		return 'http' === $scheme || 'https' === $scheme;
 	}
 
 	/**

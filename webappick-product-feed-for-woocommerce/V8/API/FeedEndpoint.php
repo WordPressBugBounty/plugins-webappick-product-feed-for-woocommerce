@@ -19,6 +19,7 @@ use CTXFeed\V8\Core\Container;
 use CTXFeed\V8\Feed\FeedLookup;
 use CTXFeed\V8\Feed\FeedScheduler;
 use CTXFeed\V8\Status\UpdateWaitNotice;
+use CTXFeed\V8\Utility\Ascii;
 use CTXFeed\V8\Utility\Sanitizer;
 
 // Exit if accessed directly.
@@ -59,6 +60,114 @@ class FeedEndpoint extends RestController {
 		}
 
 		return rtrim( substr( $slug, 0, $max ), '-_.' );
+	}
+
+	/**
+	 * The option slug for a feed NAME — one recipe for create, named
+	 * duplicate and import (CBT-812).
+	 *
+	 * `sanitize_title()` alone keeps the `%HH` octets of a non-Latin name
+	 * (`Фид Google` → `%d1%84%d0%b8%d0%b4-google`), while the feed FILE name
+	 * goes through `sanitize_file_name()`, which drops `%`. Duplicate and
+	 * import used the bare sanitize_title() form, so a duplicate of
+	 * `Фид Google` got the slug `%d1%84…-google` but wrote the original's
+	 * file `d184d0b8d0b4-google.xml` — two feeds, one file. Every path now
+	 * derives the slug the way create always did.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param string $name Feed display name.
+	 * @return string Slug base (uniqueness is the caller's loop).
+	 */
+	public static function slug_from_name( string $name ): string {
+		return self::cap_slug( sanitize_file_name( sanitize_title( $name, '', 'save' ) ) );
+	}
+
+	/**
+	 * Whether a feed slug is taken: its `wf_feed_` option exists OR a feed
+	 * file already sits at its path (CBT-812, V5 `generate_unique_feed_file_name`
+	 * parity — V5 also ran `wp_unique_filename()` over the feed directory).
+	 *
+	 * The file check keeps a new feed from writing over a file another feed
+	 * owns: a feed made by an older duplicate/import carries a `%HH` slug
+	 * whose file name is the sanitized form a new slug may now produce. Such
+	 * a feed reserves its file name even before it has a file (never
+	 * generated, or the file removed) — {@see percent_slug_owns_file_name()}.
+	 *
+	 * Save time only (create, duplicate, import) — never during generation.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param string $slug      Candidate slug.
+	 * @param string $extension Feed type (file extension).
+	 * @param string $provider  Channel provider (the nested directory).
+	 * @return bool
+	 */
+	public static function feed_slug_taken( string $slug, string $extension, string $provider ): bool {
+		if ( false !== get_option( 'wf_feed_' . $slug ) ) {
+			return true;
+		}
+
+		if ( '' === $slug ) {
+			return false;
+		}
+
+		if ( '' !== $extension ) {
+			$fs = new \CTXFeed\V8\Utility\Filesystem();
+			if ( file_exists( $fs->get_feed_path( $slug, $extension, $provider ) ) ) {
+				return true;
+			}
+		}
+
+		return self::percent_slug_owns_file_name( $slug );
+	}
+
+	/**
+	 * Whether a feed with a legacy `%HH` slug already owns the FILE name this
+	 * slug would write (CBT-812).
+	 *
+	 * A feed made by an older named duplicate or import kept the bare
+	 * sanitize_title() slug (`%d1%84%d0%b8%d0%b4-google`); its file name
+	 * drops the `%` (`d184d0b8d0b4-google.xml`) — the name a new feed called
+	 * `Фид Google` now gets. Before that feed has generated, neither its
+	 * option nor a file shows the clash. Only `wf_feed_` names containing a
+	 * `%` are read (one indexed LIKE on option_name; almost always zero
+	 * rows), and the comparison is conservative: any provider or format
+	 * counts, so at worst a new feed takes a `-N` suffix it did not need.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param string $slug Candidate slug.
+	 * @return bool
+	 */
+	private static function percent_slug_owns_file_name( string $slug ): bool {
+		global $wpdb;
+
+		if ( ! isset( $wpdb ) || ! is_object( $wpdb ) || ! isset( $wpdb->options ) || ! method_exists( $wpdb, 'get_col' ) ) {
+			return false;
+		}
+
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Feed configs live in wp_options under wf_feed_ (shared with V5, no migration); save-time uniqueness check only, never cached so a just-saved feed counts.
+		$names = $wpdb->get_col(
+			$wpdb->prepare(
+				"SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s",
+				$wpdb->esc_like( 'wf_feed_' ) . '%' . $wpdb->esc_like( '%' ) . '%'
+			)
+		);
+
+		if ( empty( $names ) || ! is_array( $names ) ) {
+			return false;
+		}
+
+		$file_name = sanitize_file_name( $slug );
+		foreach ( $names as $name ) {
+			$other = substr( (string) $name, strlen( 'wf_feed_' ) );
+			if ( $other !== $slug && sanitize_file_name( $other ) === $file_name ) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	/**
@@ -487,7 +596,7 @@ class FeedEndpoint extends RestController {
 
 			// Collect unique channels for the filter dropdown (before filtering).
 			if ( ! empty( $provider ) && ! isset( $channels[ $provider ] ) ) {
-				$channels[ $provider ] = ucwords( str_replace( '_', ' ', $provider ) );
+				$channels[ $provider ] = Ascii::ucwords( str_replace( '_', ' ', $provider ) );
 			}
 
 			// Apply channel filter if provided.
@@ -514,7 +623,7 @@ class FeedEndpoint extends RestController {
 				'option_name'      => $option_name,
 				'feed_name'        => isset( $rules['filename'] ) ? $rules['filename'] : $feed_name,
 				'slug'             => $feed_name,
-				'channel'          => ucwords( str_replace( '_', ' ', $provider ) ),
+				'channel'          => Ascii::ucwords( str_replace( '_', ' ', $provider ) ),
 				'provider'         => $provider,
 				'logo'             => TemplateInfo::logo_url( $provider ),
 				'file_type'        => isset( $rules['feedType'] ) ? strtoupper( $rules['feedType'] ) : 'XML',
@@ -713,13 +822,12 @@ class FeedEndpoint extends RestController {
 		);
 
 		// Generate unique slug from file name.
-		$slug = sanitize_title( $form['fileName'], '', 'save' );
-		$slug = self::cap_slug( sanitize_file_name( $slug ) );
+		$slug = self::slug_from_name( (string) $form['fileName'] );
 
-		// Ensure unique option name.
+		// Ensure a unique option name AND file (CBT-812).
 		$base_slug = $slug;
 		$counter   = 1;
-		while ( get_option( 'wf_feed_' . $slug ) !== false ) {
+		while ( self::feed_slug_taken( $slug, (string) $feedrules['feedType'], (string) $feedrules['provider'] ) ) {
 			$slug = $base_slug . '-' . $counter;
 			++$counter;
 		}
@@ -1276,34 +1384,22 @@ class FeedEndpoint extends RestController {
 			$feed_rules['filename'] = sprintf(
 				'%s: %s',
 				__( 'Imported', 'woo-feed' ),
-				ucwords( str_replace( array( '-', '_' ), ' ', $opt_name ) )
+				Ascii::ucwords( str_replace( array( '-', '_' ), ' ', $opt_name ) )
 			);
 		}
 
-		// Generate unique slug.
-		$feed_type = isset( $feed_rules['feedType'] ) ? $feed_rules['feedType'] : 'xml';
-		$provider  = isset( $feed_rules['provider'] ) ? $feed_rules['provider'] : 'custom';
+		// Generate a unique slug — the create recipe, unique by option AND
+		// file (CBT-812). The V5 helper generate_unique_feed_file_name() this
+		// used to call first no longer exists.
+		$feed_type = isset( $feed_rules['feedType'] ) ? (string) $feed_rules['feedType'] : 'xml';
+		$provider  = isset( $feed_rules['provider'] ) ? (string) $feed_rules['provider'] : 'custom';
 
-		if ( function_exists( 'generate_unique_feed_file_name' ) ) {
-			$new_slug = generate_unique_feed_file_name( $opt_name, $feed_type, $provider );
-		} else {
-			// Fallback: manual unique slug generation.
-			$new_slug = sanitize_title( $opt_name, '', 'save' );
-			$counter  = 1;
-			while ( get_option( 'wf_feed_' . $new_slug ) !== false ) {
-				$new_slug = sanitize_title( $opt_name, '', 'save' ) . '-' . $counter;
-				++$counter;
-			}
-		}
-
-		if ( strlen( (string) $new_slug ) > self::MAX_SLUG_LENGTH - 6 ) {
-			$base     = self::cap_slug( (string) $new_slug );
-			$new_slug = $base;
-			$counter  = 1;
-			while ( false !== get_option( 'wf_feed_' . $new_slug ) ) {
-				$new_slug = $base . '-' . $counter;
-				++$counter;
-			}
+		$base     = self::slug_from_name( is_scalar( $opt_name ) ? (string) $opt_name : '' );
+		$new_slug = $base;
+		$counter  = 1;
+		while ( '' !== $base && self::feed_slug_taken( $new_slug, $feed_type, $provider ) ) {
+			$new_slug = $base . '-' . $counter;
+			++$counter;
 		}
 
 		if ( empty( $new_slug ) ) {
@@ -1407,9 +1503,7 @@ class FeedEndpoint extends RestController {
 			$custom_name,
 			$orig_slug,
 			(string) ( $rules['filename'] ?? '' ),
-			static function ( $slug ) {
-				return get_option( 'wf_feed_' . $slug ) !== false;
-			}
+			self::slug_taken_predicate( $rules )
 		);
 		$new_slug    = $identity['slug'];
 
@@ -1423,32 +1517,13 @@ class FeedEndpoint extends RestController {
 		update_option( 'wf_feed_' . $new_slug, $new_config, false );
 		update_option( 'wf_config' . $new_slug, $new_config['feedrules'], false );
 
-		// Copy the generated feed file if it exists. V8 writes feeds in the V5
-		// nested layout {uploads}/woo-feed/{provider}/{feedType}/{slug}.{ext}
-		// (Utility\Filesystem) so a feed's public URL is unchanged after a
-		// V5→V8 upgrade — resolve source and target there with the provider.
-		$file_copied = false;
-		if ( ! empty( $rules['feedType'] ) ) {
-			$ext       = (string) $rules['feedType'];
-			$provider  = (string) ( $rules['provider'] ?? '' );
-			$fs        = new \CTXFeed\V8\Utility\Filesystem();
-			$orig_file = $fs->get_feed_path( $orig_slug, $ext, $provider );
-			$new_file  = $fs->get_feed_path( $new_slug, $ext, $provider );
-
-			if ( file_exists( $orig_file ) ) {
-				// Ensure target directory exists.
-				$dir = dirname( $new_file );
-				if ( ! is_dir( $dir ) ) {
-					wp_mkdir_p( $dir );
-				}
-				$file_copied = copy( $orig_file, $new_file );
-
-				// Point the stored URL at the duplicated file.
-				if ( $file_copied ) {
-					$new_config['url'] = $fs->get_feed_url( $new_slug, $ext, $provider );
-					update_option( 'wf_feed_' . $new_slug, $new_config, false );
-				}
-			}
+		// Copy the generated feed file if it exists, and point the stored URL
+		// at the copy.
+		$copied_url  = self::copy_feed_file( $rules, $orig_slug, $new_slug );
+		$file_copied = '' !== $copied_url;
+		if ( $file_copied ) {
+			$new_config['url'] = $copied_url;
+			update_option( 'wf_feed_' . $new_slug, $new_config, false );
 		}
 
 		// Build the duplicated feed now (V5 parity), independent of the copied
@@ -1494,7 +1569,7 @@ class FeedEndpoint extends RestController {
 		if ( '' !== $custom_name ) {
 			// Named duplicate — the display name is the entered name; the slug
 			// is a URL-safe form of it, made unique with a numeric suffix.
-			$base = self::cap_slug( sanitize_title( $custom_name, '', 'save' ) );
+			$base = self::slug_from_name( $custom_name );
 			if ( '' === $base ) {
 				$base = self::cap_slug( $orig_slug . '-copy' );
 			}
@@ -1526,6 +1601,72 @@ class FeedEndpoint extends RestController {
 			'slug'     => $slug,
 			'filename' => $filename,
 		);
+	}
+
+	/**
+	 * The "is this slug taken" predicate for a feed copy with these rules:
+	 * option OR file (CBT-812). See {@see feed_slug_taken()}.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param array $rules Source feedrules (provider + feedType).
+	 * @return callable fn(string $slug): bool
+	 */
+	private static function slug_taken_predicate( array $rules ): callable {
+		$ext      = (string) ( $rules['feedType'] ?? '' );
+		$provider = (string) ( $rules['provider'] ?? '' );
+
+		return static function ( $slug ) use ( $ext, $provider ) {
+			return self::feed_slug_taken( (string) $slug, $ext, $provider );
+		};
+	}
+
+	/**
+	 * Copy a feed's generated file to a duplicate's path, so the copy serves
+	 * immediately (single and bulk duplicate).
+	 *
+	 * Source and target come from `Utility\Filesystem` in the V5 nested
+	 * layout `{uploads}/woo-feed/{provider}/{feedType}/{slug}.{ext}`, so a
+	 * public URL is unchanged after a V5→V8 upgrade. When both resolve to
+	 * the same file — two slugs whose sanitized file names are equal, e.g. a
+	 * `%HH` slug made before 8.0.39 — nothing is copied and the copy keeps
+	 * no URL (CBT-812): it must never claim, or overwrite, the original's
+	 * file.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param array  $rules     Source feedrules.
+	 * @param string $orig_slug Source slug.
+	 * @param string $new_slug  Duplicate slug.
+	 * @return string The copy's public URL, or '' when nothing was copied.
+	 */
+	private static function copy_feed_file( array $rules, string $orig_slug, string $new_slug ): string {
+		if ( empty( $rules['feedType'] ) ) {
+			return '';
+		}
+
+		$ext       = (string) $rules['feedType'];
+		$provider  = (string) ( $rules['provider'] ?? '' );
+		$fs        = new \CTXFeed\V8\Utility\Filesystem();
+		$orig_file = $fs->get_feed_path( $orig_slug, $ext, $provider );
+		$new_file  = $fs->get_feed_path( $new_slug, $ext, $provider );
+
+		if ( ! file_exists( $orig_file ) || $orig_file === $new_file ) {
+			return '';
+		}
+
+		$orig_real = realpath( $orig_file );
+		if ( file_exists( $new_file ) && false !== $orig_real && realpath( $new_file ) === $orig_real ) {
+			return '';
+		}
+
+		// Ensure target directory exists.
+		$dir = dirname( $new_file );
+		if ( ! is_dir( $dir ) ) {
+			wp_mkdir_p( $dir );
+		}
+
+		return copy( $orig_file, $new_file ) ? $fs->get_feed_url( $new_slug, $ext, $provider ) : '';
 	}
 
 	/**
@@ -1971,9 +2112,7 @@ class FeedEndpoint extends RestController {
 								$custom_name,
 								$orig_slug,
 								(string) ( $rules['filename'] ?? '' ),
-								static function ( $slug ) {
-									return get_option( 'wf_feed_' . $slug ) !== false;
-								}
+								self::slug_taken_predicate( $rules )
 							);
 							$new_slug = $identity['slug'];
 
@@ -1987,22 +2126,10 @@ class FeedEndpoint extends RestController {
 
 							// Copy the existing generated file so the copy's URL
 							// serves immediately (nested V5 layout).
-							if ( ! empty( $rules['feedType'] ) ) {
-								$ext       = (string) $rules['feedType'];
-								$provider  = (string) ( $rules['provider'] ?? '' );
-								$fs        = new \CTXFeed\V8\Utility\Filesystem();
-								$orig_file = $fs->get_feed_path( $orig_slug, $ext, $provider );
-								$new_file  = $fs->get_feed_path( $new_slug, $ext, $provider );
-								if ( file_exists( $orig_file ) ) {
-									$dir = dirname( $new_file );
-									if ( ! is_dir( $dir ) ) {
-										wp_mkdir_p( $dir );
-									}
-									if ( copy( $orig_file, $new_file ) ) {
-										$new_config['url'] = $fs->get_feed_url( $new_slug, $ext, $provider );
-										update_option( 'wf_feed_' . $new_slug, $new_config, false );
-									}
-								}
+							$copied_url = self::copy_feed_file( $rules, $orig_slug, $new_slug );
+							if ( '' !== $copied_url ) {
+								$new_config['url'] = $copied_url;
+								update_option( 'wf_feed_' . $new_slug, $new_config, false );
 							}
 
 							// Bulk duplicate does NOT auto-regenerate each copy:
@@ -2354,9 +2481,13 @@ class FeedEndpoint extends RestController {
 			// " USD" (leading space) survive the save round-trip.
 			// sanitize_text_field would trim them, producing a dashed-on
 			// value with no visual separator. PROD-FRD-10.12.
-			$prefixes[]   = Sanitizer::preserve_whitespace( $row['prefix'] ?? '' );
-			$types[]      = isset( $row['type'] ) ? sanitize_text_field( $row['type'] ) : 'attribute';
-			$attributes[] = isset( $row['attribute'] ) ? sanitize_text_field( $row['attribute'] ) : '';
+			$prefixes[] = Sanitizer::preserve_whitespace( $row['prefix'] ?? '' );
+			$types[]    = isset( $row['type'] ) ? sanitize_text_field( $row['type'] ) : 'attribute';
+			// Attribute codes keep their %HH octets (CBT-812): a non-Latin
+			// local attribute is stored as `wf_attr_%d1%80…`, and
+			// sanitize_text_field() deleted the octets, so the column came
+			// back empty after the next save.
+			$attributes[] = isset( $row['attribute'] ) ? Sanitizer::attribute_code( $row['attribute'] ) : '';
 			// Free Text / default values may contain HTML (#68913):
 			// sanitize_text_field stripped every tag on save, so markup a
 			// customer typed never reached generation. rich_text keeps the
@@ -2542,7 +2673,7 @@ class FeedEndpoint extends RestController {
 			? sanitize_text_field( $number_format['decimal_separator'] )
 			: '';
 		$feedrules['thousand_separator'] = isset( $number_format['thousand_separator'] )
-			? sanitize_text_field( $number_format['thousand_separator'] )
+			? self::sanitize_thousand_separator( $number_format['thousand_separator'] )
 			: '';
 
 		// Campaign URL Builder (V5 key: campaign_parameters).
@@ -2563,7 +2694,8 @@ class FeedEndpoint extends RestController {
 			if ( ! is_array( $row ) ) {
 				continue;
 			}
-			$subject = isset( $row['subject'] ) ? sanitize_text_field( $row['subject'] ) : '';
+			// The subject is an attribute code — keep its %HH octets (CBT-812).
+			$subject = isset( $row['subject'] ) ? Sanitizer::attribute_code( $row['subject'] ) : '';
 			if ( '' === $subject ) {
 				continue;
 			}
@@ -2646,13 +2778,28 @@ class FeedEndpoint extends RestController {
 				if ( ! is_array( $sub ) ) {
 					continue;
 				}
-				$attribute = isset( $sub['attribute'] ) ? sanitize_text_field( $sub['attribute'] ) : '';
+				// Attribute code: %HH octets kept (CBT-812).
+				$attribute = isset( $sub['attribute'] ) ? Sanitizer::attribute_code( $sub['attribute'] ) : '';
 				if ( '' === $attribute ) {
 					continue; // Drop empty rows — they'd reject every product.
 				}
 				$op = isset( $sub['condition'] ) ? (string) $sub['condition'] : '';
 				if ( ! in_array( $op, $valid_ops, true ) ) {
 					continue; // Unknown operator — skip rather than store junk.
+				}
+				// The compare value is literal text the filter matches
+				// against (`100%Baumwolle`, `Size%20XL`, `<8 hours`):
+				// byte-preserving like other literals (CBT-586), trimmed as
+				// before (CBT-812).
+				$compare = isset( $sub['compare'] ) ? trim( Sanitizer::preserve_whitespace( $sub['compare'] ) ) : '';
+				// A blank "contains" / "does not contain" row is incomplete:
+				// dropped, as the editor says ("incomplete and ignored"). Its
+				// answer depended on the PHP version — every product on one,
+				// none on the other (owner decision #1, CBT-821 J2). Pro skips
+				// such rows that are already stored; they are never rewritten
+				// in bulk.
+				if ( '' === $compare && ( 'contains' === $op || 'nContains' === $op ) ) {
+					continue;
 				}
 				$sub_concat = isset( $sub['operator'] ) ? strtoupper( (string) $sub['operator'] ) : 'AND';
 				if ( ! in_array( $sub_concat, $valid_concat, true ) ) {
@@ -2668,7 +2815,7 @@ class FeedEndpoint extends RestController {
 
 				$f_attrs[]      = $attribute;
 				$f_conditions[] = $op;
-				$f_compares[]   = isset( $sub['compare'] ) ? sanitize_text_field( (string) $sub['compare'] ) : '';
+				$f_compares[]   = $compare;
 				$f_concats[]    = $concat_for_v5;
 				++$accepted_in_group;
 			}
@@ -2779,6 +2926,33 @@ class FeedEndpoint extends RestController {
 	 */
 	private static function sanitize_str_replace_pattern( $value ): string {
 		return Sanitizer::preserve_whitespace( $value );
+	}
+
+	/**
+	 * Sanitize the typed thousand separator (CBT-812).
+	 *
+	 * A separator made only of whitespace — the plain space of
+	 * `1 299,00` — is kept exactly. sanitize_text_field() trimmed a lone
+	 * space to '' ("no separator"), so the Filters tab showed `1 249.00` in
+	 * its example while the feed printed `1249.00`. Every other value keeps
+	 * the sanitize_text_field() result it always had.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param mixed $value Raw submitted separator.
+	 * @return string
+	 */
+	private static function sanitize_thousand_separator( $value ): string {
+		if ( is_object( $value ) || is_array( $value ) ) {
+			return '';
+		}
+
+		$value = (string) $value;
+		if ( '' !== $value && '' === trim( $value ) ) {
+			return Sanitizer::preserve_whitespace( $value );
+		}
+
+		return sanitize_text_field( $value );
 	}
 
 	/**
@@ -3180,11 +3354,16 @@ class FeedEndpoint extends RestController {
 	 * @return \WP_REST_Response
 	 */
 	public function debug_feed_product( \WP_REST_Request $request ): \WP_REST_Response {
-		// Same guest context as a feed run, so the debugger shows the values
-		// the feed really carries (CBT-739).
+		// Same guest context and pinned PHP state as a feed run, so the
+		// debugger shows the values the feed really carries (CBT-739,
+		// CBT-810).
 		return \CTXFeed\V8\Utility\GuestContext::run(
 			function () use ( $request ): \WP_REST_Response {
-				return $this->debug_feed_product_row( $request );
+				return \CTXFeed\V8\Utility\FeedRuntime::run(
+					function () use ( $request ): \WP_REST_Response {
+						return $this->debug_feed_product_row( $request );
+					}
+				);
 			}
 		);
 	}
@@ -3375,7 +3554,7 @@ class FeedEndpoint extends RestController {
 			'option_name'      => $raw['option_name'],
 			'feed_name'        => isset( $rules['filename'] ) ? $rules['filename'] : $feed_name,
 			'slug'             => $feed_name,
-			'channel'          => ucwords( str_replace( '_', ' ', $provider ) ),
+			'channel'          => Ascii::ucwords( str_replace( '_', ' ', $provider ) ),
 			'provider'         => $provider,
 			'logo'             => TemplateInfo::logo_url( $provider ),
 			'file_type'        => isset( $rules['feedType'] ) ? strtoupper( $rules['feedType'] ) : 'XML',

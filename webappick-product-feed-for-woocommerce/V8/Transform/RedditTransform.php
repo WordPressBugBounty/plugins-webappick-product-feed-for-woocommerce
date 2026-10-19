@@ -17,6 +17,7 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Ascii;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -72,7 +73,7 @@ class RedditTransform implements TransformInterface {
 			return $data;
 		}
 
-		$availability = str_replace( array( ' ', '-' ), '_', strtolower( trim( $data['availability'] ) ) );
+		$availability = str_replace( array( ' ', '-' ), '_', Ascii::lower( trim( $data['availability'] ) ) ); // CBT-815: never the locale's fold.
 
 		$map = array(
 			'instock'      => 'in_stock',

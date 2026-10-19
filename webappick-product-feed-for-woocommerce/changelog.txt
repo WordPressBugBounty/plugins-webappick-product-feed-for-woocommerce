@@ -1,6 +1,22 @@
 CTX Feed — changelog archive
 The most recent releases are listed in readme.txt; this file carries the full history.
 
+= Version 8.0.32 =
+* Security: FTP/SFTP passwords never leave your site. Feed details, exported .wpf files, the support bundle and AI tools no longer contain them, and the connection test reuses a saved password only for the same server and user. Feed logs are protected on Apache 2.4 too.
+* Security: the WP Options attribute can no longer put passwords, secret keys, license keys or similar settings into a feed.
+* Security: the FTP connection test no longer connects to local or private network addresses.
+* Security: an imported feed file keeps Custom Template 2 code blocks only when an Administrator imports it.
+* Fix: a feed that could not be written completely (for example a full disk) or could not replace the live file keeps the previous feed and is marked failed, instead of publishing a broken file.
+* Fix: SFTP uploads are streamed, checked and replace the live file in one step; the server key is remembered and a changed key stops the upload.
+* Fix: generated feeds are always valid UTF-8, and TXT headers use the feed's delimiter and enclosure.
+* Fix: Google feeds use Google's unit names (lb, cm, in). Google Local feeds send the GTIN instead of the SKU, and Local Inventory sends backordered items as out of stock.
+* Fix: the Google Promotions feed writes one row per promotion, as Google requires, in TSV (default) or RSS XML.
+* Fix: Bing feeds follow Microsoft's specification: backordered items are sent as preorder, shipping prices as plain numbers, identifier_exists as TRUE/FALSE, and long titles and descriptions are shortened.
+* Changed: ChatGPT feeds offer CSV and TSV. Existing JSON feeds keep working.
+* Fix: deleting a feed removes its file after a domain change and no longer deletes other feeds' logs; scheduled runs are not affected by daylight-saving changes; uninstalling removes the plugin's scheduled jobs.
+* Fix: no PHP 8.4 deprecation notice when writing CSV feeds; availability dates use the store's time zone.
+* Added: an AI connection (MCP) switch on the AI assistant page to turn the AI connection off completely. Needs CTX Feed Pro 8.0.23.
+
 = Version 8.0.31 =
 * Fix: no fatal error when Action Scheduler or Rank Math's settings API is not loaded — feed generation and scheduling check that they are available first, and a feed that cannot be scheduled is marked failed instead of breaking the page.
 * Added: stores using WooPayments Multi-Currency, YayCurrency or X-Currency get the Feed Currency field in the feed editor, and System Status reports them as a multi-currency site. Converting prices to the feed currency needs CTX Feed Pro 8.0.22.

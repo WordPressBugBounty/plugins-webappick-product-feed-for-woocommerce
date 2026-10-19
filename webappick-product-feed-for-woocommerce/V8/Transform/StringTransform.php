@@ -18,6 +18,10 @@ namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Product\ProductRepository;
+use CTXFeed\V8\Utility\Ascii;
+use CTXFeed\V8\Utility\Html;
+use CTXFeed\V8\Utility\Mb;
+use CTXFeed\V8\Utility\Regex;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -87,11 +91,11 @@ class StringTransform implements TransformInterface {
 			// Apply output_type operation. @implements XFRM-FRD-4.1.
 			switch ( $type ) {
 				case 'uppercase':
-					$value = mb_strtoupper( $value );
+					$value = Mb::upper( $value );
 					break;
 
 				case 'lowercase':
-					$value = mb_strtolower( $value );
+					$value = Mb::lower( $value );
 					break;
 
 				case 'trim':
@@ -99,17 +103,17 @@ class StringTransform implements TransformInterface {
 					break;
 
 				case 'ucfirst':
-					$value = ucfirst( mb_strtolower( $value ) );
+					$value = Ascii::ucfirst( Mb::lower( $value ) );
 					break;
 
 				case 'strip_tags':
-					$value = wp_strip_all_tags( $value );
+					$value = Html::strip_all_tags( $value ); // CBT-822 E1.
 					break;
 			}
 
 			// Strip HTML tags via per-attribute config override. @implements XFRM-FRD-4.2.
 			if ( 'strip_tags' !== $type && $config->get( 'strip_tags_' . $lookup_attr ) ) {
-				$value = wp_strip_all_tags( $value );
+				$value = Html::strip_all_tags( $value ); // CBT-822 E1.
 			}
 
 			// Search & Replace rules (Filters tab "String replace") are a Pro
@@ -168,11 +172,9 @@ class StringTransform implements TransformInterface {
 						$value = (string) do_shortcode( $value );
 					}
 					$value = strip_shortcodes( $value );
-					$value = preg_replace(
-						'/\[\/*[č?a-zA-Z1-90_| -=\'"\{\}]*\/*\]/m',
-						'',
-						$value
-					) ?? $value;
+					// V5's catch-all, possessive (CBT-822 E4): the same
+					// matches, without the backtracking that returned null.
+					$value = Regex::replace( Regex::SHORTCODE_CATCH_ALL, '', $value, 'Remove shortcodes setting' );
 				}
 			}
 
@@ -205,14 +207,14 @@ class StringTransform implements TransformInterface {
 	 * @return string Truncated value.
 	 */
 	public static function word_limit( string $value, int $limit ): string {
-		if ( $limit <= 0 || mb_strlen( $value ) <= $limit ) {
+		if ( $limit <= 0 || Mb::strlen( $value ) <= $limit ) {
 			return $value;
 		}
 
-		$cut  = mb_substr( $value, 0, $limit );
-		$last = mb_strrpos( $cut, ' ' );
+		$cut  = Mb::substr( $value, 0, $limit );
+		$last = Mb::strrpos( $cut, ' ' );
 		if ( false !== $last && $last > 0 ) {
-			$cut = mb_substr( $cut, 0, $last );
+			$cut = Mb::substr( $cut, 0, $last );
 		}
 
 		return rtrim( $cut );

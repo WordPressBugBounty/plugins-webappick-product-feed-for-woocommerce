@@ -34,6 +34,7 @@ namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Filter\FilterInterface;
+use CTXFeed\V8\Utility\Utf8;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -294,7 +295,10 @@ class SkroutzVariationsBuilder {
 				continue;
 			}
 
-			$value = (string) $resolved[ $mkey ];
+			// Nested variation values never pass OutputFormatter: drop
+			// invalid UTF-8 and control characters here, or one bad byte
+			// makes libxml reject the whole Skroutz feed (CBT-817 D8).
+			$value = Utf8::clean( (string) $resolved[ $mkey ] );
 
 			// Per-variation availability passes through unchanged — Skroutz's
 			// <availability> expects the shop's own Greek delivery-time phrase,

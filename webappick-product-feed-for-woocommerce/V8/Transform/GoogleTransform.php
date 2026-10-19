@@ -20,6 +20,9 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Ascii;
+use CTXFeed\V8\Utility\Date;
+use CTXFeed\V8\Utility\Mb;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -113,8 +116,8 @@ class GoogleTransform implements TransformInterface {
 		$title = apply_filters( 'woo_feed_filter_product_title', $title, $data, $config );
 
 		// Truncate to Google max.
-		if ( mb_strlen( $title ) > self::TITLE_MAX_LENGTH ) {
-			$title = mb_substr( $title, 0, self::TITLE_MAX_LENGTH );
+		if ( Mb::strlen( $title ) > self::TITLE_MAX_LENGTH ) {
+			$title = Mb::substr( $title, 0, self::TITLE_MAX_LENGTH );
 		}
 
 		$data['title'] = $title;
@@ -145,8 +148,8 @@ class GoogleTransform implements TransformInterface {
 		$description = apply_filters( 'woo_feed_filter_product_description', $description, $data, $config );
 
 		// Truncate to Google max.
-		if ( mb_strlen( $description ) > self::DESCRIPTION_MAX_LENGTH ) {
-			$description = mb_substr( $description, 0, self::DESCRIPTION_MAX_LENGTH );
+		if ( Mb::strlen( $description ) > self::DESCRIPTION_MAX_LENGTH ) {
+			$description = Mb::substr( $description, 0, self::DESCRIPTION_MAX_LENGTH );
 		}
 
 		$data['description'] = $description;
@@ -171,7 +174,9 @@ class GoogleTransform implements TransformInterface {
 			return $data;
 		}
 
-		$availability = strtolower( trim( $data['availability'] ) );
+		// ASCII fold (CBT-815): strtolower() below PHP 8.2 follows LC_CTYPE —
+		// a Turkish locale made 'IN STOCK' into 'ın_stock'.
+		$availability = Ascii::lower( trim( $data['availability'] ) );
 
 		// Replace spaces with underscores for Google format.
 		$availability = str_replace( ' ', '_', $availability );
@@ -244,7 +249,7 @@ class GoogleTransform implements TransformInterface {
 			if ( ! is_string( $key ) || ! is_string( $value ) || '' === $value ) {
 				continue;
 			}
-			$name = (string) preg_replace( '/^g:/', '', $key );
+			$name = (string) preg_replace( '/^g:/', '', $key ); // regex-safe: anchored literal on an attribute key.
 			// Google's own template keys are weight / length / width / height
 			// (→ g:shipping_*); product_* and shipping_* are picker variants.
 			if ( ! preg_match( '/^(?:(?:shipping|product)_)?(weight|length|width|height)$/', $name, $m ) ) {
@@ -254,7 +259,7 @@ class GoogleTransform implements TransformInterface {
 				continue;
 			}
 			$number = (float) str_replace( ',', '.', $parts[1] );
-			$unit   = strtolower( $parts[2] );
+			$unit   = Ascii::lower( $parts[2] );
 
 			if ( 'weight' === $m[1] ) {
 				if ( 'lbs' === $unit ) {
@@ -281,6 +286,7 @@ class GoogleTransform implements TransformInterface {
 	 * Ensure availability_date is ISO 8601 formatted.
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.39 A date without a zone is read in the store timezone (CBT-819).
 	 *
 	 * @param array $data Product data.
 	 *
@@ -291,19 +297,9 @@ class GoogleTransform implements TransformInterface {
 			return $data;
 		}
 
-		$date = $data['availability_date'];
-
-		// If already ISO 8601, skip.
-		if ( preg_match( '/^\d{4}-\d{2}-\d{2}T/', $date ) ) {
-			return $data;
-		}
-
-		// Try to parse and convert.
-		$timestamp = strtotime( $date );
-
-		if ( false !== $timestamp ) {
-			$data['availability_date'] = gmdate( 'c', $timestamp );
-		}
+		// ISO input passes through; anything else is read in the STORE
+		// timezone, never PHP's default (CBT-819, H4); unparseable stays.
+		$data['availability_date'] = Date::iso8601( $data['availability_date'] );
 
 		return $data;
 	}

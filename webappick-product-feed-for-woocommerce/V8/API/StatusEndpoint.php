@@ -13,6 +13,7 @@
 namespace CTXFeed\V8\API;
 
 use CTXFeed\V8\Status\LegacyPro;
+use CTXFeed\V8\Utility\Ascii;
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -508,7 +509,7 @@ class StatusEndpoint extends RestController {
 		// are their own post type and get their own row.
 		foreach ( $this->product_type_counts() as $type => $count ) {
 			$items[] = $this->item(
-				ucwords( str_replace( array( '-', '_' ), ' ', $type ) ) . ' Products',
+				Ascii::ucwords( str_replace( array( '-', '_' ), ' ', $type ) ) . ' Products',
 				'success',
 				number_format_i18n( $count )
 			);

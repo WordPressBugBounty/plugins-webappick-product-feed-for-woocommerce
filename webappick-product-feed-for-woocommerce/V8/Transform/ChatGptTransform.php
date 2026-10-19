@@ -20,6 +20,10 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Ascii;
+use CTXFeed\V8\Utility\LocalizedNumber;
+use CTXFeed\V8\Utility\Mb;
+use CTXFeed\V8\Utility\NumberFormat;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -35,6 +39,42 @@ class ChatGptTransform implements TransformInterface {
 
 	use FeedCurrencyFallbackTrait;
 
+	/**
+	 * Config object {@see $memo_formatted_money} was built from (held by
+	 * reference so its object identity cannot be recycled while alive).
+	 *
+	 * @since 8.0.39
+	 * @var Config|null
+	 */
+	private $memo_config = null;
+
+	/**
+	 * Whether the `price` / `sale_price` rows carry Price (6) or Rounded
+	 * Price (7), i.e. text formatted with the feed's number format.
+	 *
+	 * @since 8.0.39
+	 * @var array<string,bool>
+	 */
+	private $memo_formatted_money = array();
+
+	/**
+	 * Reader for code-6/7 money text — the feed's separators and the leading
+	 * amount pattern — built once per {@see $memo_config} on first need.
+	 * Null on the machine format (2 / "." / none), where the machine
+	 * reading is already exact.
+	 *
+	 * @since 8.0.39
+	 * @var array{decimal_separator:string, thousand_separator:string, pattern:string}|null
+	 */
+	private $memo_reader = null;
+
+	/**
+	 * Whether {@see $memo_reader} was resolved for {@see $memo_config}.
+	 *
+	 * @since 8.0.39
+	 * @var bool
+	 */
+	private $memo_reader_built = false;
 
 	/**
 	 * Transform product data for ChatGPT Shopping feeds.
@@ -64,7 +104,7 @@ class ChatGptTransform implements TransformInterface {
 		// OpenAI's own feed format (owner, CBT-712). Works on the configured
 		// names — native (item_id, group_id, …) or legacy (id, item_group_id,
 		// …); AttributeNameMapper writes the native names afterwards.
-		$product_data = $this->transform_sale_price( $product_data );
+		$product_data = $this->transform_sale_price( $product_data, $config );
 		$product_data = $this->transform_weight( $product_data );
 		$product_data = $this->transform_variants( $product_data );
 		$product_data = $this->transform_image_list( $product_data );
@@ -132,7 +172,7 @@ class ChatGptTransform implements TransformInterface {
 			return $data;
 		}
 
-		$availability = str_replace( array( ' ', '-' ), '_', strtolower( trim( $data['availability'] ) ) );
+		$availability = str_replace( array( ' ', '-' ), '_', Ascii::lower( trim( $data['availability'] ) ) ); // CBT-815: never the locale's fold.
 
 		$map = array(
 			'instock'      => 'in_stock',
@@ -175,7 +215,7 @@ class ChatGptTransform implements TransformInterface {
 				continue;
 			}
 
-			$value = strtolower( trim( (string) $data[ $flag ] ) );
+			$value = Ascii::lower( trim( (string) $data[ $flag ] ) );
 
 			$data[ $flag ] = in_array( $value, array( 'true', '1', 'yes', 'y', 'on' ), true ) ? 'true' : 'false';
 		}
@@ -184,12 +224,30 @@ class ChatGptTransform implements TransformInterface {
 	}
 
 	/**
-	 * The leading decimal amount of a money string ("59.99 USD" → 59.99).
+	 * The leading amount of a money string ("59.99 USD" → 59.99).
 	 *
-	 * @param mixed $value Value.
+	 * Without a reader the value is read as a machine number — the leading
+	 * `\d+(?:\.\d+)?` run (a raw price, or text written with the default
+	 * 2 / "." / none format). With `$reader` — the row carries Price (6) or
+	 * Rounded Price (7), so the text was written with the feed's number
+	 * format — the leading run of digits and the feed's separators is read
+	 * back with that format ({@see LocalizedNumber::parse()}): with the Pro
+	 * boxes "," / "." the text "19,50 USD" is 19.5, not 19, and "1 299,00 USD"
+	 * at " " / "," is 1299, not 1 (CBT-811). A run that does not match or
+	 * parse falls back to the machine reading.
+	 *
+	 * @param mixed      $value  Value.
+	 * @param array|null $reader From {@see money_reader()} when the row is formatted text.
 	 * @return float|null
 	 */
-	private static function amount( $value ): ?float {
+	private static function amount( $value, ?array $reader = null ): ?float {
+		if ( null !== $reader && is_scalar( $value ) && 1 === preg_match( $reader['pattern'], (string) $value, $run ) ) {
+			$formatted = LocalizedNumber::parse( $run[1], $reader['decimal_separator'], $reader['thousand_separator'] );
+			if ( null !== $formatted ) {
+				return $formatted;
+			}
+		}
+
 		if ( ! is_scalar( $value ) || 1 !== preg_match( '/^\s*(\d+(?:\.\d+)?)/', (string) $value, $m ) ) {
 			return null;
 		}
@@ -198,18 +256,100 @@ class ChatGptTransform implements TransformInterface {
 	}
 
 	/**
+	 * Build the reader for text written with the feed number format.
+	 *
+	 * The leading-amount pattern starts and ends on a digit, so a separator
+	 * before the currency code ("19,99 EUR" at thousand " ") is never
+	 * swallowed. /u keeps a multibyte separator (no-break space) whole; an
+	 * invalid UTF-8 value then fails the match and the machine reading takes
+	 * over. Separators that are not valid UTF-8 themselves are matched
+	 * byte-wise instead, so the pattern always compiles.
+	 *
+	 * @since 8.0.39
+	 *
+	 * On the machine format ("." decimal, no thousands) the machine reading
+	 * is exact, so no reader is needed (null) and the default-host cost is
+	 * unchanged.
+	 *
+	 * @param array $nf { decimals, decimal_separator, thousand_separator }.
+	 * @return array{decimal_separator:string, thousand_separator:string, pattern:string}|null
+	 */
+	private static function money_reader( array $nf ): ?array {
+		$decimal_sep  = isset( $nf['decimal_separator'] ) ? (string) $nf['decimal_separator'] : '.';
+		$thousand_sep = isset( $nf['thousand_separator'] ) ? (string) $nf['thousand_separator'] : '';
+		if ( '.' === $decimal_sep && '' === $thousand_sep ) {
+			return null;
+		}
+
+		$separators = '';
+		foreach ( array( $thousand_sep, $decimal_sep ) as $separator ) {
+			if ( '' !== $separator ) {
+				$separators .= '|' . preg_quote( $separator, '/' );
+			}
+		}
+		$modifier = 1 === preg_match( '//u', $thousand_sep . $decimal_sep ) ? 'u' : '';
+
+		return array(
+			'decimal_separator'  => $decimal_sep,
+			'thousand_separator' => $thousand_sep,
+			'pattern'            => '/^\s*(\d(?:(?:\d' . $separators . ')*\d)?)/' . $modifier,
+		);
+	}
+
+	/**
+	 * Whether the `price` / `sale_price` rows are formatted by code 6 or 7.
+	 *
+	 * Read from the same lookup OutputTypeTransform applies, once per Config.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param Config $config Feed configuration.
+	 * @return array<string,bool> `price` / `sale_price` => formatted.
+	 */
+	private function formatted_money_rows( Config $config ): array {
+		if ( $config !== $this->memo_config ) {
+			$this->memo_config          = $config;
+			$this->memo_formatted_money = array();
+			$this->memo_reader          = null;
+			$this->memo_reader_built    = false;
+
+			$lookup = OutputTypeTransform::lookup( $config );
+			foreach ( array( 'price', 'sale_price' ) as $attr ) {
+				$codes = isset( $lookup[ $attr ] ) ? OutputTypeTransform::normalize_codes( $lookup[ $attr ] ) : array();
+
+				$this->memo_formatted_money[ $attr ] = in_array( '6', $codes, true ) || in_array( '7', $codes, true );
+			}
+		}
+
+		return $this->memo_formatted_money;
+	}
+
+	/**
 	 * OpenAI ignores a sale price that is not strictly between 0 and the
 	 * regular price; send none instead (CBT-712).
 	 *
-	 * @param array $data Product data.
+	 * Each side is read the way its row wrote it ({@see amount()}): a row
+	 * with Price / Rounded Price in the feed's number format (resolved once
+	 * per Config, on the first product that needs it), any other row as a
+	 * machine number (CBT-811).
+	 *
+	 * @param array  $data   Product data.
+	 * @param Config $config Feed configuration.
 	 * @return array
 	 */
-	private function transform_sale_price( array $data ): array {
+	private function transform_sale_price( array $data, Config $config ): array {
 		if ( ! array_key_exists( 'sale_price', $data ) || '' === (string) ( is_scalar( $data['sale_price'] ) ? $data['sale_price'] : '' ) ) {
 			return $data;
 		}
-		$sale  = self::amount( $data['sale_price'] );
-		$price = self::amount( $data['price'] ?? null );
+
+		$formatted = $this->formatted_money_rows( $config );
+		if ( ( $formatted['price'] || $formatted['sale_price'] ) && ! $this->memo_reader_built ) {
+			$this->memo_reader       = self::money_reader( NumberFormat::resolve( $config ) );
+			$this->memo_reader_built = true;
+		}
+
+		$sale  = self::amount( $data['sale_price'], $formatted['sale_price'] ? $this->memo_reader : null );
+		$price = self::amount( $data['price'] ?? null, $formatted['price'] ? $this->memo_reader : null );
 		if ( null === $sale || $sale <= 0 || ( null !== $price && $sale >= $price ) ) {
 			$data['sale_price'] = '';
 		}
@@ -244,7 +384,7 @@ class ChatGptTransform implements TransformInterface {
 		);
 
 		if ( array_key_exists( 'item_weight_unit', $data ) && is_scalar( $data['item_weight_unit'] ) ) {
-			$unit                     = strtolower( trim( (string) $data['item_weight_unit'] ) );
+			$unit                     = Ascii::lower( trim( (string) $data['item_weight_unit'] ) );
 			$data['item_weight_unit'] = $units[ $unit ] ?? '';
 		}
 
@@ -254,7 +394,7 @@ class ChatGptTransform implements TransformInterface {
 
 		if ( 1 === preg_match( '/^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-Z]*)\s*$/', (string) $data['weight'], $m ) ) {
 			$data['weight'] = str_replace( ',', '.', $m[1] );
-			$unit           = strtolower( $m[2] );
+			$unit           = Ascii::lower( $m[2] );
 			if ( '' === $data['item_weight_unit'] && isset( $units[ $unit ] ) ) {
 				$data['item_weight_unit'] = $units[ $unit ];
 			}
@@ -315,8 +455,8 @@ class ChatGptTransform implements TransformInterface {
 			'description' => 5000,
 		);
 		foreach ( $limits as $key => $max ) {
-			if ( isset( $data[ $key ] ) && is_string( $data[ $key ] ) && mb_strlen( $data[ $key ] ) > $max ) {
-				$data[ $key ] = mb_substr( $data[ $key ], 0, $max );
+			if ( isset( $data[ $key ] ) && is_string( $data[ $key ] ) && Mb::strlen( $data[ $key ] ) > $max ) {
+				$data[ $key ] = Mb::substr( $data[ $key ], 0, $max );
 			}
 		}
 

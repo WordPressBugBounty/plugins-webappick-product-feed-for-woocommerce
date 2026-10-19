@@ -321,6 +321,24 @@ class ProductEndpoint extends RestController {
 	 * @return \WP_REST_Response
 	 */
 	public function preview_products( \WP_REST_Request $request ): \WP_REST_Response {
+		// Same pinned PHP state as a feed run (CBT-810): the admin preview and
+		// the MCP ctxfeed/preview-products ability show the feed's values.
+		return \CTXFeed\V8\Utility\FeedRuntime::run(
+			function () use ( $request ): \WP_REST_Response {
+				return $this->preview_products_rows( $request );
+			}
+		);
+	}
+
+	/**
+	 * Body of preview_products(), already inside FeedRuntime.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param \WP_REST_Request $request REST request object.
+	 * @return \WP_REST_Response
+	 */
+	private function preview_products_rows( \WP_REST_Request $request ): \WP_REST_Response {
 		$container = Container::get_instance();
 
 		// phpcs:ignore Generic.Commenting.DocComment.MissingShort -- Single-line @var type hint for static analysis.
@@ -395,6 +413,25 @@ class ProductEndpoint extends RestController {
 	 * @return \WP_REST_Response
 	 */
 	public function get_product_attributes( \WP_REST_Request $request ): \WP_REST_Response {
+		// Same pinned PHP state as a feed run (CBT-810): MCP
+		// ctxfeed/inspect-product is compared against ctxfeed/debug-feed-product,
+		// so both must resolve prices and dates the same way.
+		return \CTXFeed\V8\Utility\FeedRuntime::run(
+			function () use ( $request ): \WP_REST_Response {
+				return $this->product_attributes_row( $request );
+			}
+		);
+	}
+
+	/**
+	 * Body of get_product_attributes(), already inside FeedRuntime.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param \WP_REST_Request $request REST request object.
+	 * @return \WP_REST_Response
+	 */
+	private function product_attributes_row( \WP_REST_Request $request ): \WP_REST_Response {
 		$product_id = (int) $request->get_param( 'id' );
 		$product    = wc_get_product( $product_id );
 

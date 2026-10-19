@@ -21,6 +21,32 @@ if ( ! function_exists( 'add_action' ) ) {
 	die();
 }
 
+	// Guarded and declared before first use: an old CTX Feed Pro (< 8) bundles a
+	// copy of this page with the same unguarded function (CBT-844, CBT-698).
+if ( ! function_exists( 'woo_feed_calculate_rating' ) ) {
+	/**
+	 * Calculate the weighted average star rating from a wp.org ratings breakdown.
+	 *
+	 * @since 8.0.0
+	 *
+	 * @param array $ratings Ratings breakdown keyed 1-5 with the vote count for each star.
+	 *
+	 * @return float|int Weighted average rounded to 2 decimals, or 0 when there are no votes.
+	 */
+	function woo_feed_calculate_rating( $ratings ) {
+		$totalRatings = array_sum( $ratings ); // Sum of all ratings.
+		// phpcs:ignore Universal.Operators.StrictComparisons.LooseEqual -- array_sum() returns int or float depending on the decoded wp.org payload; a strict check would miss the 0.0 case.
+		if ( 0 == $totalRatings ) {
+			return 0;
+		}
+
+		$weightedSum   = ( 5 * $ratings[5] ) + ( 4 * $ratings[4] ) + ( 3 * $ratings[3] ) + ( 2 * $ratings[2] ) + ( 1 * $ratings[1] );
+		$averageRating = $weightedSum / $totalRatings;
+
+		return round( $averageRating, 2 ); // Round to 2 decimal places.
+	}
+}
+
 	$woo_feed_plugin_api_url = 'https://api.wordpress.org/plugins/info/1.2/?action=plugin_information&slug=';
 
 	$woo_feed_challan_slug = 'webappick-pdf-invoice-for-woocommerce';
@@ -68,28 +94,6 @@ if ( ! function_exists( 'add_action' ) ) {
 	$woo_feed_disco_ratings = $woo_feed_disco_data['ratings'];
 
 	$woo_feed_disco_rating = woo_feed_calculate_rating( $woo_feed_disco_ratings );
-
-	/**
-	 * Calculate the weighted average star rating from a wp.org ratings breakdown.
-	 *
-	 * @since 8.0.0
-	 *
-	 * @param array $ratings Ratings breakdown keyed 1-5 with the vote count for each star.
-	 *
-	 * @return float|int Weighted average rounded to 2 decimals, or 0 when there are no votes.
-	 */
-	function woo_feed_calculate_rating( $ratings ) {
-		$totalRatings = array_sum( $ratings ); // Sum of all ratings.
-		// phpcs:ignore Universal.Operators.StrictComparisons.LooseEqual -- array_sum() returns int or float depending on the decoded wp.org payload; a strict check would miss the 0.0 case.
-		if ( 0 == $totalRatings ) {
-			return 0;
-		}
-
-		$weightedSum   = ( 5 * $ratings[5] ) + ( 4 * $ratings[4] ) + ( 3 * $ratings[3] ) + ( 2 * $ratings[2] ) + ( 1 * $ratings[1] );
-		$averageRating = $weightedSum / $totalRatings;
-
-		return round( $averageRating, 2 ); // Round to 2 decimal places.
-	}
 
 	if ( ! function_exists( 'woo_feed_is_plugin_activated' ) ) {
 		/**

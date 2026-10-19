@@ -13,6 +13,8 @@
 
 namespace CTXFeed\V8\Filter;
 
+use CTXFeed\V8\Utility\Ascii;
+
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -51,7 +53,7 @@ class FilterHelper {
 			return false;
 		}
 
-		$normalised = strtolower( trim( $value ) );
+		$normalised = Ascii::lower( trim( $value ) ); // CBT-815: never the locale's fold.
 
 		return in_array(
 			$normalised,

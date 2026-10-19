@@ -22,8 +22,8 @@
  *   5. Variation→parent meta fallback: if `_var` value empty for a variation,
  *      retry WITHOUT `_var` suffix on the variation (to catch the value cached
  *      from the parent product).
- *   6. Special date formatting: `availability_date` → ISO 8601 via
- *      `date('c', strtotime($value))`.
+ *   6. Special date formatting: `availability_date` → ISO 8601 in the store
+ *      timezone (`Date::iso8601()`; V5 used `date('c', strtotime($value))`).
  *
  * @package    CTXFeed
  * @subpackage V8/Product
@@ -35,6 +35,7 @@ namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\CustomFields\CustomFieldHelper;
+use CTXFeed\V8\Utility\Date;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -249,7 +250,14 @@ class V5CustomFieldResolver {
 	 * matching V5's `format_custom_field_value()`. Anything else returns
 	 * unchanged.
 	 *
+	 * The date is read in the STORE timezone (`Date::iso8601()`, CBT-719
+	 * parity with the `availability_date` attribute): a picked `2026-12-25`
+	 * is midnight in the store, `2026-12-25T00:00:00-05:00` in New York
+	 * (was `+00:00`, the evening before there). An ISO value already
+	 * carrying a `T` passes through; an unparseable value returns raw (V5).
+	 *
 	 * @since 8.0.0
+	 * @since 8.0.39 Store timezone, independent of PHP's default (CBT-819, H3).
 	 *
 	 * @param string $value    Raw meta value.
 	 * @param string $meta_key Meta key (used to detect availability_date).
@@ -265,16 +273,7 @@ class V5CustomFieldResolver {
 			return $value;
 		}
 
-		$timestamp = strtotime( $value );
-		if ( false === $timestamp ) {
-			// V5 returns the raw value when strtotime fails — preserve.
-			return $value;
-		}
-
-		// V5 uses gmdate-equivalent `date('c', ...)`. We use gmdate to keep
-		// output deterministic across server timezones — both produce a valid
-		// ISO 8601 timestamp Google accepts.
-		return gmdate( 'c', $timestamp );
+		return Date::iso8601( $value );
 	}
 
 	/**

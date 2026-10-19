@@ -20,7 +20,11 @@ namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Core\Logger;
+use CTXFeed\V8\Utility\Html;
 use CTXFeed\V8\Utility\Sanitizer;
+use CTXFeed\V8\Utility\NumberFormat;
+use CTXFeed\V8\Utility\Url;
+use CTXFeed\V8\Utility\Utf8;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -487,6 +491,9 @@ class AttributeResolver {
 		);
 
 		if ( self::is_price_family( $attr ) ) {
+			if ( is_float( $value ) ) {
+				return NumberFormat::to_machine( $value );
+			}
 			return is_scalar( $value ) ? (string) $value : '';
 		}
 
@@ -504,6 +511,11 @@ class AttributeResolver {
 		}
 
 		$value = $this->apply_seo_fallback( $value, $product, $attr, $config );
+
+		// A float part (a bridge filter's number) is machine text (CBT-809 B8).
+		if ( is_float( $value ) ) {
+			return NumberFormat::to_machine( $value );
+		}
 
 		return is_scalar( $value ) ? (string) $value : '';
 	}
@@ -799,10 +811,15 @@ class AttributeResolver {
 				if ( function_exists( 'strip_shortcodes' ) ) {
 					$plain_desc = (string) strip_shortcodes( $plain_desc );
 				}
-				$plain_desc = wp_strip_all_tags( html_entity_decode( $plain_desc, ENT_QUOTES ) );
+				// Entities decode to UTF-8 whatever default_charset says (CBT-817 D1).
+				// Tags are stripped without core's script/style regex, which
+				// returned null on a long page-builder block once
+				// pcre.backtrack_limit was reached — the description shipped
+				// '' (CBT-822 E1).
+				$plain_desc = Html::strip_all_tags( Html::decode( $plain_desc ) );
 				// Invalid UTF-8 (wrong-charset import) made the /u collapse
 				// return null and the whole description vanish (CBT-694).
-				$plain_desc = trim( (string) preg_replace( '/\s+/u', ' ', \CTXFeed\V8\Utility\Utf8::scrub( $plain_desc ) ) );
+				$plain_desc = trim( (string) preg_replace( '/\s+/u', ' ', \CTXFeed\V8\Utility\Utf8::scrub( $plain_desc ) ) ); // regex-safe: linear \s+ on scrubbed UTF-8 — cannot fail.
 				return apply_filters( 'woo_feed_filter_product_description', $plain_desc, $product, $config );
 
 			// V5 attribute: `description_with_html` — preserves HTML
@@ -825,7 +842,10 @@ class AttributeResolver {
 						}
 					}
 				}
-				$desc = wp_check_invalid_utf8( wp_specialchars_decode( $desc ), true );
+				// Invalid UTF-8 is dropped, the value kept (CBT-817 D6): on
+				// WordPress 6.2–6.8 wp_check_invalid_utf8( …, true ) returned
+				// false for it — the whole description_with_html lost.
+				$desc = Utf8::scrub( (string) wp_specialchars_decode( (string) $desc ) );
 				return apply_filters(
 					'woo_feed_filter_product_description_with_html',
 					$desc,
@@ -956,7 +976,11 @@ class AttributeResolver {
 				return apply_filters( 'woo_feed_filter_product_availability', $status, $product, $config );
 
 			case 'stock_quantity':
-				return $product->get_stock_quantity();
+				// An int or null stays as it is (amendment 5); a decimal stock
+				// quantity (a `woocommerce_stock_amount` plugin) is machine
+				// text, never "2,5" (CBT-809 B8).
+				$stock_quantity = $product->get_stock_quantity();
+				return is_float( $stock_quantity ) ? NumberFormat::to_machine( $stock_quantity ) : $stock_quantity;
 
 			case 'stock_status':
 				return $product->get_stock_status();
@@ -1071,13 +1095,17 @@ class AttributeResolver {
 				}
 				return '';
 
+			// Gregorian Y-m-d in the date's own (store) timezone. Not
+			// date_i18n(): its `date_i18n` / `wp_date` filters let a Jalali
+			// or Persian-digit plugin rewrite the feed value (CBT-819, H7 —
+			// a deliberate V5 deviation; identical without such a filter).
 			case 'sale_price_sdate':
 				$from = $product->get_date_on_sale_from();
-				return $from instanceof \WC_DateTime ? $from->date_i18n() : '';
+				return $from instanceof \WC_DateTime ? $from->date( 'Y-m-d' ) : '';
 
 			case 'sale_price_edate':
 				$to = $product->get_date_on_sale_to();
-				return $to instanceof \WC_DateTime ? $to->date_i18n() : '';
+				return $to instanceof \WC_DateTime ? $to->date( 'Y-m-d' ) : '';
 
 			// V5 parity: `product_type` is a deprecated alias for `categories`
 			// (V5 ProductInfo::product_type() delegates to categories()).
@@ -1144,7 +1172,9 @@ class AttributeResolver {
 				return (string) $product->get_rating_count();
 
 			case 'rating_average':
-				return (string) $product->get_average_rating();
+				// A review plugin's float rating is machine text (CBT-816).
+				$rating = $product->get_average_rating();
+				return is_float( $rating ) ? NumberFormat::to_machine( $rating ) : (string) $rating;
 
 			case 'total_sold':
 				return (string) $product->get_total_sales();
@@ -1181,7 +1211,7 @@ class AttributeResolver {
 				return $product->is_featured() ? 'yes' : 'no';
 
 			case 'add_to_cart_link':
-				return $product->add_to_cart_url();
+				return $this->resolve_add_to_cart_link( $product );
 
 			// V5 attribute: `is_bundle` — checks the 5 known WC bundle
 			// plugin type names V5 ships with support for. V8 previously
@@ -1510,6 +1540,43 @@ class AttributeResolver {
 				// Unknown attributes fall through to meta resolution.
 				return $this->meta->resolve( $product, $attr, $config );
 		}
+	}
+
+	/**
+	 * The product's add-to-cart URL, always absolute.
+	 *
+	 * WooCommerce builds a simple product's add-to-cart URL on top of
+	 * $_SERVER['REQUEST_URI'] unless the request is a feed or a 404, so a
+	 * feed batch exported "/wp-cron.php?doing_wp_cron=…&add-to-cart=12" or
+	 * the REST runner's own route (CBT-818). A value that starts with `/` or
+	 * `?` is rebuilt as WooCommerce's own feed-request form — the permalink
+	 * plus `add-to-cart=<id>` when the product is purchasable and in stock,
+	 * otherwise the plain permalink. `''`, `#…` and absolute values (every
+	 * variation, variable, grouped product, and an external product's own
+	 * URL) are returned untouched, and an external product is never
+	 * rebuilt (its URL is the merchant's). REQUEST_URI is never written.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param \WC_Product $product Product.
+	 * @return mixed WooCommerce's value, or the absolute rebuild.
+	 */
+	private function resolve_add_to_cart_link( $product ) {
+		$url = $product->add_to_cart_url();
+		if ( ! is_string( $url ) || '' === $url || ( '/' !== $url[0] && '?' !== $url[0] ) || $product->is_type( 'external' ) ) {
+			return $url;
+		}
+
+		$permalink = (string) $product->get_permalink();
+		if ( '' === $permalink ) {
+			return $url;
+		}
+
+		if ( ! $product->is_purchasable() || ! $product->is_in_stock() ) {
+			return $permalink;
+		}
+
+		return Url::with_query_args( $permalink, array( 'add-to-cart' => (string) $product->get_id() ), array( 'added-to-cart' ) );
 	}
 
 	/**
@@ -1902,7 +1969,12 @@ class AttributeResolver {
 			}
 		}
 
-		return ( null !== $quantity ) ? (string) $quantity : '';
+		if ( null === $quantity ) {
+			return '';
+		}
+
+		// array_sum() of decimal stock metas is a float (CBT-816).
+		return is_float( $quantity ) ? NumberFormat::to_machine( $quantity ) : (string) $quantity;
 	}
 
 	/**

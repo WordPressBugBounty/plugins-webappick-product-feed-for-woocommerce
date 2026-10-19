@@ -97,8 +97,15 @@ class RestProxy {
 			);
 		}
 
-		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- nonce verified above.
-		$route = isset( $_REQUEST['ctxfeed_route'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['ctxfeed_route'] ) ) : '';
+		// The admin app percent-encodes a route segment (encodeURIComponent):
+		// a non-Latin mapping slug `%d0%ba…` travels as `%25d0%25ba…`.
+		// Decode the route once — the shape plain permalinks (`?rest_route=`)
+		// deliver — then sanitize WITHOUT sanitize_text_field(), which
+		// deleted the `%HH` octets (`/category-mapping/%d0%ba…`) — CBT-812.
+		// The mapping handlers accept this shape and the still-encoded one
+		// pretty permalinks deliver (Sanitizer::route_slug()).
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- nonce verified above; Sanitizer::attribute_code() is sanitize_text_field() minus the %HH removal (strips tags, invalid UTF-8 and line breaks).
+		$route = isset( $_REQUEST['ctxfeed_route'] ) ? \CTXFeed\V8\Utility\Sanitizer::attribute_code( rawurldecode( (string) wp_unslash( $_REQUEST['ctxfeed_route'] ) ) ) : '';
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- nonce verified above.
 		$method = isset( $_REQUEST['ctxfeed_method'] ) ? strtoupper( sanitize_text_field( wp_unslash( $_REQUEST['ctxfeed_method'] ) ) ) : 'GET';
 

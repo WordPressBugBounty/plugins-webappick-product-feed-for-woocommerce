@@ -195,6 +195,121 @@ class Sanitizer {
 	}
 
 	/**
+	 * `sanitize_text_field()` without its percent-octet removal (CBT-812).
+	 *
+	 * WordPress core's `_sanitize_text_fields()` deletes every `%HH`
+	 * sequence. CTX Feed stores identifiers that legitimately carry them:
+	 * WordPress writes a non-Latin local attribute or a non-Latin mapping
+	 * name as its percent-encoded slug (`Розмір` → `%d1%80%d0%be…`), so a
+	 * save through sanitize_text_field() turned `wf_attr_%d1%80…` into
+	 * `wf_attr_` and the column came back empty. Literal text loses bytes
+	 * the same way (`100%Baumwolle` → `100umwolle`).
+	 *
+	 * Steps (identical to core, minus the octet loop): object/array → '',
+	 * cast, `wp_check_invalid_utf8()`, the `<` handling (`wp_pre_kses_less_than`
+	 * + `wp_strip_all_tags`), `[\r\n\t ]+` → one space, `trim()`. Any input
+	 * without a `%HH` sequence comes back byte-identical to
+	 * sanitize_text_field(). The `sanitize_text_field` filter is NOT applied:
+	 * this is not that function.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param mixed $value Raw submitted value.
+	 * @return string Single-line text with every `%HH` octet kept.
+	 */
+	public static function text_field( $value ): string {
+		if ( is_object( $value ) || is_array( $value ) ) {
+			return '';
+		}
+
+		$value = (string) $value;
+
+		if ( function_exists( 'wp_check_invalid_utf8' ) ) {
+			$value = (string) wp_check_invalid_utf8( $value );
+		}
+
+		if ( false !== strpos( $value, '<' ) ) {
+			if ( function_exists( 'wp_pre_kses_less_than' ) ) {
+				$value = (string) wp_pre_kses_less_than( $value );
+			}
+			$value = function_exists( 'wp_strip_all_tags' )
+				? (string) wp_strip_all_tags( $value, false )
+				: strip_tags( $value ); // phpcs:ignore WordPress.WP.AlternativeFunctions.strip_tags_strip_tags, WordPressVIPMinimum.Functions.StripTags.StripTagsOneParameter -- Fallback only when WordPress core is not loaded; wp_strip_all_tags() is used whenever it exists.
+
+			// Core's guard: later newline stripping must not rebuild a tag.
+			$value = str_replace( "<\n", "&lt;\n", $value );
+		}
+
+		$value = (string) preg_replace( '/[\r\n\t ]+/', ' ', $value );
+
+		return trim( $value );
+	}
+
+	/**
+	 * Sanitize a product attribute code, or the identifier of a saved mapping
+	 * (`wf_cmapping_<slug>`, `wp_attr_mapping_<slug>`, `wf_dattribute_<slug>`),
+	 * keeping its `%HH` octets (CBT-812).
+	 *
+	 * Used for feed rows' `attributes`, the String Replace `subject`, the
+	 * Advanced Filter attribute, Dynamic Attribute rule/value/default
+	 * attribute keys and the `{name}` of the mapping REST routes. ASCII codes
+	 * come back exactly as sanitize_text_field() returned them, so
+	 * `wf_cattr_Product Code` (a custom field with a space) still survives.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param mixed $value Raw submitted attribute code / mapping identifier.
+	 * @return string
+	 */
+	public static function attribute_code( $value ): string {
+		return self::text_field( $value );
+	}
+
+	/**
+	 * The `{name}` segment of a mapping item route as the STORED slug,
+	 * whichever URL shape carried it (CBT-812).
+	 *
+	 * A mapping slug keeps its `%HH` octets (`Категории` → `%d0%ba%d0%b0…`)
+	 * and the admin app sends the segment through encodeURIComponent()
+	 * (`%25d0%25ba…`). How often WordPress decodes it before the handler
+	 * runs depends on the URL:
+	 *
+	 * - pretty permalinks (`/wp-json/…`, the WordPress default) do NOT
+	 *   decode it: WP::parse_request() matches the raw REQUEST_URI and the
+	 *   rewrite round-trip (WP_MatchesMapRegex urlencode() + parse_str())
+	 *   cancels out, so the handler receives `%25d0%25ba…`;
+	 * - plain permalinks (`?rest_route=…`) and the admin-ajax RestProxy
+	 *   decode it once, so the handler receives `%d0%ba…`;
+	 * - a client that sends the slug unencoded over /wp-json/ delivers
+	 *   `%d0%ba…` as is.
+	 *
+	 * A value that still carries an encoded `%` (`%25` + two hex digits) is
+	 * decoded once; then it is sanitized like any attribute code. A value
+	 * without `%25HH` — every ASCII slug and every already-decoded slug —
+	 * passes unchanged, so the helper is idempotent on the stored form and
+	 * every shape reaches the same option. A genuine slug octet is always a
+	 * UTF-8 byte (`%80`–`%ff`); only a name typed with a literal `%25` plus
+	 * two hex digits is ambiguous (and unreachable over plain permalinks).
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param mixed $value Raw route segment.
+	 * @return string The stored slug.
+	 */
+	public static function route_slug( $value ): string {
+		if ( is_object( $value ) || is_array( $value ) ) {
+			return '';
+		}
+
+		$value = (string) $value;
+		if ( 1 === preg_match( '/%25[0-9A-Fa-f]{2}/', $value ) ) {
+			$value = rawurldecode( $value );
+		}
+
+		return self::attribute_code( $value );
+	}
+
+	/**
 	 * Sanitize a value that may legitimately CONTAIN HTML.
 	 *
 	 * For the feed editor's Free Text / default-value column (#68913):

@@ -12,6 +12,7 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Ascii;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -63,7 +64,7 @@ class ZboziTransform implements TransformInterface {
 			return $data;
 		}
 
-		$visibility = strtolower( trim( $data['visibility'] ) );
+		$visibility = Ascii::lower( trim( $data['visibility'] ) ); // CBT-815: Turkish strtolower() made 'VISIBLE' 'vısıble'.
 
 		$data['visibility'] = ( 'visible' === $visibility ) ? '1' : '0';
 

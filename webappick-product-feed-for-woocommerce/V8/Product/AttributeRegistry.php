@@ -21,6 +21,7 @@ namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\FeatureGate;
 use CTXFeed\V8\CustomFields\CustomFieldHelper;
+use CTXFeed\V8\Utility\Ascii;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -747,7 +748,7 @@ class AttributeRegistry {
 
 		foreach ( $local_attrs as $attr ) {
 			$clean                                      = str_replace( 'attribute_', '', $attr );
-			$options[ self::PREFIX_ATTRIBUTE . $clean ] = ucwords( str_replace( '-', ' ', $clean ) );
+			$options[ self::PREFIX_ATTRIBUTE . $clean ] = Ascii::ucwords( str_replace( '-', ' ', $clean ) );
 		}
 
 		// Product custom attributes from _product_attributes meta.
@@ -763,7 +764,7 @@ class AttributeRegistry {
 				if ( is_array( $product_attr ) ) {
 					foreach ( $product_attr as $key => $arr_value ) {
 						if ( strpos( $key, 'pa_' ) === false && isset( $arr_value['name'] ) ) {
-							$options[ self::PREFIX_ATTRIBUTE . $key ] = ucwords( str_replace( '-', ' ', $arr_value['name'] ) );
+							$options[ self::PREFIX_ATTRIBUTE . $key ] = Ascii::ucwords( str_replace( '-', ' ', $arr_value['name'] ) );
 						}
 					}
 				}

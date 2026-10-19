@@ -726,12 +726,12 @@ class FeedScheduler {
 		}
 
 		$updated_at = isset( $progress['updated_at'] ) ? (string) $progress['updated_at'] : '';
-		$touched    = '' === $updated_at ? false : strtotime( $updated_at );
+		$touched    = '' === $updated_at ? false : strtotime( $updated_at ); // tz-safe: an age — subtracted from current_time() read in the same zone.
 		if ( false === $touched ) {
 			return null;
 		}
 
-		return ( null === $now ? (int) strtotime( current_time( 'mysql' ) ) : $now ) - $touched;
+		return ( null === $now ? (int) strtotime( current_time( 'mysql' ) ) : $now ) - $touched; // tz-safe: an age — both wall clocks are read in the same zone.
 	}
 
 	/**

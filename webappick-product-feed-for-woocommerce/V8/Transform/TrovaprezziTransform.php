@@ -2,10 +2,18 @@
 /**
  * TrovaprezziTransform — Applies Trovaprezzi-specific formatting rules.
  *
- * Trovaprezzi (Italian price comparison) requires:
- * - Price: comma decimal separator, no thousands, 2 decimals
+ * Trovaprezzi (Italian price comparison):
  * - Category separator: comma instead of " > "
  * - XML wrappers: itemsWrapper = "Products", itemWrapper = "Offer"
+ *
+ * Prices are NOT rewritten (V5 parity — V5 had no Trovaprezzi price
+ * override). The `Price` and `ShippingCost` rows ship exactly what their
+ * Output Type (Price, by default) and suffix produce, so both use the same
+ * number format, as the Trovaprezzi technical requirements demand for
+ * Shipping Cost. Until 8.0.38 a V8-only `transform_price()` rewrote
+ * `ShippingCost` (and lowercase keys no template uses) to a comma decimal
+ * while `Price` kept the dot — `1299.50` next to `4,90` (CBT-809 C4, owner
+ * decision #11, CBT-811). Removed in 8.0.39.
  *
  * Availability ("disponibilità") is intentionally NOT rewritten. Per the
  * official Trovaprezzi feed spec the field is optional and treats ANY number
@@ -59,66 +67,9 @@ class TrovaprezziTransform implements TransformInterface {
 			return $product_data;
 		}
 
-		$product_data = $this->transform_price( $product_data );
 		$product_data = $this->transform_category( $product_data );
 
 		return $product_data;
-	}
-
-	/**
-	 * Format prices for Trovaprezzi.
-	 *
-	 * V5 parity: comma decimal, no thousands separator, 2 decimal places.
-	 * Example: "1234,50"
-	 *
-	 * @since 8.0.0
-	 *
-	 * @param array $data Product data.
-	 *
-	 * @return array Modified data.
-	 */
-	private function transform_price( array $data ): array {
-		$price_keys = array(
-			'price',
-			'current_price',
-			'sale_price',
-			'regular_price',
-			'ShippingCost',
-		);
-
-		foreach ( $price_keys as $key ) {
-			if ( empty( $data[ $key ] ) ) {
-				continue;
-			}
-
-			$value = $data[ $key ];
-
-			// Strip any existing currency symbols and whitespace.
-			$value = preg_replace( '/[^\d.,\-]/', '', $value );
-
-			// Normalize: remove existing thousands separators, convert decimal point.
-			// Handle case where comma is already decimal (European input).
-			if ( false !== strpos( $value, ',' ) && false !== strpos( $value, '.' ) ) {
-				// Both present — period is thousands, comma is decimal (e.g., "1.234,50").
-				$value = str_replace( '.', '', $value );
-				$value = str_replace( ',', '.', $value );
-			} elseif ( false !== strpos( $value, ',' ) ) {
-				// Only comma — could be decimal.
-				$parts = explode( ',', $value );
-				if ( count( $parts ) === 2 && strlen( $parts[1] ) <= 2 ) {
-					// Comma is decimal separator.
-					$value = str_replace( ',', '.', $value );
-				} else {
-					// Comma is thousands separator.
-					$value = str_replace( ',', '', $value );
-				}
-			}
-
-			$numeric      = (float) $value;
-			$data[ $key ] = number_format( $numeric, 2, ',', '' );
-		}
-
-		return $data;
 	}
 
 	/**

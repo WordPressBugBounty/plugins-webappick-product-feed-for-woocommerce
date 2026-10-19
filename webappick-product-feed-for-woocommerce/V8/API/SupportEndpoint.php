@@ -14,6 +14,7 @@
 
 namespace CTXFeed\V8\API;
 
+use CTXFeed\V8\Utility\Mb;
 use CTXFeed\V8\Utility\Redactor;
 
 // Exit if accessed directly.
@@ -222,7 +223,7 @@ class SupportEndpoint extends RestController {
 		}
 
 		// Keep parity with the UI's 2000-character limit.
-		$message = mb_substr( $message, 0, 2000 );
+		$message = Mb::substr( $message, 0, 2000 );
 
 		// Remove PREVIOUS tickets' temp diagnostics (bundle dirs + staged
 		// manual uploads share the ctxfeed-support- prefix). Cleanup is
@@ -260,8 +261,8 @@ class SupportEndpoint extends RestController {
 		if ( '' !== $config_text ) {
 			$body .= "\n--- Feed configuration (inline copy of feed-config.txt) ---\n";
 			$body .= "(compact JSON - the readable pretty-printed version is in the feed-config.txt attachment)\n";
-			$body .= mb_substr( $config_text, 0, 15000 );
-			if ( mb_strlen( $config_text ) > 15000 ) {
+			$body .= Mb::substr( $config_text, 0, 15000 );
+			if ( Mb::strlen( $config_text ) > 15000 ) {
 				$body .= "\n[truncated - full copy in the feed-config.txt attachment]";
 			}
 			$body .= "\n";
@@ -327,7 +328,7 @@ class SupportEndpoint extends RestController {
 			return $this->error( __( 'Please enter a valid email address.', 'woo-feed' ), 400 );
 		}
 
-		$handle = mb_substr( $handle, 0, 200 );
+		$handle = Mb::substr( $handle, 0, 200 );
 
 		$body  = "Review discount claim (10% off, single-use)\n\n";
 		$body .= "WordPress.org handle / profile: {$handle}\n";

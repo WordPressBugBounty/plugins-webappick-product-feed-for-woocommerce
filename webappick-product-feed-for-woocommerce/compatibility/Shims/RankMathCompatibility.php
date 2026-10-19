@@ -14,6 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 use CTXFeed\Compat\Support\CommonHelper;
+use CTXFeed\V8\Utility\Utf8;
 use RankMath\Helper;
 
 /**
@@ -226,9 +227,13 @@ class RankMathCompatibility {
 			}
 		}
 
-		$text = html_entity_decode( $text, ENT_QUOTES, 'UTF-8' );
+		// Invalid UTF-8 made the /u collapse return null and the (string)
+		// cast shipped '' for the whole SEO text; a PCRE error now keeps the
+		// text (CBT-817 D7).
+		$text      = Utf8::scrub( html_entity_decode( $text, ENT_QUOTES, 'UTF-8' ) );
+		$collapsed = preg_replace( '/\s{2,}/u', ' ', $text );
 
-		return trim( (string) preg_replace( '/\s{2,}/u', ' ', $text ) );
+		return trim( null === $collapsed ? $text : $collapsed );
 	}
 
 	/**

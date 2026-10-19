@@ -178,6 +178,8 @@ class ProductQuery {
 	 * @param Config $config Feed configuration.
 	 *
 	 * @return int[] Array of product IDs.
+	 *
+	 * @throws \Throwable What the query threw, after `ctxfeed_product_query_failed` fired (CBT-810).
 	 */
 	public function get_ids( Config $config ): array {
 		// User-configurable feed sort (V5's "Sort feed by"), defaulting to the
@@ -225,141 +227,168 @@ class ProductQuery {
 		// @hook ctxfeed_product_query_args.
 		$args = apply_filters( 'ctxfeed_product_query_args', $args, $config );
 
-		/**
-		 * Filter the term_taxonomy_ids the product query cuts with a NOT IN
-		 * `product_cat` tax_query (`include_children` OFF — has_term()'s
-		 * direct-assignment semantics; the tax_query default would also
-		 * exclude child-category products the loop would KEEP). Resolved
-		 * AFTER the args filter so multilingual shims have already pinned
-		 * the query language. Empty = no clause injected.
-		 *
-		 * @since 8.0.27
-		 *
-		 * @param int[]  $tt_ids term_taxonomy_ids to exclude.
-		 * @param Config $config Feed configuration.
-		 */
-		$exclude_tt_ids = array_values( array_filter( array_map( 'intval', (array) apply_filters( 'ctxfeed_product_query_exclude_term_taxonomy_ids', array(), $config ) ) ) );
-		$inject_exclude = null;
-		if ( ! empty( $exclude_tt_ids ) ) {
-			$inject_exclude = static function ( $wp_query_args ) use ( $exclude_tt_ids ) {
-				if ( ! isset( $wp_query_args['tax_query'] ) || ! is_array( $wp_query_args['tax_query'] ) ) {
-					$wp_query_args['tax_query'] = array(); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- Same query WooCommerce's own data store builds; the NOT IN subquery replaces warming/iterating the full catalog per batch.
-				}
-				$wp_query_args['tax_query'][] = array(
-					'taxonomy'         => 'product_cat',
-					'field'            => 'term_taxonomy_id',
-					'terms'            => $exclude_tt_ids,
-					'operator'         => 'NOT IN',
-					'include_children' => false,
-				);
-				return $wp_query_args;
-			};
-			add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_exclude );
-		}
-
-		// Products with NO product type saved (imports, supplier syncs,
-		// migrations) load in WooCommerce as simple products, but the type
-		// argument above becomes a product_type tax_query that never matches
-		// them — so they silently vanished from every feed, and WooCommerce's
-		// own export skips them too. V5's "wp" query mode exported them as
-		// simple products (CBT-683, #69315: 3,064 of 4,346 products). When the
-		// feed includes simple products, widen the type clause to "one of the
-		// feed's types OR no type at all". Same single query: status, sort,
-		// language and category clauses are untouched. Each such product is
-		// then checked by Filter\TypelessProductFilter on the object the
-		// generation loop loads anyway.
-		// Only when the store HAS such products (an O(1) count check, below):
-		// every other store runs exactly the query it always ran, so feed
-		// generation time does not change for them.
-		$inject_typeless = null;
-		if ( in_array( 'simple', (array) ( $args['type'] ?? array() ), true )
-			&& TypelessProducts::exist( $args['status'] ?? 'publish' ) ) {
-			/**
-			 * Whether a feed that includes simple products also includes
-			 * products that have no product type saved (they load as simple
-			 * products in WooCommerce). Return false to skip them.
-			 *
-			 * @since 8.0.30
-			 *
-			 * @param bool   $include Include products without a product type. Default true.
-			 * @param Config $config  Feed configuration.
-			 */
-			if ( apply_filters( 'ctxfeed_include_typeless_products', true, $config ) ) {
-				$inject_typeless = array( __CLASS__, 'include_typeless_products' );
-				add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_typeless );
-			}
-		}
-
+		// From here to the ctxfeed_product_ids filter, a listener of the args
+		// filter above may hold state it releases in ctxfeed_product_ids (the
+		// WPML shim pins the query language and pops it there). When the query
+		// throws, that filter never runs: tell those listeners instead, then
+		// let the exception through. No finally and no second
+		// ctxfeed_product_ids: its listeners must run exactly once, on success
+		// (CBT-810, plan §1.3 / amendment 19).
 		try {
-			$query       = new \WC_Product_Query( $args );
-			$product_ids = $query->get_products();
-		} finally {
-			// NEVER leak the closures into unrelated product queries — remove
-			// them even when the query throws.
-			if ( null !== $inject_exclude ) {
-				remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_exclude );
-			}
-			if ( null !== $inject_typeless ) {
-				remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_typeless );
-			}
-		}
-
-		/**
-		 * Filter the queried product ids BEFORE variation expansion and
-		 * per-product filtering. The Pro include-mode category push-down
-		 * intersects them with the selected categories here (#68989), so a
-		 * 5-product category feed on a 500K-product store doesn't load the
-		 * whole catalog. Listeners must only REMOVE ids the per-product
-		 * filters would remove anyway (superset-safe).
-		 *
-		 * @since 8.0.27
-		 *
-		 * @param int[]  $product_ids Queried ids (catalog order).
-		 * @param Config $config      Feed configuration.
-		 */
-		$product_ids = array_values( (array) apply_filters( 'ctxfeed_product_query_ids_before_expansion', $product_ids, $config ) );
-
-		// Expand variations if configured.
-		// @implements PROD-FRD-3.2.
-		if ( in_array( 'variable', (array) $product_types, true ) ) {
-			$include_variations = $config->get( 'is_variations', 'y' );
-
-			// A blank "Include variations" field is persisted as '' (the key is
-			// present), so Config::get()'s 'y' default never fires and the value
-			// matches NEITHER the expand branch NOR the single-variation branch
-			// below — every variable product would silently export parent-only
-			// (identical to 'n'), even though the intended default is 'y' (All
-			// Variations) and the sibling Config::is_variations() reads '' as ON.
-			// Normalise the empty/null value to the 'y' default before branching.
-			if ( '' === $include_variations || null === $include_variations ) {
-				$include_variations = 'y';
+			/**
+			 * Filter the term_taxonomy_ids the product query cuts with a NOT IN
+			 * `product_cat` tax_query (`include_children` OFF — has_term()'s
+			 * direct-assignment semantics; the tax_query default would also
+			 * exclude child-category products the loop would KEEP). Resolved
+			 * AFTER the args filter so multilingual shims have already pinned
+			 * the query language. Empty = no clause injected.
+			 *
+			 * @since 8.0.27
+			 *
+			 * @param int[]  $tt_ids term_taxonomy_ids to exclude.
+			 * @param Config $config Feed configuration.
+			 */
+			$exclude_tt_ids = array_values( array_filter( array_map( 'intval', (array) apply_filters( 'ctxfeed_product_query_exclude_term_taxonomy_ids', array(), $config ) ) ) );
+			$inject_exclude = null;
+			if ( ! empty( $exclude_tt_ids ) ) {
+				$inject_exclude = static function ( $wp_query_args ) use ( $exclude_tt_ids ) {
+					if ( ! isset( $wp_query_args['tax_query'] ) || ! is_array( $wp_query_args['tax_query'] ) ) {
+						$wp_query_args['tax_query'] = array(); // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_tax_query -- Same query WooCommerce's own data store builds; the NOT IN subquery replaces warming/iterating the full catalog per batch.
+					}
+					$wp_query_args['tax_query'][] = array(
+						'taxonomy'         => 'product_cat',
+						'field'            => 'term_taxonomy_id',
+						'terms'            => $exclude_tt_ids,
+						'operator'         => 'NOT IN',
+						'include_children' => false,
+					);
+					return $wp_query_args;
+				};
+				add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_exclude );
 			}
 
-			// Review feeds are PRODUCT-level: WooCommerce reviews live on the
-			// parent product, never on individual variations. Always keep the
-			// parent (ignore the is_variations setting) so ReviewResolver finds
-			// its reviews — the product block still lists every variation's
-			// identifiers (see ReviewResolver::resolve_product_ids). Without
-			// this, a review feed with "All Variations" iterates review-less
-			// variations and emits an empty <reviews> list.
-			if ( 'googlereview' === $config->get_provider() ) {
-				$include_variations = 'n';
+			// Products with NO product type saved (imports, supplier syncs,
+			// migrations) load in WooCommerce as simple products, but the type
+			// argument above becomes a product_type tax_query that never matches
+			// them — so they silently vanished from every feed, and WooCommerce's
+			// own export skips them too. V5's "wp" query mode exported them as
+			// simple products (CBT-683, #69315: 3,064 of 4,346 products). When the
+			// feed includes simple products, widen the type clause to "one of the
+			// feed's types OR no type at all". Same single query: status, sort,
+			// language and category clauses are untouched. Each such product is
+			// then checked by Filter\TypelessProductFilter on the object the
+			// generation loop loads anyway.
+			// Only when the store HAS such products (an O(1) count check, below):
+			// every other store runs exactly the query it always ran, so feed
+			// generation time does not change for them.
+			$inject_typeless = null;
+			if ( in_array( 'simple', (array) ( $args['type'] ?? array() ), true )
+				&& TypelessProducts::exist( $args['status'] ?? 'publish' ) ) {
+				/**
+				 * Whether a feed that includes simple products also includes
+				 * products that have no product type saved (they load as simple
+				 * products in WooCommerce). Return false to skip them.
+				 *
+				 * @since 8.0.30
+				 *
+				 * @param bool   $include Include products without a product type. Default true.
+				 * @param Config $config  Feed configuration.
+				 */
+				if ( apply_filters( 'ctxfeed_include_typeless_products', true, $config ) ) {
+					$inject_typeless = array( __CLASS__, 'include_typeless_products' );
+					add_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_typeless );
+				}
 			}
 
-			// 'y' = All Variations (parents replaced by their child variations).
-			// 'both' = Variable + Variations (parent kept, children appended).
-			// 'n' = Variable Products / Parent only (no change).
-			// default/cheap/expensive/first/last = replace each variable parent
-			// with exactly ONE chosen child variation (V5 parity).
-			if ( 'y' === $include_variations || 'both' === $include_variations ) {
-				$product_ids = $this->expand_variations(
-					$product_ids,
-					$config,
-					'both' === $include_variations
-				);
-			} elseif ( in_array( $include_variations, array( 'default', 'cheap', 'expensive', 'first', 'last' ), true ) ) {
-				$product_ids = $this->substitute_single_variation( $product_ids, $include_variations );
+			try {
+				$query       = new \WC_Product_Query( $args );
+				$product_ids = $query->get_products();
+			} finally {
+				// NEVER leak the closures into unrelated product queries — remove
+				// them even when the query throws.
+				if ( null !== $inject_exclude ) {
+					remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_exclude );
+				}
+				if ( null !== $inject_typeless ) {
+					remove_filter( 'woocommerce_product_data_store_cpt_get_products_query', $inject_typeless );
+				}
 			}
+
+			/**
+			 * Filter the queried product ids BEFORE variation expansion and
+			 * per-product filtering. The Pro include-mode category push-down
+			 * intersects them with the selected categories here (#68989), so a
+			 * 5-product category feed on a 500K-product store doesn't load the
+			 * whole catalog. Listeners must only REMOVE ids the per-product
+			 * filters would remove anyway (superset-safe).
+			 *
+			 * @since 8.0.27
+			 *
+			 * @param int[]  $product_ids Queried ids (catalog order).
+			 * @param Config $config      Feed configuration.
+			 */
+			$product_ids = array_values( (array) apply_filters( 'ctxfeed_product_query_ids_before_expansion', $product_ids, $config ) );
+
+			// Expand variations if configured.
+			// @implements PROD-FRD-3.2.
+			if ( in_array( 'variable', (array) $product_types, true ) ) {
+				$include_variations = $config->get( 'is_variations', 'y' );
+
+				// A blank "Include variations" field is persisted as '' (the key is
+				// present), so Config::get()'s 'y' default never fires and the value
+				// matches NEITHER the expand branch NOR the single-variation branch
+				// below — every variable product would silently export parent-only
+				// (identical to 'n'), even though the intended default is 'y' (All
+				// Variations) and the sibling Config::is_variations() reads '' as ON.
+				// Normalise the empty/null value to the 'y' default before branching.
+				if ( '' === $include_variations || null === $include_variations ) {
+					$include_variations = 'y';
+				}
+
+				// Review feeds are PRODUCT-level: WooCommerce reviews live on the
+				// parent product, never on individual variations. Always keep the
+				// parent (ignore the is_variations setting) so ReviewResolver finds
+				// its reviews — the product block still lists every variation's
+				// identifiers (see ReviewResolver::resolve_product_ids). Without
+				// this, a review feed with "All Variations" iterates review-less
+				// variations and emits an empty <reviews> list.
+				if ( 'googlereview' === $config->get_provider() ) {
+					$include_variations = 'n';
+				}
+
+				// 'y' = All Variations (parents replaced by their child variations).
+				// 'both' = Variable + Variations (parent kept, children appended).
+				// 'n' = Variable Products / Parent only (no change).
+				// default/cheap/expensive/first/last = replace each variable parent
+				// with exactly ONE chosen child variation (V5 parity).
+				if ( 'y' === $include_variations || 'both' === $include_variations ) {
+					$product_ids = $this->expand_variations(
+						$product_ids,
+						$config,
+						'both' === $include_variations
+					);
+				} elseif ( in_array( $include_variations, array( 'default', 'cheap', 'expensive', 'first', 'last' ), true ) ) {
+					$product_ids = $this->substitute_single_variation( $product_ids, $include_variations );
+				}
+			}
+		} catch ( \Throwable $e ) {
+			try {
+				/**
+				 * The product-ID query failed between `ctxfeed_product_query_args`
+				 * and `ctxfeed_product_ids`. Listeners that pinned state on the
+				 * args filter release it here; the exception is rethrown after.
+				 *
+				 * @since 8.0.39
+				 *
+				 * @param Config     $config Feed configuration.
+				 * @param \Throwable $e      What the query threw.
+				 */
+				do_action( 'ctxfeed_product_query_failed', $config, $e );
+			} catch ( \Throwable $listener_error ) {
+				// The query's own error is the one to report.
+				unset( $listener_error );
+			}
+			throw $e;
 		}
 
 		// @hook ctxfeed_product_ids

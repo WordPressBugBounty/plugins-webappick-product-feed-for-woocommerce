@@ -27,6 +27,7 @@ namespace CTXFeed\V8\API;
 
 use CTXFeed\V8\Utility\FTP\FTPConnection;
 use CTXFeed\V8\Utility\FTP\SFTPConnection;
+use CTXFeed\V8\Utility\Html;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -578,7 +579,7 @@ class FtpTestEndpoint extends RestController {
 			array(
 				$password,
 				function_exists( 'esc_attr' ) ? esc_attr( $password ) : $password,
-				htmlspecialchars( $password, ENT_QUOTES ),
+				Html::special( $password ), // CBT-817: explicit flags + UTF-8.
 			) 
 		);
 

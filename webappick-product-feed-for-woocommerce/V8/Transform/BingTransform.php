@@ -14,6 +14,9 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Ascii;
+use CTXFeed\V8\Utility\Date;
+use CTXFeed\V8\Utility\Mb;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -97,7 +100,7 @@ class BingTransform implements TransformInterface {
 			return $data;
 		}
 
-		$availability = strtolower( trim( $data['availability'] ) );
+		$availability = Ascii::lower( trim( $data['availability'] ) ); // CBT-815: never the locale's fold.
 		$availability = str_replace( ' ', '_', $availability );
 
 		$map = array(
@@ -129,6 +132,7 @@ class BingTransform implements TransformInterface {
 	 * Convert availability date to ISO 8601.
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.39 A date without a zone is read in the store timezone (CBT-819).
 	 *
 	 * @param array $data Product data.
 	 *
@@ -139,17 +143,9 @@ class BingTransform implements TransformInterface {
 			return $data;
 		}
 
-		$date = $data['availability_date'];
-
-		if ( preg_match( '/^\d{4}-\d{2}-\d{2}T/', $date ) ) {
-			return $data;
-		}
-
-		$timestamp = strtotime( $date );
-
-		if ( false !== $timestamp ) {
-			$data['availability_date'] = gmdate( 'c', $timestamp );
-		}
+		// ISO input passes through; anything else is read in the STORE
+		// timezone, never PHP's default (CBT-819, H4); unparseable stays.
+		$data['availability_date'] = Date::iso8601( $data['availability_date'] );
 
 		return $data;
 	}
@@ -186,7 +182,7 @@ class BingTransform implements TransformInterface {
 		// NB: the feedrules key is camelCase `feedType` — reading the
 		// snake_case key returned the default forever, leaving this
 		// whole reformat dead.
-		$feed_type = strtolower( $config->get( 'feedType', 'xml' ) );
+		$feed_type = Ascii::lower( $config->get( 'feedType', 'xml' ) );
 
 		// Only modify for CSV/TXT/TSV (string format). XML uses nested elements.
 		if ( ! in_array( $feed_type, array( 'csv', 'txt', 'tsv' ), true ) ) {
@@ -224,7 +220,7 @@ class BingTransform implements TransformInterface {
 	 * @return string
 	 */
 	private static function bare_amount( string $amount ): string {
-		return trim( (string) preg_replace( '/\s*[A-Za-z]{3}\s*$/', '', trim( $amount ) ) );
+		return trim( (string) preg_replace( '/\s*[A-Za-z]{3}\s*$/', '', trim( $amount ) ) ); // regex-safe: a short amount string.
 	}
 
 	/**
@@ -240,7 +236,7 @@ class BingTransform implements TransformInterface {
 			return $data;
 		}
 
-		$value = strtolower( trim( (string) $data['identifier_exists'] ) );
+		$value = Ascii::lower( trim( (string) $data['identifier_exists'] ) );
 		if ( in_array( $value, array( 'yes', 'y', 'true', '1' ), true ) ) {
 			$data['identifier_exists'] = 'TRUE';
 		} elseif ( in_array( $value, array( 'no', 'n', 'false', '0' ), true ) ) {
@@ -264,8 +260,8 @@ class BingTransform implements TransformInterface {
 			'description' => self::DESCRIPTION_MAX_LENGTH,
 		);
 		foreach ( $limits as $key => $max ) {
-			if ( isset( $data[ $key ] ) && is_string( $data[ $key ] ) && mb_strlen( $data[ $key ] ) > $max ) {
-				$data[ $key ] = mb_substr( $data[ $key ], 0, $max );
+			if ( isset( $data[ $key ] ) && is_string( $data[ $key ] ) && Mb::strlen( $data[ $key ] ) > $max ) {
+				$data[ $key ] = Mb::substr( $data[ $key ], 0, $max );
 			}
 		}
 

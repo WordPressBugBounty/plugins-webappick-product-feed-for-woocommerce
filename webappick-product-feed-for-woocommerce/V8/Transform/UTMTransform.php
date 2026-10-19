@@ -9,8 +9,9 @@
  * parameters are appended only when Source, Medium and Campaign are all
  * filled; a partial/empty configuration leaves every URL untouched. The
  * canonical URL is intentionally never tagged. Existing UTM params are
- * stripped before re-appending, and the whole pass respects the
- * enable/disable toggle + filters.
+ * replaced in place (a stale or unconfigured one is dropped), every other
+ * byte of the URL is kept (Url::with_query_args, CBT-818), and the whole
+ * pass respects the enable/disable toggle + filters.
  *
  * @package    CTXFeed
  * @subpackage V8/Transform
@@ -21,6 +22,7 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Url;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -119,8 +121,12 @@ class UTMTransform implements TransformInterface {
 		 */
 		$url_attributes = apply_filters( 'ctxfeed_utm_url_attributes', self::$url_attributes, $config );
 
+		// Url::is_http_url(), not FILTER_VALIDATE_URL: the filter rejects
+		// every byte >= 0x80 and an '_' in the host, so a store with a raw
+		// UTF-8 product base (/товар/), an IDN host or an underscore host
+		// silently lost the UTMs it configured (CBT-818, a V5 regression).
 		foreach ( $url_attributes as $attr ) {
-			if ( ! empty( $product_data[ $attr ] ) && filter_var( $product_data[ $attr ], FILTER_VALIDATE_URL ) ) {
+			if ( ! empty( $product_data[ $attr ] ) && Url::is_http_url( $product_data[ $attr ] ) ) {
 				$product_data[ $attr ] = $this->append_utm_to_url( $product_data[ $attr ], $utm_params );
 			}
 		}
@@ -181,12 +187,14 @@ class UTMTransform implements TransformInterface {
 	}
 
 	/**
-	 * Append UTM parameters to a URL, preserving existing query params.
+	 * Append UTM parameters to a URL, preserving every other byte of it.
 	 *
-	 * Removes any existing UTM params first to avoid duplication.
-	 * Filters out empty values before appending.
+	 * Existing UTM params are replaced in place (a configured key) or dropped
+	 * (a key whose value is empty). Empty values are not appended.
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.39 Url::with_query_args() instead of remove_query_arg() +
+	 *               add_query_arg() (CBT-818).
 	 * @implements XFRM-FRD-9.4
 	 *
 	 * @param string $url        Original product URL.
@@ -195,31 +203,25 @@ class UTMTransform implements TransformInterface {
 	 * @return string URL with UTM parameters appended.
 	 */
 	private function append_utm_to_url( string $url, array $utm_params ): string {
-		// Remove any existing UTM params to avoid duplication.
-		$url = remove_query_arg( array_keys( $utm_params ), $url );
-
-		// URL-encode every value so reserved characters stay INSIDE the query
-		// string. This is NOT optional cosmetics: WordPress add_query_arg()
-		// builds the query via build_query() → _http_build_query( …, false ),
-		// i.e. with url-encoding DISABLED, so it appends whatever bytes we give
-		// it verbatim. A raw '#' in e.g. utm_term therefore reached the feed as
-		// a literal '#', which every URL parser reads as the start of a fragment
-		// — silently dropping utm_term's tail and every parameter after it
-		// (BUG-0036); a raw '&' split one value into a bogus extra parameter.
-		// rawurlencode() escapes '#'→%23, '&'→%26, etc.; the one place we then
-		// diverge from strict RFC 3986 is restoring space to '+' (rawurlencode
-		// gives %20) to preserve V5's behaviour (CommonHelper::add_utm_parameter
-		// used str_replace ' '→'+'). Because add_query_arg() does not re-encode,
-		// there is no double-encoding. Falsy values are then dropped (default
-		// array_filter, so '' and a literal '0' both go) before appending.
-		$utm_params = array_map(
-			static function ( $value ) {
-				return str_replace( '%20', '+', rawurlencode( (string) $value ) );
-			},
-			$utm_params
+		// Falsy values are dropped (default array_filter, so '' and a literal
+		// '0' both go — V5 parity); their keys are still removed from the URL
+		// so a stale value never survives.
+		$values = array_filter(
+			array_map(
+				static function ( $value ) {
+					return (string) $value;
+				},
+				$utm_params
+			)
 		);
-		$utm_params = array_filter( $utm_params );
 
-		return add_query_arg( $utm_params, $url );
+		// Url::with_query_args() encodes each value exactly once —
+		// rawurlencode() with %20 restored to '+' (V5's space → '+') — so '#'
+		// and '&' stay INSIDE the query (BUG-0036: a raw '#' started a
+		// fragment and dropped every later parameter). Unlike
+		// remove_query_arg()/add_query_arg() it never decodes the URL's
+		// existing keys: the five WordPress passes turned WooCommerce's own
+		// variation key `attribute_%25d1%2580…` into raw UTF-8 (CBT-818).
+		return Url::with_query_args( $url, $values, array_keys( $utm_params ) );
 	}
 }

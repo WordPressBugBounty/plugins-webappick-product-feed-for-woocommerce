@@ -13,6 +13,8 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Ascii;
+use CTXFeed\V8\Utility\Mb;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -137,7 +139,7 @@ class TikTokTransform implements TransformInterface {
 			return $data;
 		}
 
-		$availability = strtolower( trim( str_replace( array( '_', '-' ), ' ', $data['availability'] ) ) );
+		$availability = Ascii::lower( trim( str_replace( array( '_', '-' ), ' ', $data['availability'] ) ) ); // CBT-815: never the locale's fold.
 
 		$map = array(
 			'instock'             => 'in stock',
@@ -168,11 +170,11 @@ class TikTokTransform implements TransformInterface {
 	 * @return array Modified product data.
 	 */
 	private function transform_lengths( array $data ): array {
-		if ( ! empty( $data['title'] ) && is_string( $data['title'] ) && mb_strlen( $data['title'] ) > self::TITLE_MAX_LENGTH ) {
-			$data['title'] = mb_substr( $data['title'], 0, self::TITLE_MAX_LENGTH );
+		if ( ! empty( $data['title'] ) && is_string( $data['title'] ) && Mb::strlen( $data['title'] ) > self::TITLE_MAX_LENGTH ) {
+			$data['title'] = Mb::substr( $data['title'], 0, self::TITLE_MAX_LENGTH );
 		}
-		if ( ! empty( $data['description'] ) && is_string( $data['description'] ) && mb_strlen( $data['description'] ) > self::DESCRIPTION_MAX_LENGTH ) {
-			$data['description'] = mb_substr( $data['description'], 0, self::DESCRIPTION_MAX_LENGTH );
+		if ( ! empty( $data['description'] ) && is_string( $data['description'] ) && Mb::strlen( $data['description'] ) > self::DESCRIPTION_MAX_LENGTH ) {
+			$data['description'] = Mb::substr( $data['description'], 0, self::DESCRIPTION_MAX_LENGTH );
 		}
 
 		return $data;

@@ -25,6 +25,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\NumberFormat;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -121,7 +122,9 @@ class WpOptionResolver {
 			$value = wp_json_encode( $value );
 		}
 
-		$value = (string) $value;
+		// A float option (the options cache keeps update_option()'s PHP type)
+		// is machine text (CBT-816).
+		$value = is_float( $value ) ? NumberFormat::to_machine( $value ) : (string) $value;
 
 		/**
 		 * Filter the resolved WordPress option value.
@@ -165,7 +168,7 @@ class WpOptionResolver {
 			}
 		}
 
-		return implode( ', ', array_map( 'strval', $value ) );
+		return implode( ', ', array_map( array( NumberFormat::class, 'to_machine' ), $value ) );
 	}
 
 	/**

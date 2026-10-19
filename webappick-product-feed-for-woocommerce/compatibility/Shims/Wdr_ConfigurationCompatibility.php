@@ -91,7 +91,17 @@ class Wdr_ConfigurationCompatibility {
 					}
 				}
 			} else {
-				$price = apply_filters( 'advanced_woo_discount_rules_get_product_discount_price_from_custom_price', false, $product, 1, $price, 'discounted_price', true, true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Third-party hook owned by Discount Rules for WooCommerce; the name is fixed by that plugin and must not be prefixed.
+				// WCML is active, or WDR's v2 engine is not loaded (WDR in its
+				// legacy "v1" mode): ask WDR's public filter. WDR answers false
+				// when no rule applies, and in v1 mode nothing listens, so the
+				// false default comes back. That false used to BE the price, so
+				// every product without a discount shipped a blank price
+				// (CBT-814). Only a real answer replaces the incoming price.
+				$discounted = apply_filters( 'advanced_woo_discount_rules_get_product_discount_price_from_custom_price', false, $product, 1, $price, 'discounted_price', true, true ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Third-party hook owned by Discount Rules for WooCommerce; the name is fixed by that plugin and must not be prefixed.
+
+				if ( self::is_price_answer( $discounted ) ) {
+					$price = $discounted;
+				}
 			}
 		} elseif ( class_exists( 'Wdr\App\Controllers\Configuration' ) && class_exists( 'Wdr\App\Controllers\ManageDiscount' ) && method_exists( 'Wdr\App\Controllers\ManageDiscount', 'calculateInitialAndDiscountedPrice' ) ) {
 			if ( ! $this->wdr_config_rules ) {
@@ -122,5 +132,22 @@ class Wdr_ConfigurationCompatibility {
 		}
 
 		return $price;
+	}
+
+	/**
+	 * Whether a value WDR's discount filter returned is a price.
+	 *
+	 * WDR returns false for "no rule applies"; '', null, true or a
+	 * non-scalar are not prices either. Any other scalar is WDR's answer
+	 * and is kept as before (WDR returns a number; 0 = a 100% discount).
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param mixed $value Value the filter returned.
+	 *
+	 * @return bool True when the value replaces the incoming price.
+	 */
+	private static function is_price_answer( $value ) {
+		return is_scalar( $value ) && ! is_bool( $value ) && '' !== $value;
 	}
 }

@@ -25,6 +25,7 @@
 namespace CTXFeed\V8\API;
 
 use CTXFeed\V8\Template\TemplateLocator;
+use CTXFeed\V8\Utility\Sanitizer;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -245,10 +246,15 @@ class CategoryMappingEndpoint extends RestController {
 			) 
 		);
 
-		// Single mapping: Read / Update / Delete.
+		// Single mapping: Read / Update / Delete. The slug may carry `%HH`
+		// octets — WordPress percent-encodes a non-Latin name (`Категории` →
+		// `%d0%ba%d0%b0…`) — so `%` is route-safe (CBT-812). The admin app
+		// sends the segment through encodeURIComponent; pretty permalinks
+		// hand it over still encoded, plain permalinks decoded once —
+		// resolve_route_option_name() accepts both (Sanitizer::route_slug).
 		register_rest_route(
 			$this->namespace,
-			'/category-mapping/(?P<name>[a-zA-Z0-9_-]+)',
+			'/category-mapping/(?P<name>[a-zA-Z0-9_%-]+)',
 			array(
 				array(
 					'methods'             => \WP_REST_Server::READABLE,
@@ -385,9 +391,10 @@ class CategoryMappingEndpoint extends RestController {
 		$cmapping     = array();
 		$gcl_cmapping = array();
 
+		// Values keep their %HH octets (`100%Baumwolle`) — CBT-812.
 		foreach ( $mappings as $cat_id => $cat_value ) {
-			$cmapping[ $cat_id ]     = sanitize_text_field( $cat_value );
-			$gcl_cmapping[ $cat_id ] = sanitize_text_field( $cat_value );
+			$cmapping[ $cat_id ]     = Sanitizer::text_field( $cat_value );
+			$gcl_cmapping[ $cat_id ] = Sanitizer::text_field( $cat_value );
 		}
 
 		return array(
@@ -540,7 +547,13 @@ class CategoryMappingEndpoint extends RestController {
 			$name = (string) $request->get_param( 'name' );
 		}
 
-		$name = sanitize_text_field( $name );
+		// Octet-preserving (CBT-812): sanitize_text_field() deleted the %HH
+		// octets of a non-Latin slug, so GET/PUT/DELETE looked up the wrong
+		// option and 404ed. route_slug() also undoes the app's
+		// encodeURIComponent() when the URL shape left it in place (pretty
+		// permalinks). Lookup is by option NAME only — never by option_id,
+		// which is not unique on a broken wp_options table (CBT-805).
+		$name = Sanitizer::route_slug( $name );
 		if ( '' === $name ) {
 			return '';
 		}
@@ -626,8 +639,11 @@ class CategoryMappingEndpoint extends RestController {
 		// Convert to V5 format for storage.
 		$config = $this->v8_to_v5( $name, $template, $flat_mappings );
 
-		// Generate unique option name (matches V5 behavior).
-		$slug        = sanitize_title( $name );
+		// Generate unique option name (matches V5 behavior). A name with no
+		// slug characters at all (`!!!`) would make the bare `wf_cmapping_`,
+		// which no item route can reach — it gets the token `mapping`
+		// (CBT-812).
+		$slug        = sanitize_title( $name, 'mapping' );
 		$option_name = self::PREFIX . $slug;
 
 		$counter = 2;
@@ -1451,7 +1467,7 @@ class CategoryMappingEndpoint extends RestController {
 			foreach ( $mappings as $group ) {
 				foreach ( (array) $group as $cat_id => $cat_value ) {
 					if ( ! empty( $cat_value ) || $keep_empty ) {
-						$flat[ (string) $cat_id ] = sanitize_text_field( (string) $cat_value );
+						$flat[ (string) $cat_id ] = Sanitizer::text_field( $cat_value );
 					}
 				}
 			}
@@ -1459,7 +1475,7 @@ class CategoryMappingEndpoint extends RestController {
 			// Already a flat associative array.
 			foreach ( $mappings as $cat_id => $cat_value ) {
 				if ( ! empty( $cat_value ) || $keep_empty ) {
-					$flat[ (string) $cat_id ] = sanitize_text_field( (string) $cat_value );
+					$flat[ (string) $cat_id ] = Sanitizer::text_field( $cat_value );
 				}
 			}
 		}

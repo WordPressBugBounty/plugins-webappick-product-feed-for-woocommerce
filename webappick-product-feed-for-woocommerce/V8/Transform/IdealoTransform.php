@@ -2,7 +2,10 @@
 /**
  * IdealoTransform — Applies Idealo-specific formatting rules.
  *
- * - Price: 2 decimals, "." decimal separator, no thousand separator
+ * - Price: 2 decimals, "." decimal separator, no thousand separator — a
+ *   FIXED format: {@see fixed_number_format()} forces it on the
+ *   `ctx_feed_number_format` filter at priority 20, over the Pro Filters-tab
+ *   boxes (V5 `Override/IdealoTemplate.php:18` parity, CBT-811)
  * - Images: semicolon separator instead of comma
  *
  * @package    CTXFeed
@@ -50,10 +53,49 @@ class IdealoTransform implements TransformInterface {
 	}
 
 	/**
+	 * Idealo's fixed number format: 2 decimals, "." decimal, no thousands.
+	 *
+	 * Hooked on the V5 `ctx_feed_number_format` filter at priority 20 (after
+	 * the Pro engine's Filters-tab boxes at 10) by
+	 * `TransformServiceProvider::boot()`. V5 registered the same override in
+	 * `Override/IdealoTemplate.php:18`; without it the Pro boxes "," / "."
+	 * turned 19.99 into "19,99", which {@see transform_prices()} then read as
+	 * 1999 (`1999.00 EUR`, CBT-809 C2). Any other provider, or a call without
+	 * a feed Config, is returned untouched.
+	 *
+	 * @since 8.0.39
+	 * @implements XFRM-FRD-4.6 (codes 6/7 on idealo), CBT-811
+	 *
+	 * @param mixed $number_format { decimals, decimal_separator, thousand_separator }.
+	 * @param mixed $config        Feed configuration (Config), or anything else → untouched.
+	 *
+	 * @return mixed The fixed triple on an idealo feed, otherwise $number_format.
+	 */
+	public static function fixed_number_format( $number_format, $config = null ) {
+		if ( ! $config instanceof Config || 'idealo' !== $config->get_provider() ) {
+			return $number_format;
+		}
+
+		return array_merge(
+			(array) $number_format,
+			array(
+				'decimals'           => 2,
+				'decimal_separator'  => '.',
+				'thousand_separator' => '',
+			)
+		);
+	}
+
+	/**
 	 * Reformat price fields for Idealo.
 	 *
 	 * Idealo requires: 2 decimals, dot separator, no thousand separator.
-	 * E.g., "1,000.50 EUR" → "1000.50 EUR".
+	 * A machine-format number is formatted directly ("19.99 EUR" stays
+	 * "19.99 EUR", "1299 EUR" → "1299.00 EUR"). Only a value that is not a
+	 * number falls back to stripping commas and spaces as grouping
+	 * ("1,000.50 EUR" → "1000.50 EUR"); that fallback cannot tell a decimal
+	 * comma, so "1 299,00 EUR" becomes "129900.00 EUR" — which is why the
+	 * number format itself is fixed for Idealo ({@see fixed_number_format()}).
 	 *
 	 * @since 8.0.0
 	 *
@@ -86,12 +128,15 @@ class IdealoTransform implements TransformInterface {
 				$value    = preg_replace( '/\s+[A-Z]{3}$/', '', $value );
 			}
 
-			// Remove existing thousand separators and normalize decimal.
-			$value = str_replace( array( ',', ' ' ), '', $value );
-
-			// Format with dot decimal, no thousand separator.
 			if ( is_numeric( $value ) ) {
+				// A machine-format number: format it as-is (CBT-811).
 				$value = number_format( (float) $value, 2, '.', '' );
+			} else {
+				// Fallback: remove grouping commas/spaces, then format.
+				$value = str_replace( array( ',', ' ' ), '', $value );
+				if ( is_numeric( $value ) ) {
+					$value = number_format( (float) $value, 2, '.', '' );
+				}
 			}
 
 			$data[ $attr ] = $value . $currency;

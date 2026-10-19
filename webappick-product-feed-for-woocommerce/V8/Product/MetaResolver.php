@@ -14,6 +14,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\NumberFormat;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -59,8 +60,8 @@ class MetaResolver {
 			return self::first_scalar_string( $value );
 		}
 
-		// Scalar → cast to string.
-		return (string) $value;
+		// Scalar → cast to string; a float (a filtered meta) as machine text (CBT-816).
+		return is_float( $value ) ? NumberFormat::to_machine( $value ) : (string) $value;
 	}
 
 	/**
@@ -77,7 +78,7 @@ class MetaResolver {
 	private static function first_scalar_string( array $value ): string {
 		foreach ( $value as $item ) {
 			if ( is_scalar( $item ) ) {
-				$item_string = (string) $item;
+				$item_string = is_float( $item ) ? NumberFormat::to_machine( $item ) : (string) $item;
 				if ( '' !== trim( $item_string ) ) {
 					return $item_string;
 				}

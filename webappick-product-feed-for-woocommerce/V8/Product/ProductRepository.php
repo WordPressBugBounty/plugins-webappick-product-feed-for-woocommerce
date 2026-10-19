@@ -17,6 +17,7 @@ namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Transform\OutputTypeTransform;
+use CTXFeed\V8\Utility\NumberFormat;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -115,6 +116,8 @@ class ProductRepository {
 	 * @param Config $config    Feed configuration.
 	 *
 	 * @return ProductDTO[] Array of resolved product DTOs.
+	 *
+	 * @throws \Throwable What a resolver threw, after the after hook fired (CBT-810).
 	 */
 	public function get_products( array $ids, array $structure, Config $config ): array {
 		// 1. Prime all caches for this batch (3 queries instead of 30,000).
@@ -140,9 +143,15 @@ class ProductRepository {
 
 			$dto = new ProductDTO( $id, $wc_product->get_type() );
 
-			foreach ( $structure as $channel_attr => $mapping ) {
-				$value = $this->resolve_with_filters( $wc_product, $mapping, $config );
-				$dto->set( $channel_attr, $value );
+			try {
+				foreach ( $structure as $channel_attr => $mapping ) {
+					$value = $this->resolve_with_filters( $wc_product, $mapping, $config );
+					$dto->set( $channel_attr, $value );
+				}
+			} catch ( \Throwable $e ) {
+				// The paired after hook fires on the throw path too (CBT-810).
+				self::after_resolve_on_throw( $id, $dto, $config );
+				throw $e;
 			}
 
 			// @hook ctxfeed_after_resolve_product
@@ -377,6 +386,17 @@ class ProductRepository {
 		// product-context constraint as step 4; the string commands in the
 		// chain run downstream in CommandTransform. XFRM-FRD-9.5.
 		$value = $this->apply_parent_command( $value, $product, $mapping, $config );
+
+		// 6. A float the resolver or a third-party filter left in the value
+		// (scalar or array leaf) becomes machine text here, once, before the
+		// transforms concatenate it and the XML / CSV / TXT / JSON sinks
+		// print it — never "2,5" (PHP 7 LC_NUMERIC) or "2.4999999999999996"
+		// (another plugin's precision). Floats only: ints, null and bools
+		// keep their type (CBT-809 B8, amendment 5). A string — nearly every
+		// value — costs two type checks.
+		if ( is_float( $value ) || is_array( $value ) ) {
+			$value = NumberFormat::floats_to_machine( $value );
+		}
 
 		return $value;
 	}
@@ -845,6 +865,8 @@ class ProductRepository {
 	 * @param Config      $config  Feed configuration.
 	 *
 	 * @return array Associative array of channel_attr => resolved_value.
+	 *
+	 * @throws \Throwable What a resolver threw, after the after hook fired (CBT-810).
 	 */
 	public function resolve_single( \WC_Product $product, Config $config ): array {
 		$plan = $this->plan_for( $config );
@@ -853,50 +875,81 @@ class ProductRepository {
 		do_action( 'ctxfeed_before_resolve_product', $product->get_id(), $config );
 
 		$data = array();
-		// Track occurrences of each merchant attribute name so duplicates
-		// (typically product_detail's section_name/attribute_name/attribute_value
-		// triplet, which customers legitimately map multiple times) don't
-		// collide in the flat $data array. Second occurrence becomes
-		// `section_name##2`, third `section_name##3`, etc. The suffix is
-		// stripped downstream by GroupedAttributeBuilder (which uses the
-		// suffixes to detect repeat groups) and by AttributeNameMapper
-		// (which strips them defensively before writing tag names).
-		// PROD-FRD-10.11.
-		$seen = array();
+		// A listener paired on before/after (the CURCY shim restores its
+		// shipping currency in the after hook) must see the after hook even
+		// when this product throws and the batch skips it (CBT-810).
+		try {
+			// Track occurrences of each merchant attribute name so duplicates
+			// (typically product_detail's section_name/attribute_name/attribute_value
+			// triplet, which customers legitimately map multiple times) don't
+			// collide in the flat $data array. Second occurrence becomes
+			// `section_name##2`, third `section_name##3`, etc. The suffix is
+			// stripped downstream by GroupedAttributeBuilder (which uses the
+			// suffixes to detect repeat groups) and by AttributeNameMapper
+			// (which strips them defensively before writing tag names).
+			// PROD-FRD-10.11.
+			$seen = array();
 
-		foreach ( $plan['rows'] as $mapping ) {
-			$t0    = microtime( true );
-			$value = $this->resolve_with_filters( $product, $mapping, $config );
+			foreach ( $plan['rows'] as $mapping ) {
+				$t0    = microtime( true );
+				$value = $this->resolve_with_filters( $product, $mapping, $config );
 
-			$attr = $mapping['merchant_attr'];
+				$attr = $mapping['merchant_attr'];
 
-			$this->attr_seconds[ $attr ] = ( $this->attr_seconds[ $attr ] ?? 0.0 ) + ( microtime( true ) - $t0 );
+				$this->attr_seconds[ $attr ] = ( $this->attr_seconds[ $attr ] ?? 0.0 ) + ( microtime( true ) - $t0 );
 
-			$key          = self::dedup_merchant_key( $attr, $seen );
-			$data[ $key ] = $value;
-		}
-
-		// identifier_exists must reflect the feed's ACTUAL identifier output,
-		// not raw product meta: a feed that maps mpn/brand/gtin (even to the
-		// SKU or a static value) must report "yes". Recompute the auto-added /
-		// attribute-resolved column from the fully resolved row; an explicit
-		// static override the merchant set is left untouched. @implements G-05.
-		if ( array_key_exists( 'identifier_exists', $data ) ) {
-			foreach ( $plan['rows'] as $row ) {
-				if ( 'identifier_exists' !== $row['merchant_attr'] ) {
-					continue;
-				}
-				if ( 'attribute' === $row['type'] && 'identifier_exists' === $row['wc_attr'] ) {
-					$data['identifier_exists'] = $this->resolver->identifier_exists_from_row( $product, $data );
-				}
-				break;
+				$key          = self::dedup_merchant_key( $attr, $seen );
+				$data[ $key ] = $value;
 			}
+
+			// identifier_exists must reflect the feed's ACTUAL identifier output,
+			// not raw product meta: a feed that maps mpn/brand/gtin (even to the
+			// SKU or a static value) must report "yes". Recompute the auto-added /
+			// attribute-resolved column from the fully resolved row; an explicit
+			// static override the merchant set is left untouched. @implements G-05.
+			if ( array_key_exists( 'identifier_exists', $data ) ) {
+				foreach ( $plan['rows'] as $row ) {
+					if ( 'identifier_exists' !== $row['merchant_attr'] ) {
+						continue;
+					}
+					if ( 'attribute' === $row['type'] && 'identifier_exists' === $row['wc_attr'] ) {
+						$data['identifier_exists'] = $this->resolver->identifier_exists_from_row( $product, $data );
+					}
+					break;
+				}
+			}
+		} catch ( \Throwable $e ) {
+			self::after_resolve_on_throw( $product->get_id(), $data, $config );
+			throw $e;
 		}
 
 		// @hook ctxfeed_after_resolve_product
 		do_action( 'ctxfeed_after_resolve_product', $product->get_id(), $data, $config );
 
 		return $data;
+	}
+
+	/**
+	 * Fire `ctxfeed_after_resolve_product` for a product whose resolution
+	 * threw, so paired before/after listeners always tear down (CBT-810).
+	 *
+	 * A listener that throws here is ignored: the product's own error is
+	 * the one the batch reports and isolates.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param mixed  $product_id Product ID (as the caller passed it).
+	 * @param mixed  $resolved   Values resolved before the throw (array or ProductDTO).
+	 * @param Config $config     Feed configuration.
+	 * @return void
+	 */
+	private static function after_resolve_on_throw( $product_id, $resolved, Config $config ): void {
+		try {
+			// @hook ctxfeed_after_resolve_product
+			do_action( 'ctxfeed_after_resolve_product', $product_id, $resolved, $config );
+		} catch ( \Throwable $after_error ) {
+			unset( $after_error );
+		}
 	}
 
 	/**

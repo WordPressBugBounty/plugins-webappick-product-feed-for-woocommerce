@@ -87,7 +87,7 @@ class XMLTemplate implements TemplateInterface {
 
 		// A template must not carry its own declaration; the single one is
 		// prepended below so it is never duplicated.
-		$header = trim( (string) preg_replace( '#^<\?xml\s+version\b[^>]*\?>\s*#is', '', $header ) );
+		$header = trim( (string) preg_replace( '#^<\?xml\s+version\b[^>]*\?>\s*#is', '', $header ) ); // regex-safe: anchored, one pass over the admin-written header.
 
 		// Apply the remaining Extra header. Bare attribute(s) (a namespace) go
 		// ON the root element — a valid declaration — while element content
@@ -292,7 +292,7 @@ class XMLTemplate implements TemplateInterface {
 	 * Replace template variables in header/footer content.
 	 *
 	 * Supported variables:
-	 * - {DateTimeNow}     — Current date/time in Y-m-d H:i:s format.
+	 * - {DateTimeNow}     — Current site-local date/time, Y-m-d H:i:s.
 	 * - {DateTimeRFC822}  — Current UTC date/time in RFC 822 (RSS dates, CBT-719).
 	 * - {BlogName}        — Site name from get_bloginfo('name').
 	 * - {BlogURL}         — Site URL from get_bloginfo('url').
@@ -308,7 +308,10 @@ class XMLTemplate implements TemplateInterface {
 	 */
 	private function replace_template_variables( string $content, Config $config ): string {
 		$variables = array(
-			'{DateTimeNow}'            => gmdate( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) ),
+			// Site-local wall clock. It was re-parsed with strtotime(), which
+			// shifted it by PHP's default timezone when that was not UTC
+			// (CBT-819, H5); identical bytes on a UTC default.
+			'{DateTimeNow}'            => (string) current_time( 'mysql' ),
 			// RFC 822 for RSS <lastBuildDate>/<pubDate> (CBT-719).
 			'{DateTimeRFC822}'         => gmdate( 'D, d M Y H:i:s', time() ) . ' +0000',
 			'{BlogName}'               => get_bloginfo( 'name' ),
@@ -409,7 +412,13 @@ class XMLTemplate implements TemplateInterface {
 			// A value that is already ONE wrapped CDATA section is unwrapped;
 			// any "]]>" left in the text is split the canonical way so it is
 			// carried, not deleted (CBT-719 — it used to vanish silently).
-			$clean = html_entity_decode( $value );
+			// Explicit flags + UTF-8 (CBT-817 D1): under a non-UTF-8
+			// default_charset "&eacute;" decoded to one Latin-1 byte and
+			// libxml rejected the WHOLE feed; below PHP 8.1 "&#039;" stayed.
+			// Html::decode()'s contract (Html::FLAGS, Html::CHARSET) inlined
+			// — this runs for every element. Fully qualified so the flags
+			// fold at compile time (no namespace fallback lookups).
+			$clean = \html_entity_decode( $value, \ENT_QUOTES | \ENT_SUBSTITUTE | \ENT_HTML401, 'UTF-8' );
 			if ( 0 === strpos( $clean, '<![CDATA[' ) && ']]>' === substr( $clean, -3 ) ) {
 				$clean = substr( $clean, 9, -3 );
 			}
@@ -578,7 +587,10 @@ class XMLTemplate implements TemplateInterface {
 	 * @return string XML-safe name.
 	 */
 	private function sanitize_xml_name( string $name ): string {
-		return (string) preg_replace( '/\s+/', '_', trim( $name ) );
+		// The six ASCII whitespace bytes, not `\s`: under macOS UTF-8 locale
+		// tables a byte-mode `\s` matches 0xA0 and cut "Größe" / "Цвет" names
+		// in half (CBT-822 A11). Never `\v` (it matches 0x85 in byte mode).
+		return (string) preg_replace( '/[\t\n\x0B\f\r ]+/', '_', trim( $name ) ); // regex-safe: linear class run on a short element name.
 	}
 
 	/**

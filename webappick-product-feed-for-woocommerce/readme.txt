@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.38
+Stable tag: 8.0.39
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -492,6 +492,18 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.39 =
+* Fix: activating CTX Feed while an old CTX Feed Pro (version 7) is still active no longer crashes the site. Update CTX Feed Pro to version 8 to use both together.
+* Fix: feeds come out the same on every server. Prices, dates, descriptions, titles and links no longer change with the server's language, number or time zone settings.
+* Fix: prices are no longer read 1000 times too high when CTX Feed Pro's decimal and thousand separators are set, and Idealo prices always use the format Idealo requires.
+* Fix: attribute names in non-Latin letters (for example Cyrillic or Greek) are kept when you save a feed or a mapping.
+* Fix: with a currency switcher, feeds no longer pick up a visitor's currency or convert a price twice (CTX Feed Pro).
+* Fix: Woo Discount Rules no longer leaves the price empty for products without a discount.
+* Fix: shipping costs are the same whether a feed runs by hand or on its schedule.
+* Fix: UTM and add-to-cart links keep every character of the product link.
+* Fix: Advanced Filter and Dynamic Attribute number rules give the same result on every PHP version, and an empty "contains" filter row is removed when you save.
+* Fix: very long descriptions are never emptied when a text rule hits PHP's pattern limits.
+
 = Version 8.0.38 =
 * Fix: no more "critical error" emails when WordPress updates CTX Feed while visitors are on your site. A page that loads during the few seconds the plugin files are being replaced now loads without CTX Feed instead of failing.
 * Fix: while CTX Feed Pro is being updated, feed runs wait for it instead of publishing a feed without Pro's settings (prices, languages, attribute rules). If Pro is still not ready after 10 minutes, the run stops and your previous feed file is kept.
@@ -545,23 +557,10 @@ If your feed fails to generate:
 * Improved: clearer hints for the FTP/SFTP path and the XML Extra header.
 * Improved: the plugin zip no longer includes developer test files.
 
-= Version 8.0.32 =
-* Security: FTP/SFTP passwords never leave your site. Feed details, exported .wpf files, the support bundle and AI tools no longer contain them, and the connection test reuses a saved password only for the same server and user. Feed logs are protected on Apache 2.4 too.
-* Security: the WP Options attribute can no longer put passwords, secret keys, license keys or similar settings into a feed.
-* Security: the FTP connection test no longer connects to local or private network addresses.
-* Security: an imported feed file keeps Custom Template 2 code blocks only when an Administrator imports it.
-* Fix: a feed that could not be written completely (for example a full disk) or could not replace the live file keeps the previous feed and is marked failed, instead of publishing a broken file.
-* Fix: SFTP uploads are streamed, checked and replace the live file in one step; the server key is remembered and a changed key stops the upload.
-* Fix: generated feeds are always valid UTF-8, and TXT headers use the feed's delimiter and enclosure.
-* Fix: Google feeds use Google's unit names (lb, cm, in). Google Local feeds send the GTIN instead of the SKU, and Local Inventory sends backordered items as out of stock.
-* Fix: the Google Promotions feed writes one row per promotion, as Google requires, in TSV (default) or RSS XML.
-* Fix: Bing feeds follow Microsoft's specification: backordered items are sent as preorder, shipping prices as plain numbers, identifier_exists as TRUE/FALSE, and long titles and descriptions are shortened.
-* Changed: ChatGPT feeds offer CSV and TSV. Existing JSON feeds keep working.
-* Fix: deleting a feed removes its file after a domain change and no longer deletes other feeds' logs; scheduled runs are not affected by daylight-saving changes; uninstalling removes the plugin's scheduled jobs.
-* Fix: no PHP 8.4 deprecation notice when writing CSV feeds; availability dates use the store's time zone.
-* Added: an AI connection (MCP) switch on the AI assistant page to turn the AI connection off completely. Needs CTX Feed Pro 8.0.23.
-
 == Upgrade Notice ==
+
+= 8.0.39 =
+CTX Feed is going through a major update. Back up your site, update CTX Feed first, then CTX Feed Pro, regenerate your feeds and check prices and shipping. Feeds now come out the same on every server, and a site error beside old CTX Feed Pro 7 is fixed.
 
 = 8.0.38 =
 Fixes a site error that could appear while plugins update, and image links with non-English letters in the file name. If your feeds work well, there is no need to update now. When you update, update CTX Feed first, then CTX Feed Pro.

@@ -34,6 +34,10 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Date;
+use CTXFeed\V8\Utility\Html;
+use CTXFeed\V8\Utility\Mb;
+use CTXFeed\V8\Utility\Utf8;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -147,11 +151,15 @@ class ReviewResolver {
 			return array();
 		}
 
-		$product_url = (string) $product->get_permalink();
+		// Review entries are written without OutputFormatter, so invalid
+		// UTF-8 and control characters are dropped at each product / comment
+		// source here (and in resolve_row_value()) — one bad byte made
+		// libxml reject the whole review feed (CBT-817 D8).
+		$product_url = Utf8::clean( (string) $product->get_permalink() );
 		$product_ids = $this->resolve_product_ids( $product, $config );
 		// <product_name>/<product_url> follow their mapping rows (CBT-676);
 		// review_url stays the product page the review is shown on.
-		$product_name_out = $this->resolve_product_row( $product, $config, 'product_name', (string) $product->get_name() );
+		$product_name_out = $this->resolve_product_row( $product, $config, 'product_name', Utf8::clean( (string) $product->get_name() ) );
 		$product_url_out  = $this->resolve_product_row( $product, $config, 'product_url', $product_url );
 		$entries          = array();
 
@@ -182,8 +190,8 @@ class ReviewResolver {
 			// always the WooCommerce comment text. Strip HTML but keep the
 			// original when stripping empties it; skip the review when the
 			// body ends up empty.
-			$content  = (string) $comment->comment_content;
-			$stripped = wp_strip_all_tags( wp_specialchars_decode( $content ) );
+			$content  = Utf8::clean( (string) $comment->comment_content );
+			$stripped = Html::strip_all_tags( wp_specialchars_decode( $content ) ); // CBT-822 E1: core's regex emptied a long review.
 			if ( strlen( $stripped ) > 0 ) {
 				$content = $stripped;
 			}
@@ -191,14 +199,16 @@ class ReviewResolver {
 				continue;
 			}
 
+			// comment_date_gmt is UTC: name the zone, never PHP's default
+			// (a UTC+9 default moved every review 9 h early — CBT-819, H2).
 			$timestamp = ! empty( $comment->comment_date_gmt )
-				? gmdate( 'c', strtotime( $comment->comment_date_gmt ) )
+				? Date::iso8601( $comment->comment_date_gmt, Date::utc() )
 				: '';
 
 			// Reviewer: a blank author is an anonymous review — XSD marks
 			// <name is_anonymous>; a WP account (user_id > 0) supplies the
 			// optional reviewer_id.
-			$author = (string) $comment->comment_author;
+			$author = Utf8::clean( (string) $comment->comment_author );
 			if ( '' === trim( $author ) ) {
 				$reviewer = array(
 					'name' => array(
@@ -328,7 +338,7 @@ class ReviewResolver {
 	 * @return string Title, or '' for empty text.
 	 */
 	public static function title_from_content( string $content ): string {
-		$text = trim( (string) preg_replace( '/\s+/u', ' ', \CTXFeed\V8\Utility\Utf8::scrub( $content ) ) ); // CBT-694: invalid UTF-8 nulled the /u regex.
+		$text = trim( (string) preg_replace( '/\s+/u', ' ', \CTXFeed\V8\Utility\Utf8::scrub( $content ) ) ); // regex-safe: linear \s+ on scrubbed UTF-8 (CBT-694: invalid UTF-8 nulled it).
 		if ( '' === $text ) {
 			return '';
 		}
@@ -342,30 +352,31 @@ class ReviewResolver {
 		 */
 		$max = max( 10, (int) apply_filters( 'ctxfeed_review_title_max_length', 70 ) );
 
-		$len    = function_exists( 'mb_strlen' ) ? 'mb_strlen' : 'strlen';
-		$substr = function_exists( 'mb_substr' ) ? 'mb_substr' : 'substr';
-
+		// Lengths are UTF-8 characters (CBT-815): the old mb_* calls followed
+		// mb_internal_encoding(), and their strlen()/substr() fallback cut
+		// letters in half.
+		//
 		// First sentence, when it ends within the limit.
-		if ( preg_match( '/^(.+?[.!?])(?:\s|$)/u', $text, $match ) && $len( $match[1] ) <= $max ) {
+		if ( preg_match( '/^(.+?[.!?])(?:\s|$)/u', $text, $match ) && Mb::strlen( $match[1] ) <= $max ) {
 			return $match[1];
 		}
 
-		if ( $len( $text ) <= $max ) {
+		if ( Mb::strlen( $text ) <= $max ) {
 			return $text;
 		}
 
-		$cut = $substr( $text, 0, $max );
+		$cut = Mb::substr( $text, 0, $max );
 		// Back up to the last space only when the cut splits a word.
-		if ( ' ' !== $substr( $text, $max, 1 ) ) {
-			$space = function_exists( 'mb_strrpos' ) ? mb_strrpos( $cut, ' ' ) : strrpos( $cut, ' ' );
+		if ( ' ' !== Mb::substr( $text, $max, 1 ) ) {
+			$space = Mb::strrpos( $cut, ' ' );
 			if ( false !== $space && $space > 0 ) {
-				$cut = $substr( $cut, 0, $space );
+				$cut = Mb::substr( $cut, 0, $space );
 			}
 		}
 
 		// Unicode-aware trim of trailing separators (rtrim() is byte-wise and
 		// would corrupt multi-byte characters).
-		return (string) preg_replace( '/[\s,;:\-–—]+$/u', '', $cut ) . '…';
+		return (string) preg_replace( '/[\s,;:\-–—]+$/u', '', $cut ) . '…'; // regex-safe: at most $max characters of scrubbed UTF-8.
 	}
 
 	/**
@@ -686,7 +697,8 @@ class ReviewResolver {
 	 * @param string      $prefix  Row prefix.
 	 * @param string      $suffix  Row suffix.
 	 *
-	 * @return string Trimmed value with prefix/suffix applied.
+	 * @return string Trimmed value with prefix/suffix applied, valid UTF-8
+	 *                without control characters (CBT-817 D8).
 	 */
 	private function resolve_row_value( \WC_Product $product, array $row, Config $config, string $prefix, string $suffix ): string {
 		if ( 'pattern' === $row['type'] ) {
@@ -695,6 +707,6 @@ class ReviewResolver {
 			$value = (string) $this->attribute_resolver->resolve( $product, $row, $config );
 		}
 
-		return trim( trim( $prefix ) . ' ' . trim( $value ) . ' ' . trim( $suffix ) );
+		return trim( Utf8::clean( trim( $prefix ) . ' ' . trim( $value ) . ' ' . trim( $suffix ) ) );
 	}
 }

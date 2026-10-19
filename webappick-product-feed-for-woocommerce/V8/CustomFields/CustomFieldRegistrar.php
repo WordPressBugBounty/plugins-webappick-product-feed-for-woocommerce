@@ -15,6 +15,8 @@
 
 namespace CTXFeed\V8\CustomFields;
 
+use CTXFeed\V8\Utility\Date;
+
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
@@ -226,31 +228,27 @@ class CustomFieldRegistrar {
 	 * Normalize a stored date value to YYYY-MM-DD for HTML5 <input type="date">.
 	 *
 	 * V5 saved availability_date as free-form text via the plain text input,
-	 * so existing data may be in any format strtotime() can parse
+	 * so existing data may be in any date format PHP can parse
 	 * ("December 25, 2026", "12/25/2026", "2026-12-25T00:00:00+00:00", etc.).
 	 * The HTML5 date picker only displays YYYY-MM-DD; anything else renders
-	 * as an empty input even when the underlying value is non-empty. We
-	 * round-trip through strtotime to coerce, and pass through unchanged on
-	 * unparseable input so save logic can still preserve user intent.
+	 * as an empty input even when the underlying value is non-empty. A valid
+	 * YYYY-MM-DD passes through; other text is read in the store timezone
+	 * (`Date::ymd()`), and unparseable input passes through unchanged so
+	 * save logic can still preserve user intent.
+	 *
+	 * Runs on the product edit screen, outside the feed runtime guard: it
+	 * must not depend on PHP's default timezone. The old `strtotime()` +
+	 * `gmdate()` round trip moved the date one day earlier on every save
+	 * under a UTC+X default (CBT-819, H1).
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.39 Timezone-independent (`Date::ymd()`).
 	 *
 	 * @param string $value Raw meta value.
-	 * @return string YYYY-MM-DD string, or empty if unparseable.
+	 * @return string YYYY-MM-DD string, or the raw value if unparseable.
 	 */
 	private function normalize_date_value( string $value ): string {
-		if ( '' === $value ) {
-			return '';
-		}
-
-		$timestamp = strtotime( $value );
-		if ( false === $timestamp ) {
-			// Unparseable — return as-is. The HTML5 input will reject it
-			// visually but the value isn't lost on save (user can retype).
-			return $value;
-		}
-
-		return gmdate( 'Y-m-d', $timestamp );
+		return Date::ymd( $value );
 	}
 
 	/**

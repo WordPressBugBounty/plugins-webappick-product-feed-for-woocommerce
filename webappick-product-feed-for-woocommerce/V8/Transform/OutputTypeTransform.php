@@ -38,14 +38,20 @@
 
 namespace CTXFeed\V8\Transform;
 
-use CTXFeed\V8\Core\Config;
-use CTXFeed\V8\Product\ProductRepository;
-use CTXFeed\V8\Utility\NumberFormat;
-
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
+
+use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Product\ProductRepository;
+use CTXFeed\V8\Utility\Ascii;
+use CTXFeed\V8\Utility\Html;
+use CTXFeed\V8\Utility\LocalizedNumber;
+use CTXFeed\V8\Utility\Mb;
+use CTXFeed\V8\Utility\NumberFormat;
+use CTXFeed\V8\Utility\Regex;
+use CTXFeed\V8\Utility\Utf8;
 
 /**
  * V5 numeric output_type code dispatcher.
@@ -156,6 +162,16 @@ class OutputTypeTransform implements TransformInterface {
 	private $memo_selected = array();
 
 	/**
+	 * Memoised product-data keys whose value the pipeline already formatted
+	 * (custom2 rows sourced from a dynamic attribute), for {@see $memo_config}.
+	 * Null until a Price / Rounded Price code first needs it.
+	 *
+	 * @since 8.0.39
+	 * @var array<string,bool>|null
+	 */
+	private $memo_formatted = null;
+
+	/**
 	 * Apply the configured V5 output_type code to each attribute value.
 	 *
 	 * @since 8.0.0
@@ -171,9 +187,10 @@ class OutputTypeTransform implements TransformInterface {
 		// which is fixed for the life of a batch — build them once per
 		// Config instead of re-zipping arrays for every product.
 		if ( $config !== $this->memo_config ) {
-			$this->memo_config   = $config;
-			$this->memo_lookup   = $this->build_lookup( $config );
-			$this->memo_selected = array();
+			$this->memo_config    = $config;
+			$this->memo_lookup    = $this->build_lookup( $config );
+			$this->memo_selected  = array();
+			$this->memo_formatted = null;
 		}
 
 		$lookup = $this->memo_lookup;
@@ -181,7 +198,7 @@ class OutputTypeTransform implements TransformInterface {
 			return $product_data;
 		}
 
-		$is_xml = 'xml' === strtolower( (string) $config->get( 'feedType', 'xml' ) );
+		$is_xml = 'xml' === Ascii::lower( (string) $config->get( 'feedType', 'xml' ) );
 
 		// Lazy number-format resolution — only computed if a code 6/7 is
 		// actually present in the lookup. Calling wc_get_price_decimals()
@@ -220,12 +237,32 @@ class OutputTypeTransform implements TransformInterface {
 				continue;
 			}
 
+			// Code 6 hands its parsed (rounded) number to code 7 so Rounded
+			// Price never re-reads Price's formatted text (CBT-811).
+			$carried  = null;
+			$scrubbed = false;
+
 			foreach ( self::FORMAT_CODE_ORDER as $code ) {
 				if ( ! isset( $selected[ $code ] ) ) {
 					continue;
 				}
-				$nf_for_code = ( '6' === $code || '7' === $code ) ? $nf_loader() : array();
-				$value       = $this->apply_code( $code, $value, $is_xml, $nf_for_code );
+				// One scrub per row, AFTER code 3's slot (CBT-817 D5,
+				// amendment 23): invalid UTF-8 made codes 4/8/21 return ''
+				// and the case codes write '?'. Never before codes 2 or 3 —
+				// code 3 must still see the Latin-1 bytes it converts
+				// ("Caf\xE9" → "Café", not "Caf"). Only rows that have such
+				// a code pay the one //u check.
+				if ( ! $scrubbed && '2' !== $code && '3' !== $code ) {
+					$scrubbed = true;
+					if ( is_string( $value ) ) {
+						$value = Utf8::scrub( $value );
+					}
+				}
+				if ( '6' === $code || '7' === $code ) {
+					$value = $this->apply_price_code( $code, $value, $nf_loader(), $this->is_formatted_row( (string) $attr, $config ), $carried );
+					continue;
+				}
+				$value = $this->apply_code( $code, $value, $is_xml, array() );
 			}
 		}
 
@@ -246,6 +283,24 @@ class OutputTypeTransform implements TransformInterface {
 	 * @return array<string,string> Map of merchant attr → code.
 	 */
 	private function build_lookup( Config $config ): array {
+		return self::lookup( $config );
+	}
+
+	/**
+	 * The feed's `merchant attribute => stored code(s)` lookup (uncached).
+	 *
+	 * The same map {@see transform()} applies — parallel-array zip (the last
+	 * row of a repeated name wins), a string-keyed fixture shape as-is, and
+	 * the special-template Price default. Shared with channel transforms
+	 * that must know whether a row was formatted by code 6/7 (ChatGPT's sale
+	 * check, CBT-811). Callers memoise it per Config.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param Config $config Feed configuration.
+	 * @return array<string,mixed> Map of merchant attr → code(s).
+	 */
+	public static function lookup( Config $config ): array {
 		$output_types = (array) $config->get( 'output_type', array() );
 
 		// String-keyed (V8 test fixture style) — return as-is.
@@ -264,7 +319,7 @@ class OutputTypeTransform implements TransformInterface {
 			}
 			$lookup[ (string) $attr ] = $output_types[ $i ];
 		}
-		return $this->apply_special_template_price_default( $lookup, $config );
+		return self::apply_special_template_price_default( $lookup, $config );
 	}
 
 	/**
@@ -283,7 +338,7 @@ class OutputTypeTransform implements TransformInterface {
 	 *
 	 * @return array<string,mixed>
 	 */
-	private function apply_special_template_price_default( array $lookup, Config $config ): array {
+	private static function apply_special_template_price_default( array $lookup, Config $config ): array {
 		if ( ! in_array( $config->get_provider(), self::SPECIAL_PRICE_TEMPLATES, true ) ) {
 			return $lookup;
 		}
@@ -311,8 +366,9 @@ class OutputTypeTransform implements TransformInterface {
 	 * Resolve the feed's number format for the "Price" / "Rounded Price" codes.
 	 *
 	 * V5 semantics, one owner ({@see NumberFormat::resolve()}): the base is the
-	 * WooCommerce number settings; Pro replaces each with the Filters-tab box
-	 * the user actually filled in; free ignores the boxes (CBT-640).
+	 * machine format 2 / "." / none (CBT-641); Pro replaces each with the
+	 * Filters-tab box the user actually filled in; free ignores the boxes
+	 * (CBT-640); Idealo forces its fixed format over the boxes (CBT-811).
 	 *
 	 * @since 8.0.0
 	 *
@@ -345,15 +401,20 @@ class OutputTypeTransform implements TransformInterface {
 		$value = (string) $value;
 
 		switch ( $code ) {
+			// Entities decode with explicit flags and charset (CBT-817 D1):
+			// below PHP 8.1 the defaults left "&#039;" in the value, and a
+			// non-UTF-8 default_charset wrote "&eacute;" as one Latin-1 byte.
 			case '2': // Strip Tags.
-				return wp_strip_all_tags( html_entity_decode( $value ) );
+				// Html::strip_all_tags(): core's script/style regex returned
+				// null on a long block and the value shipped '' (CBT-822 E1).
+				return Html::strip_all_tags( Html::decode( $value ) );
 
 			case '3': // UTF-8 Encode.
-				if ( function_exists( 'mb_convert_encoding' ) ) {
-					$detected = mb_detect_encoding( $value, 'UTF-8, ISO-8859-1, ASCII', true );
-					return mb_convert_encoding( $value, 'UTF-8', $detected ? $detected : 'UTF-8' );
-				}
-				return $value;
+				// Valid UTF-8 is already UTF-8 — returned unchanged. PHP 8.1+
+				// mb_detect_encoding() scores "Ķekava" / "Tiếng Việt" as
+				// ISO-8859-1 and the conversion wrote mojibake ("Ä¶ekava").
+				// Anything else is read as Windows-1252 (CBT-817 D9).
+				return Utf8::is_valid( $value ) ? $value : Utf8::from_windows1252( $value );
 
 			case '4': // htmlentities (UTF-8, ENT_QUOTES).
 				return htmlentities( $value, ENT_QUOTES, 'UTF-8' );
@@ -361,15 +422,10 @@ class OutputTypeTransform implements TransformInterface {
 			case '5': // Integer cast.
 				return (string) (int) $value;
 
-			case '6': // Format Price.
-				return $this->format_price( $value, $nf );
-
+			case '6': // Format Price (a raw value; transform() routes 6/7 through apply_price_code()).
 			case '7': // Rounded Price.
-				$parsed = \CTXFeed\V8\Utility\LocalizedNumber::parse( $value, $nf['decimal_separator'], $nf['thousand_separator'] );
-				if ( null === $parsed || $parsed <= 0 ) {
-					return $value;
-				}
-				return $this->format_number( round( $parsed ), $nf );
+				$carried = null;
+				return $this->apply_price_code( $code, $value, $nf, false, $carried );
 
 			case '8': // Delete Space.
 				return $this->delete_space( $value );
@@ -379,7 +435,7 @@ class OutputTypeTransform implements TransformInterface {
 					return $value;
 				}
 				// Strip any existing markers before wrapping fresh.
-				$clean = str_replace( array( '<![CDATA[', ']]>' ), '', html_entity_decode( $value ) );
+				$clean = str_replace( array( '<![CDATA[', ']]>' ), '', Html::decode( $value ) );
 				return '<![CDATA[' . $clean . ']]>';
 
 			case '10': // Remove invalid XML chars.
@@ -388,20 +444,25 @@ class OutputTypeTransform implements TransformInterface {
 			case '11': // Remove ShortCodes — V5 CommonHelper::remove_shortcodes parity.
 				return $this->remove_shortcodes( $value );
 
+			// Codes 12-15 (CBT-815): Mb folds in explicit UTF-8 (never the
+			// mb_internal_encoding() another plugin left set) and Ascii
+			// capitalises a-z only — PHP 8.2's ucwords()/ucfirst() on every
+			// version, so a non-C locale can no longer fold the bytes of
+			// "中文" or "–" into invalid UTF-8.
 			case '12': // ucwords (lowercase first).
-				return ucwords( mb_strtolower( $value ) );
+				return Ascii::ucwords( Mb::lower( $value ) );
 
 			case '13': // ucfirst (lowercase first).
-				return ucfirst( mb_strtolower( $value ) );
+				return Ascii::ucfirst( Mb::lower( $value ) );
 
 			case '14': // strtoupper.
 				// V5 wraps mb_strtolower inside mb_strtoupper — the inner
 				// lowercase is a no-op for ASCII but normalises some
 				// Unicode forms. Mirror the quirk for byte-exact parity.
-				return mb_strtoupper( mb_strtolower( $value ) );
+				return Mb::upper( Mb::lower( $value ) );
 
 			case '15': // strtolower.
-				return mb_strtolower( $value );
+				return Mb::lower( $value );
 
 			case '16': // urlToSecure (http→https).
 				return ( 0 === strpos( $value, 'http' ) )
@@ -443,29 +504,149 @@ class OutputTypeTransform implements TransformInterface {
 	}
 
 	/**
-	 * Format a numeric string with the configured/resolved separators.
+	 * Apply "Price" (6) or "Rounded Price" (7) to one value.
 	 *
-	 * Empty / non-numeric / zero-or-negative inputs are returned unchanged
-	 * (V5 behaviour — `if ( ! empty($output) && $output > 0 ) {…}`).
+	 * V5 `FormatOutput` read the value with a bare `(float)` cast, because the
+	 * input is the RAW WooCommerce value. So does this (CBT-811): a raw value
+	 * is parsed machine-first ({@see LocalizedNumber::parse_raw()}) — with the
+	 * Pro boxes "," / "." a raw 17.991 is 17.991 → "17,99", never 17 991 →
+	 * "17.991,00" (the 1000× price up to 8.0.38). Only a row whose value the
+	 * pipeline itself formatted (a custom2 dynamic-attribute source, see
+	 * {@see is_formatted_row()}) is read format-first with the feed's
+	 * separators ({@see LocalizedNumber::parse()}), which keeps #68878
+	 * idempotent: 1499 at 0 / "," / "." stays "1.499".
 	 *
-	 * @since 8.0.0
+	 * Code 6 hands code 7 its number rounded to the feed's decimals through
+	 * `$carried`, so Rounded Price rounds what Price wrote (17.495 → "17.50"
+	 * → "18.00") and never re-reads Price's text. Code 7 alone parses the
+	 * value itself the same way code 6 does.
 	 *
-	 * @param string                                                                   $value Value.
-	 * @param array{decimals:int, decimal_separator:string, thousand_separator:string} $nf    Format settings.
-	 * @return string
+	 * Empty, non-numeric and zero-or-negative values are returned unchanged
+	 * (V5 — `if ( ! empty( $output ) && $output > 0 )`).
+	 *
+	 * @since 8.0.39
+	 * @implements XFRM-FRD-4.6
+	 *
+	 * @param string                                                                   $code      '6' or '7'.
+	 * @param mixed                                                                    $value     Current attribute value.
+	 * @param array{decimals:int, decimal_separator:string, thousand_separator:string} $nf        Format settings.
+	 * @param bool                                                                     $formatted Whether the row value is pipeline-formatted text.
+	 * @param float|null                                                               $carried   In: code 6's number for code 7; out: the number code 6 wrote.
+	 *
+	 * @return mixed Formatted value, or the original on no-op / type mismatch.
 	 */
-	private function format_price( string $value, array $nf ): string {
-		// Parse with the feed's separators FIRST: the value is usually the
-		// raw WooCommerce price, but when "Price" and "Rounded Price" are
-		// both selected the second code sees the first one's formatted text,
-		// and a bare (float) cast read a '.' thousand separator as a decimal
-		// point — "1.499" → "1" (support #68878). Parsing keeps the code
-		// idempotent.
-		$parsed = \CTXFeed\V8\Utility\LocalizedNumber::parse( $value, $nf['decimal_separator'], $nf['thousand_separator'] );
+	private function apply_price_code( string $code, $value, array $nf, bool $formatted, ?float &$carried ) {
+		if ( ! is_scalar( $value ) ) {
+			$carried = null;
+			return $value;
+		}
+		$value = (string) $value;
+
+		if ( '6' === $code ) {
+			$parsed  = $this->parse_price( $value, $nf, $formatted );
+			$carried = null;
+			if ( null === $parsed || $parsed <= 0 ) {
+				return $value;
+			}
+			// number_format() rounds with the same routine and clamps
+			// negative decimals to 0 — mirror both so code 7 sees exactly
+			// the number code 6 wrote.
+			$carried = round( $parsed, max( 0, (int) $nf['decimals'] ) );
+			return $this->format_number( $parsed, $nf );
+		}
+
+		$parsed  = null !== $carried ? $carried : $this->parse_price( $value, $nf, $formatted );
+		$carried = null;
 		if ( null === $parsed || $parsed <= 0 ) {
 			return $value;
 		}
-		return $this->format_number( $parsed, $nf );
+		return $this->format_number( round( $parsed ), $nf );
+	}
+
+	/**
+	 * Read a Price / Rounded Price input as a float.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param string                                                                   $value     Value.
+	 * @param array{decimals:int, decimal_separator:string, thousand_separator:string} $nf        Format settings.
+	 * @param bool                                                                     $formatted Pipeline-formatted text (format-first) vs raw (machine-first).
+	 *
+	 * @return float|null
+	 */
+	private function parse_price( string $value, array $nf, bool $formatted ): ?float {
+		if ( $formatted ) {
+			return LocalizedNumber::parse( $value, (string) $nf['decimal_separator'], (string) $nf['thousand_separator'] );
+		}
+		return LocalizedNumber::parse_raw( $value, (string) $nf['decimal_separator'], (string) $nf['thousand_separator'] );
+	}
+
+	/**
+	 * Whether a product-data key carries text the pipeline already formatted.
+	 *
+	 * Only on `custom2`, where the Pro dynamic-attribute engine writes numeric
+	 * results with the feed number format: a row whose source is a dynamic
+	 * attribute, or an attribute mapping holding one at any depth
+	 * ({@see NumberFormat::is_formatted_source()}). Built once per Config and
+	 * keyed exactly like `ProductRepository::resolve_single()` keys the row
+	 * (duplicate names get `##N`), so O(rows) per batch, nothing per product.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param string $key    Product-data key (may carry the `##N` suffix).
+	 * @param Config $config Feed configuration.
+	 *
+	 * @return bool
+	 */
+	private function is_formatted_row( string $key, Config $config ): bool {
+		if ( null === $this->memo_formatted ) {
+			$this->memo_formatted = self::formatted_rows( $config );
+		}
+		return isset( $this->memo_formatted[ $key ] );
+	}
+
+	/**
+	 * Product-data keys of the rows whose value is pipeline-formatted text.
+	 *
+	 * @since 8.0.39
+	 *
+	 * @param Config $config Feed configuration.
+	 *
+	 * @return array<string,bool>
+	 */
+	private static function formatted_rows( Config $config ): array {
+		if ( 'custom2' !== $config->get_provider() ) {
+			return array();
+		}
+
+		$sources = $config->get_attributes();
+		$types   = $config->get_type();
+		$seen    = array();
+		$rows    = array();
+
+		foreach ( $config->get_merchant_attributes() as $index => $merchant_attr ) {
+			$merchant_attr = (string) $merchant_attr;
+			if ( '' === $merchant_attr ) {
+				continue;
+			}
+
+			// Same keys as ProductRepository::dedup_merchant_key().
+			if ( isset( $seen[ $merchant_attr ] ) ) {
+				++$seen[ $merchant_attr ];
+				$key = $merchant_attr . ProductRepository::DUP_KEY_SEPARATOR . $seen[ $merchant_attr ];
+			} else {
+				$seen[ $merchant_attr ] = 1;
+				$key                    = $merchant_attr;
+			}
+
+			$type   = isset( $types[ $index ] ) ? (string) $types[ $index ] : 'attribute';
+			$source = isset( $sources[ $index ] ) ? (string) $sources[ $index ] : '';
+			if ( 'attribute' === $type && '' !== $source && NumberFormat::is_formatted_source( $source ) ) {
+				$rows[ $key ] = true;
+			}
+		}
+
+		return $rows;
 	}
 
 	/**
@@ -489,8 +670,11 @@ class OutputTypeTransform implements TransformInterface {
 	/**
 	 * Replace runs of whitespace with a single space (V5 code 8).
 	 *
-	 * Verbatim port of V5 FormatOutput::delete_space(): htmlentities → swap
-	 * `&nbsp;` to space → decode → collapse whitespace.
+	 * Port of V5 FormatOutput::delete_space(): htmlentities → swap `&nbsp;`
+	 * to space → decode → collapse whitespace. Encode and decode use the
+	 * same flags and charset (CBT-817 D1): V5's bare decode left the
+	 * `&#039;` its own ENT_QUOTES encode wrote, so "Men's" shipped as
+	 * "Men&#039;s" on PHP 7.4/8.0.
 	 *
 	 * @since 8.0.0
 	 *
@@ -498,10 +682,14 @@ class OutputTypeTransform implements TransformInterface {
 	 * @return string
 	 */
 	private function delete_space( string $value ): string {
-		$encoded = htmlentities( $value, ENT_QUOTES, 'utf-8' );
+		$encoded = Html::encode( $value );
 		$encoded = str_replace( '&nbsp;', ' ', $encoded );
-		$decoded = html_entity_decode( $encoded );
-		return preg_replace( '/\s+/', ' ', $decoded );
+		$decoded = Html::decode( $encoded );
+		// The six ASCII whitespace bytes `\s` means in the C locale. A byte
+		// `\s` follows PCRE locale tables: macOS UTF-8 locales count 0xA0 —
+		// the second byte of "à" / "Å" / "х" — as a space and cut the letter
+		// in half (CBT-822 A11). Never `\v`: in byte mode it matches 0x85.
+		return Regex::replace( '/[\t\n\x0B\f\r ]+/', ' ', $decoded, 'output type "Delete Space"' );
 	}
 
 	/**
@@ -552,10 +740,12 @@ class OutputTypeTransform implements TransformInterface {
 		$value = $this->strip_invalid_xml( $value );
 
 		// Step 4: catch-all regex — strips ANY `[…]` pattern that remains.
-		// Pattern is V5-verbatim (V5/Helper/CommonHelper.php:99).
-		$expression = '/\[\/*[č?a-zA-Z1-90_| -=\'"\{\}]*\/*\]/m';
-		$result     = preg_replace( $expression, '', $value );
-		return null === $result ? $value : $result;
+		// V5's pattern (V5/Helper/CommonHelper.php:99) with possessive
+		// quantifiers (CBT-822 E4): the class already holds "/" and not "]",
+		// so the matches are the same, but the three overlapping greedy runs
+		// no longer backtrack — "[" + 3000 slashes took a second and
+		// returned null at the default pcre.backtrack_limit.
+		return Regex::replace( Regex::SHORTCODE_CATCH_ALL, '', $value, 'output type "Remove ShortCodes"' );
 	}
 
 	/**

@@ -30,6 +30,8 @@
 namespace CTXFeed\V8\Channel;
 
 use CTXFeed\V8\Template\TemplateLocator;
+use CTXFeed\V8\Utility\Ascii;
+use CTXFeed\V8\Utility\Url;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -117,19 +119,18 @@ class TemplateDefaults {
 		$brand = trim( (string) get_bloginfo( 'name' ) );
 
 		if ( '' === $brand ) {
-			$url = filter_var( site_url(), FILTER_SANITIZE_URL );
+			// The host, byte for byte (CBT-822 A9): FILTER_SANITIZE_URL deleted
+			// every non-ASCII byte first, so a raw-Unicode host
+			// ("sklep-żółw.pl") gave the brand "Sklep-w", and wp_parse_url()
+			// turned bytes 0x80-0x9F into "_" under a non-C locale (CBT-808).
+			$host = Url::parse( (string) site_url(), PHP_URL_HOST );
 
-			if ( false !== $url ) {
-				$url = wp_parse_url( $url );
-
-				if ( is_array( $url ) && array_key_exists( 'host', $url ) ) {
-					if ( strpos( $url['host'], '.' ) !== false ) {
-						$arr   = explode( '.', $url['host'] );
-						$brand = $arr[ count( $arr ) - 2 ];
-						$brand = ucfirst( $brand );
-					} else {
-						$brand = ucfirst( $url['host'] );
-					}
+			if ( is_string( $host ) && '' !== $host ) {
+				if ( strpos( $host, '.' ) !== false ) {
+					$arr   = explode( '.', $host );
+					$brand = Ascii::ucfirst( $arr[ count( $arr ) - 2 ] );
+				} else {
+					$brand = Ascii::ucfirst( $host );
 				}
 			}
 		}

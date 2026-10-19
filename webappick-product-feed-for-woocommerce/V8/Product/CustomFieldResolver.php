@@ -17,6 +17,7 @@
 namespace CTXFeed\V8\Product;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\NumberFormat;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -116,7 +117,9 @@ class CustomFieldResolver {
 			return implode( ', ', self::flatten( $value ) );
 		}
 
-		return (string) $value;
+		// A float (a custom field a plugin returns as a number) is machine
+		// text on every host (CBT-809 B7).
+		return is_float( $value ) ? NumberFormat::to_machine( $value ) : (string) $value;
 	}
 
 	/**
@@ -171,7 +174,7 @@ class CustomFieldResolver {
 			if ( is_array( $item ) ) {
 				$out = array_merge( $out, self::flatten( $item ) );
 			} elseif ( is_scalar( $item ) ) {
-				$out[] = (string) $item;
+				$out[] = is_float( $item ) ? NumberFormat::to_machine( $item ) : (string) $item; // Float leaves → machine text (CBT-809 B7).
 			}
 		}
 		return $out;

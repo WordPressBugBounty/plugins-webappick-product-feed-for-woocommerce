@@ -17,6 +17,8 @@
 
 namespace CTXFeed\V8\Product;
 
+use CTXFeed\V8\Utility\Ascii;
+
 defined( 'ABSPATH' ) || exit;
 
 /**
@@ -106,6 +108,6 @@ class ProductTypeSupport {
 			return self::LABELS[ $slug ];
 		}
 
-		return ucfirst( str_replace( array( '-', '_' ), ' ', $slug ) );
+		return Ascii::ucfirst( str_replace( array( '-', '_' ), ' ', $slug ) );
 	}
 }

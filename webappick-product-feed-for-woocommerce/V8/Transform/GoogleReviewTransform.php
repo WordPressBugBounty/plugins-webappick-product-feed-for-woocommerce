@@ -19,6 +19,8 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Date;
+use CTXFeed\V8\Utility\Html;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -80,7 +82,7 @@ class GoogleReviewTransform implements TransformInterface {
 
 		$content  = $data['content'];
 		$decoded  = wp_specialchars_decode( $content );
-		$stripped = wp_strip_all_tags( $decoded );
+		$stripped = Html::strip_all_tags( $decoded ); // CBT-822 E1: never '' because core's regex gave up.
 
 		// Fallback to original if stripping yields empty string.
 		if ( strlen( $stripped ) > 0 ) {
@@ -96,9 +98,11 @@ class GoogleReviewTransform implements TransformInterface {
 	/**
 	 * Ensure review_timestamp is ISO 8601 formatted.
 	 *
-	 * V5 parity: gmdate( 'c', strtotime( $comment_date_gmt ) ).
+	 * V5 parity: gmdate( 'c', strtotime( $comment_date_gmt ) ), with the
+	 * zone named (UTC) instead of PHP's default.
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.39 Parsed as UTC, independent of PHP's default (CBT-819).
 	 *
 	 * @param array $data Review data.
 	 *
@@ -109,18 +113,9 @@ class GoogleReviewTransform implements TransformInterface {
 			return $data;
 		}
 
-		$date = $data['review_timestamp'];
-
-		// Already ISO 8601 — skip.
-		if ( preg_match( '/^\d{4}-\d{2}-\d{2}T/', $date ) ) {
-			return $data;
-		}
-
-		$timestamp = strtotime( $date );
-
-		if ( false !== $timestamp ) {
-			$data['review_timestamp'] = gmdate( 'c', $timestamp );
-		}
+		// ISO input passes through; a zone-less value is a GMT column, read
+		// as UTC — never PHP's default (CBT-819, H4); unparseable stays.
+		$data['review_timestamp'] = Date::iso8601( $data['review_timestamp'], Date::utc() );
 
 		return $data;
 	}
@@ -140,7 +135,7 @@ class GoogleReviewTransform implements TransformInterface {
 		// Support both flat and nested reviewer/name keys.
 		if ( ! empty( $data[ $name_key ] ) ) {
 			$data[ $name_key ] = htmlspecialchars(
-				wp_strip_all_tags( $data[ $name_key ] ),
+				Html::strip_all_tags( $data[ $name_key ] ),
 				ENT_XML1 | ENT_QUOTES,
 				'UTF-8'
 			);
@@ -149,7 +144,7 @@ class GoogleReviewTransform implements TransformInterface {
 		// Also handle reviewer_name if used by resolver.
 		if ( ! empty( $data['reviewer_name'] ) ) {
 			$data['reviewer_name'] = htmlspecialchars(
-				wp_strip_all_tags( $data['reviewer_name'] ),
+				Html::strip_all_tags( $data['reviewer_name'] ),
 				ENT_XML1 | ENT_QUOTES,
 				'UTF-8'
 			);

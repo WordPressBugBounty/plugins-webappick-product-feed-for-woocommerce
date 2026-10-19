@@ -118,7 +118,7 @@ class FeedLogger {
 
 		if ( ! empty( $meta ) ) {
 			foreach ( $meta as $key => $value ) {
-				$header .= ucfirst( str_replace( '_', ' ', $key ) ) . ': ' . $value . PHP_EOL;
+				$header .= Ascii::ucfirst( str_replace( '_', ' ', $key ) ) . ': ' . $value . PHP_EOL;
 			}
 		}
 
@@ -288,7 +288,7 @@ class FeedLogger {
 		}
 
 		foreach ( $summary as $key => $value ) {
-			$this->info( $feed_slug, ucfirst( str_replace( '_', ' ', $key ) ) . ': ' . $value );
+			$this->info( $feed_slug, Ascii::ucfirst( str_replace( '_', ' ', $key ) ) . ': ' . $value );
 		}
 
 		$this->buffer[ $feed_slug ][] = str_repeat( '-', 50 );

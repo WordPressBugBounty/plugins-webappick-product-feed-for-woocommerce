@@ -185,7 +185,7 @@ class MultiVendorCompatibilityProvider {
 		$product_id = $product->is_type( 'variation' ) && $product->get_parent_id() ? (int) $product->get_parent_id() : (int) $product->get_id();
 		$store      = $this->store_name_for( $product_id );
 
-		return trim( wp_strip_all_tags( html_entity_decode( (string) $store, ENT_QUOTES, 'UTF-8' ) ) );
+		return trim( \CTXFeed\V8\Utility\Html::strip_all_tags( html_entity_decode( (string) $store, ENT_QUOTES, 'UTF-8' ) ) ); // CBT-822 E1 sibling.
 	}
 
 	/**

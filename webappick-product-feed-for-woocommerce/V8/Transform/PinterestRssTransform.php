@@ -13,6 +13,7 @@
 namespace CTXFeed\V8\Transform;
 
 use CTXFeed\V8\Core\Config;
+use CTXFeed\V8\Utility\Date;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -55,6 +56,7 @@ class PinterestRssTransform implements TransformInterface {
 	 * "Thu, 21 Dec 2024 16:01:07 +0000").
 	 *
 	 * @since 8.0.0
+	 * @since 8.0.39 Parsed as UTC, independent of PHP's default (CBT-819).
 	 *
 	 * @param array $data Product data.
 	 *
@@ -72,10 +74,13 @@ class PinterestRssTransform implements TransformInterface {
 			return $data;
 		}
 
-		$timestamp = strtotime( $date );
+		// A zone-less date is UTC, as it always was under WordPress's UTC
+		// default — named here so another plugin's default cannot move it
+		// (CBT-819, H6). Unparseable stays as it is.
+		$parsed = date_create_immutable( (string) $date, Date::utc() );
 
-		if ( false !== $timestamp ) {
-			$data['pubDate'] = gmdate( 'r', $timestamp );
+		if ( false !== $parsed ) {
+			$data['pubDate'] = $parsed->setTimezone( Date::utc() )->format( 'r' );
 		}
 
 		return $data;

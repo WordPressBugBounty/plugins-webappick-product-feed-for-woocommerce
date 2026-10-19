@@ -293,6 +293,7 @@ class TransformServiceProvider extends ServiceProvider {
 	 * @since 8.0.0
 	 * @implements XFRM-FRD-10.2
 	 * @hook ctxfeed_transform_pipeline Filter to modify the transform list.
+	 * @hook ctx_feed_number_format     Adds IdealoTransform::fixed_number_format() at priority 20 (CBT-811).
 	 *
 	 * @param Container $container DI container.
 	 *
@@ -350,6 +351,13 @@ class TransformServiceProvider extends ServiceProvider {
 			$container->resolve( 'transform.output_formatter' ),
 			$container->resolve( 'transform.utm' ),
 		);
+
+		// Idealo ships a FIXED price format (2 / "." / none) over the Pro
+		// Filters-tab boxes — V5 Override/IdealoTemplate.php parity (CBT-811).
+		// Priority 20 runs after the Pro engine's boxes (10). Registered only
+		// after transform.idealo resolved above, so the callback's class is
+		// loaded before any feed applies the filter (CBT-806).
+		add_filter( 'ctx_feed_number_format', array( IdealoTransform::class, 'fixed_number_format' ), 20, 2 ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- V5 hook name kept verbatim for third-party parity.
 
 		/**
 		 * Filter the transform pipeline.
