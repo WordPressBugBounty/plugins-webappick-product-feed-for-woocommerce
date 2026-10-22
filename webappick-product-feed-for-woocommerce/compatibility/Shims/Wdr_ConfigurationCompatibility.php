@@ -60,7 +60,32 @@ class Wdr_ConfigurationCompatibility {
 	 *
 	 * @return int
 	 */
-	public function get_discounted_price( $price, $product, $config, $with_tax, $price_type ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter, VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable -- Hook callback signature: the 5-argument arity registered with add_filter() must be preserved even though this adapter does not read every argument.
+	public function get_discounted_price( $price, $product, $config, $with_tax, $price_type ) {
+		// Price as a guest: an empty cart, never the runner's (an admin's
+		// cart in admin-ajax background runs) — cart conditions must not
+		// reach the feed (CBT-823). Older free without the helper: as before.
+		$compute = function () use ( $price, $product, $config, $with_tax, $price_type ) {
+			return $this->compute_discounted_price( $price, $product, $config, $with_tax, $price_type );
+		};
+		if ( class_exists( '\\CTXFeed\\V8\\Utility\\GuestCart' ) && is_callable( array( '\\CTXFeed\\V8\\Utility\\GuestCart', 'run' ) ) ) {
+			return \CTXFeed\V8\Utility\GuestCart::run( $compute );
+		}
+		return $compute();
+	}
+
+	/**
+	 * Discounted price computation (see get_discounted_price()).
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param mixed       $price      Incoming price.
+	 * @param \WC_Product $product    Product.
+	 * @param object      $config     Feed config.
+	 * @param bool        $with_tax   Tax-inclusive row.
+	 * @param string      $price_type Price type.
+	 * @return mixed
+	 */
+	private function compute_discounted_price( $price, $product, $config, $with_tax, $price_type ) { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter, VariableAnalysis.CodeAnalysis.VariableAnalysis.UnusedVariable -- Hook callback signature: the 5-argument arity registered with add_filter() must be preserved even though this adapter does not read every argument.
 
 		// In free version we do not support wpml plugin features that's way we make else condition which working only for flycart plugin.
 		if ( Helper::is_pro() ) {

@@ -38,15 +38,14 @@ class EasyWoocommerceDiscounts {
 
 		// Guard against a breaking plugin update: if the pricing API this shim
 		// replays is gone, return the price untouched instead of fataling.
-		if ( ! function_exists( 'WCCS' ) || ! class_exists( 'WCCS_Pricing' ) ) {
-			return $price;
-		}
-		$wccs = WCCS();
-		if ( ! is_object( $wccs ) || ! isset( $wccs->WCCS_Conditions_Provider ) || ! method_exists( $wccs->WCCS_Conditions_Provider, 'get_pricings' ) ) {
+		// WCCS_Conditions_Provider is a class with a STATIC get_pricings(), not a
+		// WCCS() service: `isset( WCCS()->WCCS_Conditions_Provider )` (a magic
+		// __get without __isset) was always false (CBT-836).
+		if ( ! function_exists( 'WCCS' ) || ! class_exists( 'WCCS_Pricing' ) || ! class_exists( 'WCCS_Conditions_Provider' ) || ! is_callable( array( 'WCCS_Conditions_Provider', 'get_pricings' ) ) ) {
 			return $price;
 		}
 		$pricing = new WCCS_Pricing(
-			$wccs->WCCS_Conditions_Provider->get_pricings( array( 'status' => 1 ) )
+			\WCCS_Conditions_Provider::get_pricings( array( 'status' => 1 ) )
 		);
 		if ( ! method_exists( $pricing, 'get_all_pricing_rules' ) ) {
 			return $price;

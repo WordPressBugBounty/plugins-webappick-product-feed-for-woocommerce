@@ -18,6 +18,7 @@
 
 namespace CTXFeed\V8\Product;
 
+use CTXFeed\V8\Common\DropdownRegistry;
 use CTXFeed\V8\Core\Config;
 use CTXFeed\V8\Core\Logger;
 use CTXFeed\V8\Utility\Html;
@@ -37,6 +38,20 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @since 8.0.0
  */
 class AttributeResolver {
+
+	/**
+	 * Config the currency memo belongs to (CBT-831).
+	 *
+	 * @var Config|null
+	 */
+	private $currency_memo_config = null;
+
+	/**
+	 * Memoised feed currency code ('' = use the store currency).
+	 *
+	 * @var string
+	 */
+	private $currency_memo = '';
 
 	/**
 	 * Meta resolver instance.
@@ -1147,7 +1162,7 @@ class AttributeResolver {
 				return $this->resolve_quantity( $product, $config );
 
 			case 'currency':
-				return get_woocommerce_currency();
+				return $this->feed_currency_code( $config );
 
 			// V5 attribute: `condition` — always 'new' by default, but
 			// V5 fires the NON-STANDARD filter `woo_feed_product_condition`
@@ -1713,6 +1728,45 @@ class AttributeResolver {
 	}
 
 	/**
+	 * The `currency` attribute: the FEED currency when a currency switcher
+	 * is active, else the store currency.
+	 *
+	 * Switcher shims convert the PRICES to the feed currency without
+	 * switching WooCommerce's ambient currency (X-Currency, Algoritmika and
+	 * WOOCS deliberately pin the store currency for the batch), so
+	 * get_woocommerce_currency() said USD next to EUR prices (CBT-831). Same
+	 * rule as the price suffix fallback (FeedCurrencyFallbackTrait): a
+	 * switcher lists its currencies, and the feed names one. Memoised per
+	 * Config.
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param Config $config Feed configuration.
+	 * @return string ISO 4217 code.
+	 */
+	private function feed_currency_code( Config $config ): string {
+		if ( $this->currency_memo_config !== $config ) {
+			$this->currency_memo_config = $config;
+			$this->currency_memo        = '';
+
+			$available = class_exists( DropdownRegistry::class ) && is_callable( array( DropdownRegistry::class, 'get_active_currencies' ) )
+				? (array) DropdownRegistry::get_active_currencies()
+				: array();
+			if ( ! empty( $available ) ) {
+				foreach ( array( 'feed_currency', 'feedCurrency', 'currency' ) as $key ) {
+					$code = trim( (string) $config->get( $key, '' ) );
+					if ( '' !== $code ) {
+						$this->currency_memo = $code;
+						break;
+					}
+				}
+			}
+		}
+
+		return '' !== $this->currency_memo ? $this->currency_memo : (string) get_woocommerce_currency();
+	}
+
+	/**
 	 * Resolve WooCommerce product attribute (wf_attr_* prefix).
 	 *
 	 * Handles both global attributes (taxonomy-based, e.g., pa_color, pa_size)
@@ -1734,11 +1788,11 @@ class AttributeResolver {
 	 * @return string Resolved attribute value or empty string.
 	 */
 	private function resolve_wc_product_attribute( \WC_Product $product, string $attr, Config $config ): string {
-		// Strip the wf_attr_ prefix to get the bare attribute name.
-		$attr_name = str_replace( 'wf_attr_', '', $attr );
-
-		// Also strip pa_ prefix if present (V5 compat for WC 3.6+).
-		$attr_name = str_replace( 'pa_', '', $attr_name );
+		// Strip the wf_attr_ prefix to get the bare attribute name, then a
+		// pa_ prefix (V5 compat for WC 3.6+) — only as LEADING prefixes, never
+		// from inside the name: `spa_size` stays `spa_size` (CBT-827).
+		$attr_name = 0 === strpos( $attr, 'wf_attr_' ) ? (string) substr( $attr, 8 ) : $attr;
+		$attr_name = 0 === strpos( $attr_name, 'pa_' ) ? (string) substr( $attr_name, 3 ) : $attr_name;
 
 		if ( empty( $attr_name ) ) {
 			return '';
@@ -1746,6 +1800,17 @@ class AttributeResolver {
 
 		// WC's get_attribute() handles both global (taxonomy) and product-level attributes.
 		$value = $product->get_attribute( $attr_name );
+
+		// Products saved under another site locale key the same custom
+		// attribute differently ("Länge": `laenge` vs `lange`). Only on a miss
+		// (CBT-830).
+		if ( '' === $value && class_exists( AttributeKey::class ) ) {
+			$stored = AttributeKey::find( $product, $attr_name );
+			if ( '' !== $stored ) {
+				$attr_name = $stored;
+				$value     = $product->get_attribute( $attr_name );
+			}
+		}
 
 		// A variable parent's value lists every option of the attribute; the
 		// Pro stock filters may narrow it to the options that still have a

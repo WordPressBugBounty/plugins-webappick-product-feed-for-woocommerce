@@ -197,12 +197,16 @@ class GroupedAttributeBuilder {
 	 *
 	 * @since 8.0.0
 	 *
-	 * @param array  $product_data Flat product data (internal attribute names).
-	 * @param string $provider     Channel provider slug (e.g., 'google').
+	 * @param array  $product_data    Flat product data (internal attribute names).
+	 * @param string $provider        Channel provider slug (e.g., 'google').
+	 * @param string $default_country Feed country (ISO 3166-1), for a legacy
+	 *                                `free_shipping_threshold` value without one (CBT-842).
 	 *
 	 * @return array Product data with grouped attributes as nested arrays.
 	 */
-	public function build( array $product_data, string $provider ): array {
+	public function build( array $product_data, string $provider, string $default_country = '' ): array {
+		$product_data = $this->split_free_shipping_threshold( $product_data, $provider, $default_country );
+
 		$nested     = isset( $this->nested_groups[ $provider ] ) ? $this->nested_groups[ $provider ] : array();
 		$repeating  = isset( $this->repeating_groups[ $provider ] ) ? $this->repeating_groups[ $provider ] : array();
 		$aggregates = isset( $this->aggregate_groups[ $provider ] ) ? $this->aggregate_groups[ $provider ] : array();
@@ -531,12 +535,16 @@ class GroupedAttributeBuilder {
 	 *
 	 * @since 8.0.0
 	 *
-	 * @param array  $product_data Flat product data (internal names, ##N suffixed dups).
-	 * @param string $provider     Channel provider slug.
+	 * @param array  $product_data    Flat product data (internal names, ##N suffixed dups).
+	 * @param string $provider        Channel provider slug.
+	 * @param string $default_country Feed country (ISO 3166-1), for a legacy
+	 *                                `free_shipping_threshold` value without one (CBT-842).
 	 *
 	 * @return array Product data with grouped attrs collapsed to single keys.
 	 */
-	public function build_delimited( array $product_data, string $provider ): array {
+	public function build_delimited( array $product_data, string $provider, string $default_country = '' ): array {
+		$product_data = $this->split_free_shipping_threshold( $product_data, $provider, $default_country );
+
 		$member_to_group  = $this->delimited_member_lookup( $provider );
 		$member_to_joined = $this->joined_member_lookup( $provider );
 
@@ -702,6 +710,88 @@ class GroupedAttributeBuilder {
 	}
 
 	/**
+	 * Split a legacy single `free_shipping_threshold` value into the
+	 * country + price_threshold members Google requires (CBT-842).
+	 *
+	 * The value is `CC:amount CUR`, several comma-separated
+	 * (`US:100 USD,CA:150 CAD` — a comma inside an amount such as
+	 * `1,000 USD` is not a separator); a value without a country gets the
+	 * feed country. The member pair(s) take the legacy key's position, so the
+	 * delimited column and the XML block stay where the row was mapped; an
+	 * empty value becomes an empty pair. A no-op for providers without the
+	 * group and when no legacy key is present (one isset per product).
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param array  $product_data    Flat product data.
+	 * @param string $provider        Channel provider slug.
+	 * @param string $default_country Feed country.
+	 *
+	 * @return array
+	 */
+	private function split_free_shipping_threshold( array $product_data, string $provider, string $default_country ): array {
+		if ( ! isset( $this->nested_groups[ $provider ]['g:free_shipping_threshold'] ) || ! array_key_exists( 'free_shipping_threshold', $product_data ) ) {
+			return $product_data;
+		}
+
+		$value = $product_data['free_shipping_threshold'];
+		$pairs = array();
+		if ( is_scalar( $value ) ) {
+			$entries = preg_split( '/,(?=\s*[A-Za-z]{2}\s*:)/', (string) $value );
+			foreach ( false === $entries ? array() : $entries as $entry ) {
+				$entry = trim( $entry );
+				if ( '' === $entry ) {
+					continue;
+				}
+				if ( preg_match( '/^([A-Za-z]{2})\s*:\s*(.*)$/s', $entry, $m ) ) {
+					$country = strtoupper( $m[1] );
+					$price   = trim( $m[2] );
+				} else {
+					$country = strtoupper( trim( $default_country ) );
+					$price   = $entry;
+				}
+				if ( '' === $price ) {
+					continue;
+				}
+				$pairs[] = array( $country, $price );
+			}
+		}
+
+		// Number the pairs after member rows mapped as well, so neither
+		// overwrites the other (keys follow ProductRepository's ##N scheme).
+		$mapped = array(
+			'free_shipping_threshold_country' => 0,
+			'free_shipping_threshold_price'   => 0,
+		);
+		foreach ( array_keys( $product_data ) as $key ) {
+			$base = ProductRepository::strip_dup_suffix( (string) $key );
+			if ( isset( $mapped[ $base ] ) ) {
+				++$mapped[ $base ];
+			}
+		}
+		$taken = max( $mapped );
+
+		$result = array();
+		foreach ( $product_data as $key => $item ) {
+			if ( 'free_shipping_threshold' !== $key ) {
+				$result[ $key ] = $item;
+				continue;
+			}
+			// An empty value keeps its (empty) block: CTX Feed renders empty
+			// tags on purpose, as for every other mapped attribute.
+			foreach ( empty( $pairs ) ? array( array( '', '' ) ) : $pairs as $i => $pair ) {
+				$n      = $taken + $i;
+				$suffix = 0 === $n ? '' : '##' . ( $n + 1 );
+
+				$result[ 'free_shipping_threshold_country' . $suffix ] = $pair[0];
+				$result[ 'free_shipping_threshold_price' . $suffix ]   = $pair[1];
+			}
+		}
+
+		return $result;
+	}
+
+	/**
 	 * Initialize Google Shopping grouped attribute definitions.
 	 *
 	 * Ported from V5 GoogleStructure::get_grouped_attributes().
@@ -739,28 +829,28 @@ class GroupedAttributeBuilder {
 
 		// Nested groups: wrapper → [ internal_attr → sub_element_name ].
 		$this->nested_groups['google'] = array(
-			'g:tax'                 => array(
+			'g:tax'                     => array(
 				'tax_country' => 'g:country',
 				'tax_region'  => 'g:region',
 				'tax_rate'    => 'g:rate',
 				'tax_ship'    => 'g:tax_ship',
 			),
-			'g:shipping'            => array(
+			'g:shipping'                => array(
 				'shipping_country' => 'g:country',
 				'shipping_region'  => 'g:region',
 				'shipping_service' => 'g:service',
 				'shipping_price'   => 'g:price',
 			),
-			'g:installment'         => array(
+			'g:installment'             => array(
 				'installment_months' => 'g:months',
 				'installment_amount' => 'g:amount',
 			),
-			'g:subscription_cost'   => array(
+			'g:subscription_cost'       => array(
 				'subscription_period'        => 'g:period',
 				'subscription_period_length' => 'g:period_length',
 				'subscription_amount'        => 'g:amount',
 			),
-			'g:product_detail'      => array(
+			'g:product_detail'          => array(
 				'section_name'    => 'g:section_name',
 				'attribute_name'  => 'g:attribute_name',
 				'attribute_value' => 'g:attribute_value',
@@ -769,13 +859,13 @@ class GroupedAttributeBuilder {
 			// a nested block: <g:certification> holds authority, name and
 			// code sub-attributes. Delimited feeds collapse it to a single
 			// positional `certification` column ("EC:EPREL:123456").
-			'g:certification'       => array(
+			'g:certification'           => array(
 				'certification_authority' => 'g:certification_authority',
 				'certification_name'      => 'g:certification_name',
 				'certification_code'      => 'g:certification_code',
 			),
 			// Loyalty program member pricing/benefits (2024+).
-			'g:loyalty_program'     => array(
+			'g:loyalty_program'         => array(
 				'loyalty_program_label'          => 'g:program_label',
 				'loyalty_tier_label'             => 'g:tier_label',
 				'loyalty_program_price'          => 'g:price',
@@ -784,19 +874,29 @@ class GroupedAttributeBuilder {
 				'loyalty_member_price_date'      => 'g:member_price_effective_date',
 				'loyalty_program_shipping_label' => 'g:shipping_label',
 			),
+			// Free-shipping threshold (Merchant Center Help 14768922): BOTH
+			// sub-attributes required, repeatable up to 25 times (one per
+			// country) by mapping the member pair again. Delimited feeds:
+			// `free_shipping_threshold(country:price_threshold)` = `US:100 USD`.
+			// A legacy single `free_shipping_threshold` row ("US:100 USD") is
+			// split into these members by split_free_shipping_threshold() (CBT-842).
+			'g:free_shipping_threshold' => array(
+				'free_shipping_threshold_country' => 'g:country',
+				'free_shipping_threshold_price'   => 'g:price_threshold',
+			),
 			// Product Q&A (up to 30 pairs; repeat the member group).
-			'g:question_and_answer' => array(
+			'g:question_and_answer'     => array(
 				'qa_question' => 'g:question',
 				'qa_answer'   => 'g:answer',
 			),
 			// Related products (accessory/variant relationships).
-			'g:related_product'     => array(
+			'g:related_product'         => array(
 				'related_relationship_type' => 'g:relationship_type',
 				'related_identifier_type'   => 'g:identifier_type',
 				'related_identifier'        => 'g:identifier',
 			),
 			// Variant-identifying dimension name/value pairs.
-			'g:variant_option'      => array(
+			'g:variant_option'          => array(
 				'variant_option_name'  => 'g:name',
 				'variant_option_value' => 'g:value',
 			),

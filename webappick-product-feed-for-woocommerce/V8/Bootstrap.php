@@ -503,6 +503,11 @@ class Bootstrap {
 	private static function record_boot_failure( \Throwable $error ): void {
 		$message = $error->getMessage();
 		$file    = self::file_for( $message );
+		// A half-written file names no class: record the file the parser
+		// stopped in, so the record can be dropped once it is rewritten.
+		if ( '' === $file && $error instanceof \ParseError && self::path_under( $error->getFile(), dirname( __DIR__ ) ) ) {
+			$file = ltrim( substr( str_replace( '\\', '/', $error->getFile() ), strlen( rtrim( str_replace( '\\', '/', dirname( __DIR__ ) ), '/' ) ) ), '/' );
+		}
 
 		// While WordPress replaces the plugin folder (an update), every request
 		// in that window fails the same way and the next one boots the new
@@ -632,7 +637,14 @@ class Bootstrap {
 		// old version shows neither maintenance mode nor the updater lock).
 		// A file that was on disk and still failed to load stays shown.
 		$copied = $readable && isset( $stored['on_disk'] ) && false === $stored['on_disk'];
-		if ( $copied || ( $older && ( '' === $file || $readable ) ) ) {
+		// Or the file was written at or after the failure: the request read
+		// it while an update was still copying it (an empty or half-written
+		// file is on disk too). An upload over the old version, a rollback
+		// or a non-AJAX update sets neither maintenance mode nor the updater
+		// lock, so files_in_flux() could not tell (#69719). A host that
+		// failed to read an unchanged file keeps an older mtime: still shown.
+		$rewritten = $readable && ! $copied && self::written_since( dirname( __DIR__ ) . '/' . $file, (int) $stored['time'] );
+		if ( $copied || $rewritten || ( $older && ( '' === $file || $readable ) ) ) {
 			delete_option( self::BOOT_FAILURE_OPTION );
 			return;
 		}
@@ -642,6 +654,30 @@ class Bootstrap {
 				self::render_boot_failure_notice( $stored );
 			}
 		);
+	}
+
+	/**
+	 * Whether a file was last written at or after $since (a Unix time).
+	 * Never throws; false when the time can't be read.
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param string $path  Absolute file path.
+	 * @param int    $since Unix time.
+	 * @return bool
+	 */
+	private static function written_since( string $path, int $since ): bool {
+		try {
+			clearstatcache( true, $path );
+			if ( $since <= 0 || ! is_file( $path ) ) {
+				return false;
+			}
+			$mtime = filemtime( $path );
+
+			return false !== $mtime && $mtime >= $since;
+		} catch ( \Throwable $e ) {
+			return false;
+		}
 	}
 
 	/**
@@ -773,7 +809,7 @@ class Bootstrap {
 	private function define_constants(): void {
 
 		if ( ! defined( 'CTXFEED_V8_VERSION' ) ) {
-			define( 'CTXFEED_V8_VERSION', '8.0.39' );
+			define( 'CTXFEED_V8_VERSION', '8.0.40' );
 		}
 
 		if ( ! defined( 'CTXFEED_V8_PATH' ) ) {

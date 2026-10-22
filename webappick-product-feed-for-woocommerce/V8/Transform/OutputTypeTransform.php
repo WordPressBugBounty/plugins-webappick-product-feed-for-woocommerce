@@ -213,13 +213,13 @@ class OutputTypeTransform implements TransformInterface {
 			return $nf;
 		};
 
+		$by_row = self::is_positional( (array) $config->get( 'output_type', array() ) );
+
 		foreach ( $product_data as $attr => &$value ) {
-			// Strip the ##N duplicate-position suffix ProductRepository
-			// adds when the user maps the same merchant attribute twice
-			// (e.g., product_detail triplets). The lookup is keyed by the
-			// base name — both first and later occurrences share the
-			// same output_type. PROD-FRD-10.11.
-			$lookup_attr = ProductRepository::strip_dup_suffix( (string) $attr );
+			// A positional config is keyed per ROW (`name`, `name##2`, …), so
+			// a repeated merchant attribute keeps its own output type
+			// (CBT-847). A name-keyed fixture applies to every repeat.
+			$lookup_attr = $by_row ? (string) $attr : ProductRepository::strip_dup_suffix( (string) $attr );
 			if ( ! isset( $lookup[ $lookup_attr ] ) ) {
 				continue;
 			}
@@ -289,37 +289,49 @@ class OutputTypeTransform implements TransformInterface {
 	/**
 	 * The feed's `merchant attribute => stored code(s)` lookup (uncached).
 	 *
-	 * The same map {@see transform()} applies — parallel-array zip (the last
-	 * row of a repeated name wins), a string-keyed fixture shape as-is, and
-	 * the special-template Price default. Shared with channel transforms
+	 * The same map {@see transform()} applies — one entry per row keyed like
+	 * the resolved values (`name`, `name##2`, …; CBT-847), a string-keyed
+	 * fixture shape as-is, and the special-template Price default. Shared
+	 * with channel transforms
 	 * that must know whether a row was formatted by code 6/7 (ChatGPT's sale
 	 * check, CBT-811). Callers memoise it per Config.
 	 *
 	 * @since 8.0.39
 	 *
 	 * @param Config $config Feed configuration.
-	 * @return array<string,mixed> Map of merchant attr → code(s).
+	 * @return array<string,mixed> Map of row key (merchant attr, `##N` for repeats) → code(s).
 	 */
 	public static function lookup( Config $config ): array {
 		$output_types = (array) $config->get( 'output_type', array() );
 
 		// String-keyed (V8 test fixture style) — return as-is.
-		$keys            = array_keys( $output_types );
-		$is_zero_indexed = empty( $output_types ) || range( 0, count( $output_types ) - 1 ) === $keys;
-		if ( ! $is_zero_indexed ) {
+		if ( ! self::is_positional( $output_types ) ) {
 			return $output_types;
 		}
 
-		// Parallel-array shape — zip with mattributes.
-		$mattributes = (array) $config->get_merchant_attributes();
-		$lookup      = array();
-		foreach ( $mattributes as $i => $attr ) {
-			if ( ! isset( $output_types[ $i ] ) || '' === $attr ) {
+		// Parallel-array shape — one entry per ROW, keyed like the resolved
+		// values (`name`, `name##2`, …; CBT-847).
+		$row_keys = ProductRepository::row_keys( (array) $config->get_merchant_attributes() );
+		$lookup   = array();
+		foreach ( $row_keys as $i => $key ) {
+			if ( ! isset( $output_types[ $i ] ) || '' === $key ) {
 				continue;
 			}
-			$lookup[ (string) $attr ] = $output_types[ $i ];
+			$lookup[ $key ] = $output_types[ $i ];
 		}
 		return self::apply_special_template_price_default( $lookup, $config );
+	}
+
+	/**
+	 * Whether a stored `output_type` array is the positional (per-row) shape.
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param array $output_types Stored `output_type` config.
+	 * @return bool
+	 */
+	private static function is_positional( array $output_types ): bool {
+		return empty( $output_types ) || range( 0, count( $output_types ) - 1 ) === array_keys( $output_types );
 	}
 
 	/**
@@ -346,16 +358,17 @@ class OutputTypeTransform implements TransformInterface {
 		$mattributes = (array) $config->get( 'mattributes', array() );
 		$attributes  = (array) $config->get( 'attributes', array() );
 		$types       = (array) $config->get( 'type', array() );
+		$row_keys    = ProductRepository::row_keys( $mattributes );
 
 		foreach ( $mattributes as $i => $mattr ) {
-			$mattr  = (string) $mattr;
+			$key    = isset( $row_keys[ $i ] ) ? $row_keys[ $i ] : '';
 			$source = isset( $attributes[ $i ] ) ? (string) $attributes[ $i ] : '';
 			$type   = isset( $types[ $i ] ) ? (string) $types[ $i ] : 'attribute';
-			if ( '' === $mattr || 'attribute' !== $type || false === strpos( $source, 'price' ) ) {
+			if ( '' === $key || 'attribute' !== $type || false === strpos( $source, 'price' ) ) {
 				continue;
 			}
-			if ( empty( $lookup[ $mattr ] ) ) {
-				$lookup[ $mattr ] = '6';
+			if ( empty( $lookup[ $key ] ) ) {
+				$lookup[ $key ] = '6';
 			}
 		}
 

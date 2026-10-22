@@ -618,7 +618,10 @@ class ChannelEndpoint extends RestController {
 			return $this->error( __( 'The taxonomy URL did not return a valid response.', 'woo-feed' ), 502 );
 		}
 
-		$body = wp_remote_retrieve_body( $response );
+		// A UTF-8 byte-order mark would hide the header line from the
+		// validator, the version parser and the reader (CBT-829): drop it once
+		// here, so the stored file is clean too.
+		$body = self::strip_bom( (string) wp_remote_retrieve_body( $response ) );
 
 		// Never overwrite a good list with junk (HTML error page, truncated
 		// response, wrong file). Passing this guarantees the reader parses rows.
@@ -722,7 +725,8 @@ class ChannelEndpoint extends RestController {
 	 * @return bool True when the body is a plausible Google taxonomy file.
 	 */
 	public static function is_valid_taxonomy_body( string $body ): bool {
-		$len = strlen( $body );
+		$body = self::strip_bom( $body );
+		$len  = strlen( $body );
 		if ( $len < 10240 || $len > 15728640 ) { // 10 KB .. 15 MB.
 			return false;
 		}
@@ -743,6 +747,18 @@ class ChannelEndpoint extends RestController {
 		}
 
 		return false;
+	}
+
+	/**
+	 * Drop a leading UTF-8 byte-order mark (EF BB BF), if any.
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param string $body File contents.
+	 * @return string
+	 */
+	public static function strip_bom( string $body ): string {
+		return 0 === strpos( $body, "\xEF\xBB\xBF" ) ? (string) substr( $body, 3 ) : $body;
 	}
 
 	/**

@@ -73,6 +73,16 @@ if ( ! class_exists( 'CTXFeed_Installer' ) ) {
 			if ( ! version_compare( (string) $previous, WOO_FEED_FREE_VERSION, '<' ) ) {
 				return;
 			}
+			// A persistent object cache can hold an older version than the
+			// database; update_option() then never refreshes it and this
+			// upgrade (with its disabled-feed purge) ran on EVERY request.
+			// Confirm against the database before upgrading (CBT-853).
+			if ( class_exists( '\CTXFeed\V8\Utility\FreshOption' ) ) {
+				$previous = \CTXFeed\V8\Utility\FreshOption::verify( 'woo_feed_free_version', $previous );
+				if ( ! version_compare( (string) $previous, WOO_FEED_FREE_VERSION, '<' ) ) {
+					return;
+				}
+			}
 			// Upgrade only from a request whose engine booted. A request that
 			// raced the update (files half-replaced) has the upgrade listeners
 			// rolled back; writing the new version there would lose their

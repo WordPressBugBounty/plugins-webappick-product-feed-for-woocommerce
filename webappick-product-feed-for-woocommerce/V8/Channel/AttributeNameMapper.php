@@ -507,7 +507,7 @@ class AttributeNameMapper {
 					'maximum_retail_price'                => 'maximum retail price',
 					'popularity_rank'                     => 'popularity rank',
 					'disclosure_date'                     => 'disclosure date',
-					'free_shipping_threshold'             => 'free shipping threshold',
+					'free_shipping_threshold'             => 'free_shipping_threshold(country:price_threshold)',
 					'condition'                           => 'condition',
 					'availability'                        => 'availability',
 					'availability_date'                   => 'availability date',

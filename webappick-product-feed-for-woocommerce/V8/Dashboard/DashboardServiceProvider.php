@@ -18,6 +18,7 @@ namespace CTXFeed\V8\Dashboard;
 
 use CTXFeed\V8\Core\Container;
 use CTXFeed\V8\Core\ServiceProvider;
+use CTXFeed\V8\Utility\FreshOption;
 
 // Exit if accessed directly.
 if ( ! defined( 'ABSPATH' ) ) {
@@ -263,6 +264,12 @@ class DashboardServiceProvider extends ServiceProvider {
 		$current_version = get_option( 'ctxfeed_dashboard_schema_version', '' );
 
 		if ( self::SCHEMA_VERSION === $current_version ) {
+			return;
+		}
+
+		// A stale persistent-cache copy would re-run dbDelta on every admin
+		// request: update_option() never refreshes it (CBT-853).
+		if ( self::SCHEMA_VERSION === FreshOption::verify( 'ctxfeed_dashboard_schema_version', $current_version ) ) {
 			return;
 		}
 

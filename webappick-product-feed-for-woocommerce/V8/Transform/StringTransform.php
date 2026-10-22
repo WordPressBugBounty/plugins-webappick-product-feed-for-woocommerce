@@ -36,6 +36,23 @@ if ( ! defined( 'ABSPATH' ) ) {
 class StringTransform implements TransformInterface {
 
 	/**
+	 * Config {@see $memo_source} was built from (held by reference so its
+	 * identity cannot be recycled while the memo lives — CBT-854).
+	 *
+	 * @since 8.0.40
+	 * @var Config|null
+	 */
+	private $memo_config = null;
+
+	/**
+	 * Row key => source attribute for {@see $memo_config}.
+	 *
+	 * @since 8.0.40
+	 * @var array<string,string>
+	 */
+	private $memo_source = array();
+
+	/**
 	 * Apply string operations to product attributes.
 	 *
 	 * Reads `output_type` per-attribute config for operation type,
@@ -62,17 +79,24 @@ class StringTransform implements TransformInterface {
 		// merchant key. Without this, rules on dynamic attributes / attribute
 		// mappings silently failed to match because $product_data is keyed by
 		// merchant attribute names like "g:title".
-		$merchant_to_source = array();
-		$mattributes        = (array) $config->get_merchant_attributes();
-		$src_attributes     = (array) $config->get_attributes();
-		foreach ( $mattributes as $i => $merchant_attr ) {
-			if ( '' === $merchant_attr ) {
-				continue;
+		// Keyed per ROW like the resolved values (`name`, `name##2`, …), so a
+		// repeated merchant attribute matches rules against its own source
+		// (CBT-847).
+		// Built once per feed Config (no setters), not per product (CBT-854).
+		if ( $config !== $this->memo_config ) {
+			$this->memo_config = $config;
+			$this->memo_source = array();
+			$src_attributes    = (array) $config->get_attributes();
+			foreach ( ProductRepository::row_keys( (array) $config->get_merchant_attributes() ) as $i => $row_key ) {
+				if ( '' === $row_key ) {
+					continue;
+				}
+				$this->memo_source[ $row_key ] = isset( $src_attributes[ $i ] )
+					? (string) $src_attributes[ $i ]
+					: '';
 			}
-			$merchant_to_source[ $merchant_attr ] = isset( $src_attributes[ $i ] )
-				? (string) $src_attributes[ $i ]
-				: '';
 		}
+		$merchant_to_source = $this->memo_source;
 
 		foreach ( $product_data as $attr => &$value ) {
 			// Skip non-string values. @implements XFRM-FRD-4.5.
@@ -121,7 +145,7 @@ class StringTransform implements TransformInterface {
 			// (Pro\Engine\Transform\StringReplaceRules) and runs here, in
 			// V5's slot — after the case/strip ops, before shortcode removal
 			// and the character limit. Free never reads the saved rules.
-			$source_attr = isset( $merchant_to_source[ $lookup_attr ] ) ? $merchant_to_source[ $lookup_attr ] : '';
+			$source_attr = isset( $merchant_to_source[ $attr ] ) ? $merchant_to_source[ $attr ] : ( isset( $merchant_to_source[ $lookup_attr ] ) ? $merchant_to_source[ $lookup_attr ] : '' );
 
 			/**
 			 * Filter an attribute value at the string-replace step.

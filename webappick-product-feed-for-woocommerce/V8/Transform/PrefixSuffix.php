@@ -30,6 +30,25 @@ if ( ! defined( 'ABSPATH' ) ) {
 class PrefixSuffix implements TransformInterface {
 
 	/**
+	 * Config the lookups below were built from (held by reference so its
+	 * identity cannot be recycled while the memo lives). Config has no
+	 * setters, so one feed's lookups are built once, not per product
+	 * (CBT-854).
+	 *
+	 * @since 8.0.40
+	 * @var Config|null
+	 */
+	private $memo_config = null;
+
+	/**
+	 * `[ [ prefixes, by_row ], [ suffixes, by_row ] ]` for {@see $memo_config}.
+	 *
+	 * @since 8.0.40
+	 * @var array
+	 */
+	private $memo_lookups = array();
+
+	/**
 	 * Apply prefix and suffix text to product attributes.
 	 *
 	 * Reads `prefix` and `suffix` config arrays (keyed by attribute name).
@@ -44,8 +63,15 @@ class PrefixSuffix implements TransformInterface {
 	 * @return array Product data with prefixes/suffixes applied.
 	 */
 	public function transform( array $product_data, Config $config ): array {
-		$prefixes = $this->build_lookup( (array) $config->get( 'prefix', array() ), $config );
-		$suffixes = $this->build_lookup( (array) $config->get( 'suffix', array() ), $config );
+		if ( $config !== $this->memo_config ) {
+			$this->memo_config  = $config;
+			$this->memo_lookups = array(
+				$this->build_lookup( (array) $config->get( 'prefix', array() ), $config ),
+				$this->build_lookup( (array) $config->get( 'suffix', array() ), $config ),
+			);
+		}
+		list( $prefixes, $prefix_by_row ) = $this->memo_lookups[0];
+		list( $suffixes, $suffix_by_row ) = $this->memo_lookups[1];
 
 		if ( empty( $prefixes ) && empty( $suffixes ) ) {
 			return $product_data;
@@ -64,18 +90,26 @@ class PrefixSuffix implements TransformInterface {
 				continue;
 			}
 
-			// Strip the ##N duplicate-position suffix so repeated merchant
-			// attributes (product_detail triplets) share the base entry.
-			$lookup_attr = ProductRepository::strip_dup_suffix( (string) $attr );
+			// Positional configs are keyed per ROW (`name`, `name##2`, …), so a
+			// repeated merchant attribute keeps its own decorator (CBT-847).
+			// Name-keyed configs (fixtures, filters) apply to every repeat.
+			if ( $prefix_by_row && $suffix_by_row ) {
+				$prefix_key = (string) $attr;
+				$suffix_key = $prefix_key;
+			} else {
+				$base       = ProductRepository::strip_dup_suffix( (string) $attr );
+				$prefix_key = $prefix_by_row ? (string) $attr : $base;
+				$suffix_key = $suffix_by_row ? (string) $attr : $base;
+			}
 
 			// `'' !==` instead of empty(): '0' and whitespace-only
 			// decorators are legitimate (space-preservation contract).
-			if ( isset( $prefixes[ $lookup_attr ] ) && '' !== $prefixes[ $lookup_attr ] ) {
-				$value = $prefixes[ $lookup_attr ] . $value;
+			if ( isset( $prefixes[ $prefix_key ] ) && '' !== $prefixes[ $prefix_key ] ) {
+				$value = $prefixes[ $prefix_key ] . $value;
 			}
 
-			if ( isset( $suffixes[ $lookup_attr ] ) && '' !== $suffixes[ $lookup_attr ] ) {
-				$value .= $this->currency_spaced_suffix( $suffixes[ $lookup_attr ] );
+			if ( isset( $suffixes[ $suffix_key ] ) && '' !== $suffixes[ $suffix_key ] ) {
+				$value .= $this->currency_spaced_suffix( $suffixes[ $suffix_key ] );
 			}
 		}
 
@@ -133,29 +167,31 @@ class PrefixSuffix implements TransformInterface {
 	 * @param array  $items  Raw prefix or suffix config array.
 	 * @param Config $config Feed configuration (for mattributes zip).
 	 *
-	 * @return array<string,string> Merchant attribute → decorator text.
+	 * @return array{0: array<string,string>, 1: bool} Key → decorator text,
+	 *         and whether the keys are per-row product-data keys.
 	 */
 	private function build_lookup( array $items, Config $config ): array {
 		if ( empty( $items ) ) {
-			return array();
+			return array( array(), false );
 		}
 
 		// Name-keyed already → use as-is.
 		$keys            = array_keys( $items );
 		$is_zero_indexed = range( 0, count( $items ) - 1 ) === $keys;
 		if ( ! $is_zero_indexed ) {
-			return $items;
+			return array( $items, false );
 		}
 
-		// Positional parallel-array shape → zip with mattributes.
-		$mattributes = (array) $config->get_merchant_attributes();
-		$lookup      = array();
-		foreach ( $mattributes as $i => $attr ) {
-			if ( isset( $items[ $i ] ) && '' !== $items[ $i ] ) {
-				$lookup[ (string) $attr ] = (string) $items[ $i ];
+		// Positional parallel-array shape → one entry per ROW, keyed like the
+		// resolved values (CBT-847).
+		$row_keys = ProductRepository::row_keys( (array) $config->get_merchant_attributes() );
+		$lookup   = array();
+		foreach ( $row_keys as $i => $key ) {
+			if ( '' !== $key && isset( $items[ $i ] ) && '' !== $items[ $i ] ) {
+				$lookup[ $key ] = (string) $items[ $i ];
 			}
 		}
 
-		return $lookup;
+		return array( $lookup, true );
 	}
 }

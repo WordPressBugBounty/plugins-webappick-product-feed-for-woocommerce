@@ -35,6 +35,13 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class FacebookTransform implements TransformInterface {
 
+	/**
+	 * Term-name memo for variation descriptions (taxonomy|slug => name).
+	 *
+	 * @var array<string,string>
+	 */
+	private $term_names = array();
+
 	use FeedCurrencyFallbackTrait;
 
 
@@ -211,11 +218,7 @@ class FacebookTransform implements TransformInterface {
 				continue;
 			}
 
-			// Clean up attribute name: remove "attribute_pa_" or "attribute_" prefix.
-			$clean_name = str_replace( array( 'attribute_pa_', 'attribute_' ), '', $attr_name );
-			$clean_name = Ascii::ucfirst( str_replace( array( '-', '_' ), ' ', $clean_name ) );
-
-			$attr_parts[] = $clean_name . ': ' . $attr_value;
+			$attr_parts[] = $this->attribute_label( (string) $attr_name, $product ) . ': ' . $this->attribute_value_name( (string) $attr_name, (string) $attr_value );
 		}
 
 		if ( ! empty( $attr_parts ) ) {
@@ -223,6 +226,58 @@ class FacebookTransform implements TransformInterface {
 		}
 
 		return $description;
+	}
+
+	/**
+	 * Human label of a variation attribute ("Color", "Länge").
+	 *
+	 * WooCommerce's own label when available (global attribute label, or the
+	 * custom attribute's name on the product); otherwise the cleaned key.
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param string      $attr_name Variation attribute key (`attribute_pa_color`).
+	 * @param \WC_Product $product   Variation.
+	 * @return string
+	 */
+	private function attribute_label( string $attr_name, \WC_Product $product ): string {
+		$taxonomy = 0 === strpos( $attr_name, 'attribute_' ) ? substr( $attr_name, 10 ) : $attr_name;
+		if ( function_exists( 'wc_attribute_label' ) ) {
+			$label = (string) wc_attribute_label( $taxonomy, $product );
+			if ( '' !== $label && $label !== $taxonomy ) {
+				return $label;
+			}
+		}
+		$clean = 0 === strpos( $taxonomy, 'pa_' ) ? substr( $taxonomy, 3 ) : $taxonomy;
+		return Ascii::ucfirst( str_replace( array( '-', '_' ), ' ', $clean ) );
+	}
+
+	/**
+	 * Display name of a variation's attribute value.
+	 *
+	 * A global attribute (`pa_*`) stores the term SLUG on the variation
+	 * ("dark-blue"); the feed shows the term NAME ("Dark Blue"), as V5's
+	 * variation title did (CBT-832). Custom attributes already store text.
+	 * Memoised per taxonomy + slug.
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param string $attr_name  Variation attribute key.
+	 * @param string $attr_value Stored value.
+	 * @return string
+	 */
+	private function attribute_value_name( string $attr_name, string $attr_value ): string {
+		$taxonomy = 0 === strpos( $attr_name, 'attribute_' ) ? substr( $attr_name, 10 ) : $attr_name;
+		if ( 0 !== strpos( $taxonomy, 'pa_' ) || ! function_exists( 'get_term_by' ) || ! function_exists( 'taxonomy_exists' ) || ! taxonomy_exists( $taxonomy ) ) {
+			return $attr_value;
+		}
+
+		$memo_key = $taxonomy . '|' . $attr_value;
+		if ( ! isset( $this->term_names[ $memo_key ] ) ) {
+			$term                          = get_term_by( 'slug', $attr_value, $taxonomy );
+			$this->term_names[ $memo_key ] = ( $term instanceof \WP_Term && '' !== (string) $term->name ) ? (string) $term->name : $attr_value;
+		}
+		return $this->term_names[ $memo_key ];
 	}
 
 	/**

@@ -1025,6 +1025,30 @@ class ProductRepository {
 	const DUP_KEY_SEPARATOR = '##';
 
 	/**
+	 * Rows the last {@see row_keys()} result was built from (CBT-854).
+	 *
+	 * @since 8.0.40
+	 * @var array|null
+	 */
+	private static $row_keys_input = null;
+
+	/**
+	 * The last {@see row_keys()} result.
+	 *
+	 * @since 8.0.40
+	 * @var array
+	 */
+	private static $row_keys_output = array();
+
+	/**
+	 * How many times {@see row_keys()} actually built keys (tests).
+	 *
+	 * @since 8.0.40
+	 * @var int
+	 */
+	private static $row_keys_builds = 0;
+
+	/**
 	 * Return the flat-array key to use for `$merchant_attr` given a
 	 * seen-so-far occurrence counter. First occurrence uses the raw
 	 * name; subsequent occurrences get `##2`, `##3`, … PROD-FRD-10.11.
@@ -1046,6 +1070,41 @@ class ProductRepository {
 		}
 		++$seen[ $merchant_attr ];
 		return $merchant_attr . self::DUP_KEY_SEPARATOR . $seen[ $merchant_attr ];
+	}
+
+	/**
+	 * The product-data key of every mapping row, by row position.
+	 *
+	 * Exactly the keys {@see dedup_merchant_key()} gives the resolved values
+	 * (`name`, `name##2`, `name##3`, …), so per-row settings applied after
+	 * resolution (prefix/suffix, output type, commands, search-and-replace
+	 * source) can be looked up per ROW. Looking them up by the base name made
+	 * every repeat of a merchant attribute share one row's setting (CBT-847).
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param array $merchant_attrs Positional `mattributes`.
+	 * @return array<int|string,string> Row position => product-data key ('' for an unnamed row).
+	 */
+	public static function row_keys( array $merchant_attrs ): array {
+		// Called per PRODUCT by several transforms with the same feed's rows:
+		// reuse the last result while the rows are identical (one C-level
+		// array compare instead of a function call per row — CBT-854).
+		if ( null !== self::$row_keys_input && $merchant_attrs === self::$row_keys_input ) {
+			return self::$row_keys_output;
+		}
+
+		$seen = array();
+		$keys = array();
+		foreach ( $merchant_attrs as $index => $merchant_attr ) {
+			$keys[ $index ] = self::dedup_merchant_key( (string) $merchant_attr, $seen );
+		}
+
+		self::$row_keys_input  = $merchant_attrs;
+		self::$row_keys_output = $keys;
+		++self::$row_keys_builds;
+
+		return $keys;
 	}
 
 	/**

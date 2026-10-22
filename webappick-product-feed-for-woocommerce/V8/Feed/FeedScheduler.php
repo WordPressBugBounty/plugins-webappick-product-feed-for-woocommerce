@@ -1866,6 +1866,15 @@ class FeedScheduler {
 				continue;
 			}
 
+			// A generation the user started by hand on a disabled feed is
+			// wanted work, not a wedged queue: keep it while it is moving.
+			// A stuck run (untouched past the lock TTL) or a leftover
+			// scheduled run is still purged (CBT-853, #68345).
+			$progress = method_exists( $manager, 'get_progress' ) ? $manager->get_progress( $feed_name ) : array();
+			if ( 'manual' === (string) ( $progress['trigger'] ?? '' ) && self::is_run_in_progress( $progress ) ) {
+				continue;
+			}
+
 			$this->cancel_feed_runs( $feed_name );
 		}
 	}

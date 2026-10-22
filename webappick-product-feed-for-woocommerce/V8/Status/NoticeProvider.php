@@ -17,6 +17,8 @@
  *     'title'       => 'Debug logging is off',
  *     'message'     => 'Turn on error & debug logging …',
  *     'action'      => [ 'label' => 'Open settings', 'url' => '/settings', 'target' => '' ], // optional
+ *                      // or [ 'label', 'rest' => 'feeds/12/split-file', 'confirm' => '…' ] — a POST
+ *                      // the app sends after the user confirms (CBT-835)
  *     'dismissible' => true,   // false = pinned (e.g. License expired)
  *     'priority'    => 40,     // lower shows first; default 50
  *   ]
@@ -31,6 +33,8 @@ namespace CTXFeed\V8\Status;
 use CTXFeed\V8\Admin\Notices;
 use CTXFeed\V8\Admin\ProPlugin;
 use CTXFeed\V8\Core\FeatureGate;
+use CTXFeed\V8\Feed\FeedLookup;
+use CTXFeed\V8\Feed\SharedFeedFile;
 use CTXFeed\V8\Product\ProductTypeSupport;
 
 // Exit if accessed directly.
@@ -88,6 +92,7 @@ class NoticeProvider {
 		$notices = array_merge( $notices, $this->pro_inactive_notice() );
 		$notices = array_merge( $notices, $this->pro_integration_notices() );
 		$notices = array_merge( $notices, $this->unsupported_product_types_notice() );
+		$notices = array_merge( $notices, $this->shared_feed_file_notices() );
 
 		/**
 		 * Registry filter for admin notices shown in the React app.
@@ -169,7 +174,21 @@ class NoticeProvider {
 	 * @return array|null { label, url, target } or null.
 	 */
 	private function normalize_action( $action ): ?array {
-		if ( ! is_array( $action ) || empty( $action['label'] ) || empty( $action['url'] ) ) {
+		if ( ! is_array( $action ) || empty( $action['label'] ) ) {
+			return null;
+		}
+
+		// A confirmed POST to one of our REST routes (CBT-835): a relative
+		// path inside the ctxfeed/v8 namespace only.
+		if ( ! empty( $action['rest'] ) && is_string( $action['rest'] ) && preg_match( '#^[A-Za-z0-9_/-]+$#', $action['rest'] ) ) {
+			return array(
+				'label'   => (string) $action['label'],
+				'rest'    => ltrim( $action['rest'], '/' ),
+				'confirm' => isset( $action['confirm'] ) ? (string) $action['confirm'] : '',
+			);
+		}
+
+		if ( empty( $action['url'] ) ) {
 			return null;
 		}
 
@@ -497,6 +516,89 @@ class NoticeProvider {
 				'dismissible' => true,
 			),
 		);
+	}
+
+	/**
+	 * One warning per pair of feeds that write the SAME feed file (CBT-835):
+	 * a named duplicate or import of a non-Latin feed made before 8.0.39.
+	 * Each generation overwrites the other's output. The action gives the
+	 * copy its own file after the user confirms. Scanned once per plugin
+	 * version (and again after a delete or split), never per request.
+	 *
+	 * @since 8.0.40
+	 *
+	 * @return array Zero or more notices.
+	 */
+	private function shared_feed_file_notices(): array {
+		if ( ! class_exists( SharedFeedFile::class ) ) {
+			return array();
+		}
+		$version = defined( 'WOO_FEED_FREE_VERSION' ) ? (string) WOO_FEED_FREE_VERSION : '';
+
+		// A failing lookup must never cost the user the other notices.
+		try {
+			$pairs = SharedFeedFile::pairs( $version );
+		} catch ( \Throwable $e ) {
+			return array();
+		}
+
+		$notices = array();
+		foreach ( $pairs as $pair ) {
+			$copy = FeedLookup::row( $pair['copy'] );
+			if ( null === $copy ) {
+				continue;
+			}
+			$copy_name     = $this->feed_display_name( $copy['option_value'], $pair['copy'] );
+			$original_row  = FeedLookup::row( $pair['original'] );
+			$original_name = null === $original_row ? $pair['original'] : $this->feed_display_name( $original_row['option_value'], $pair['original'] );
+
+			$notices[] = array(
+				'id'          => 'ctxfeed_shared_feed_file_' . md5( $pair['copy'] ),
+				'severity'    => 'warning',
+				'priority'    => 15,
+				'title'       => __( 'Two feeds write the same feed file', 'woo-feed' ),
+				'message'     => $copy_name === $original_name
+					? sprintf(
+						/* translators: %s: feed name (both feeds carry it). */
+						__( 'Two feeds named "%s" were saved before version 8.0.39 and write one feed file: each update overwrites the other\'s products, and deleting either feed used to delete the file. Give the copy its own file — it gets a new feed URL, so update that URL in the channel that reads the copy. The other feed keeps its file and URL.', 'woo-feed' ),
+						$copy_name
+					)
+					: sprintf(
+						/* translators: 1: copy feed name, 2: original feed name. */
+						__( '"%1$s" and "%2$s" were saved before version 8.0.39 and write one feed file: each update overwrites the other\'s products, and deleting either feed used to delete the file. Give "%1$s" its own file — it gets a new feed URL, so update that URL in the channel that reads it. "%2$s" keeps its file and URL.', 'woo-feed' ),
+						$copy_name,
+						$original_name
+					),
+				'action'      => array(
+					'label'   => __( 'Give it its own file', 'woo-feed' ),
+					'rest'    => 'feeds/' . FeedLookup::ref( (string) $copy['option_name'], $copy['option_id'] ) . '/split-file',
+					'confirm' => sprintf(
+						/* translators: %s: feed name. */
+						__( 'Move "%s" to its own feed file? Its feed URL changes and the feed is generated again.', 'woo-feed' ),
+						$copy_name
+					),
+				),
+				'dismissible' => true,
+			);
+		}
+
+		return $notices;
+	}
+
+	/**
+	 * A feed's display name (feedrules filename) from its stored value.
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param string $option_value Stored wf_feed_ value.
+	 * @param string $fallback     Slug.
+	 * @return string
+	 */
+	private function feed_display_name( string $option_value, string $fallback ): string {
+		$feed = \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( $option_value ) );
+		$name = is_array( $feed ) && isset( $feed['feedrules']['filename'] ) ? trim( (string) $feed['feedrules']['filename'] ) : '';
+
+		return '' !== $name ? $name : rawurldecode( $fallback );
 	}
 
 	/**

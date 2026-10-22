@@ -91,11 +91,13 @@ class IdealoTransform implements TransformInterface {
 	 *
 	 * Idealo requires: 2 decimals, dot separator, no thousand separator.
 	 * A machine-format number is formatted directly ("19.99 EUR" stays
-	 * "19.99 EUR", "1299 EUR" → "1299.00 EUR"). Only a value that is not a
-	 * number falls back to stripping commas and spaces as grouping
-	 * ("1,000.50 EUR" → "1000.50 EUR"); that fallback cannot tell a decimal
-	 * comma, so "1 299,00 EUR" becomes "129900.00 EUR" — which is why the
-	 * number format itself is fixed for Idealo ({@see fixed_number_format()}).
+	 * "19.99 EUR", "1299 EUR" → "1299.00 EUR"). A value that is not a
+	 * machine number is left as the row produced it (CBT-833), except an
+	 * unambiguous comma grouping ("1,000.50 EUR" → "1000.50 EUR"): the old
+	 * fallback stripped every comma and space and could not tell a decimal
+	 * comma, so "19,99" shipped as "1999.00". Price rows use the
+	 * fixed Idealo number format ({@see fixed_number_format()}), so they
+	 * always arrive as machine numbers.
 	 *
 	 * @since 8.0.0
 	 *
@@ -128,18 +130,20 @@ class IdealoTransform implements TransformInterface {
 				$value    = preg_replace( '/\s+[A-Z]{3}$/', '', $value );
 			}
 
-			if ( is_numeric( $value ) ) {
-				// A machine-format number: format it as-is (CBT-811).
-				$value = number_format( (float) $value, 2, '.', '' );
-			} else {
-				// Fallback: remove grouping commas/spaces, then format.
-				$value = str_replace( array( ',', ' ' ), '', $value );
-				if ( is_numeric( $value ) ) {
-					$value = number_format( (float) $value, 2, '.', '' );
+			if ( ! is_numeric( $value ) ) {
+				// Only an UNAMBIGUOUS comma grouping ("1,000.50", "12,345") is
+				// unwrapped. Anything else (a custom field's "19,99", a
+				// formatted "1 299,00") is left exactly as the row produced
+				// it: stripping every comma guessed a decimal comma as
+				// grouping, so "19,99" shipped as "1999.00" — 100x (CBT-833).
+				if ( 1 !== preg_match( '/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/', $value ) ) {
+					continue;
 				}
+				$value = str_replace( ',', '', $value );
 			}
 
-			$data[ $attr ] = $value . $currency;
+			// A machine-format number: 2 decimals, "." (CBT-811).
+			$data[ $attr ] = number_format( (float) $value, 2, '.', '' ) . $currency;
 		}
 
 		return $data;

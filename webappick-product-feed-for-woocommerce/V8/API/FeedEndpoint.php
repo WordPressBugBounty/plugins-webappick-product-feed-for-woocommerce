@@ -353,6 +353,18 @@ class FeedEndpoint extends RestController {
 			) 
 		);
 
+		// Give a feed that shares its file with another feed its own slug and
+		// file (CBT-835) — the admin notice's confirmed action.
+		register_rest_route(
+			$this->namespace,
+			'/feeds/(?P<id>[a-zA-Z0-9_-]+)/split-file',
+			array(
+				'methods'             => \WP_REST_Server::CREATABLE,
+				'callback'            => array( $this, 'split_shared_file' ),
+				'permission_callback' => array( $this, 'permission_check' ),
+			)
+		);
+
 		register_rest_route(
 			$this->namespace,
 			'/feeds/(?P<id>[a-zA-Z0-9_-]+)/export',
@@ -1074,14 +1086,19 @@ class FeedEndpoint extends RestController {
 				$upload_dir = wp_upload_dir();
 				$paths[]    = str_replace( $upload_dir['baseurl'], $upload_dir['basedir'], (string) $config['url'] );
 			}
-			foreach ( array_unique( $paths ) as $file_path ) {
-				foreach ( array( $file_path, $file_path . '.tmp' ) as $file ) {
-					if ( '' !== $file && is_file( $file ) ) {
-						wp_delete_file( $file );
+			// Another feed still writes this file (a `%HH` pair made before
+			// 8.0.39): it is that feed's file too — keep it (CBT-835).
+			if ( empty( \CTXFeed\V8\Feed\SharedFeedFile::other_owners( $feed_slug, $rules ) ) ) {
+				foreach ( array_unique( $paths ) as $file_path ) {
+					foreach ( array( $file_path, $file_path . '.tmp' ) as $file ) {
+						if ( '' !== $file && is_file( $file ) ) {
+							wp_delete_file( $file );
+						}
 					}
 				}
 			}
 		}
+		\CTXFeed\V8\Feed\SharedFeedFile::forget();
 
 		// Cancel any pending generation/recurring before destroying the
 		// option — otherwise Action Scheduler will fire `handle_recurring`
@@ -1100,6 +1117,84 @@ class FeedEndpoint extends RestController {
 		( new \CTXFeed\V8\Utility\FeedLogger() )->delete( $feed_slug );
 
 		return $this->success( array( 'deleted' => true ) );
+	}
+
+	/**
+	 * Give a feed that shares its feed FILE with another feed its own slug
+	 * and file (CBT-835, the admin notice's confirmed action).
+	 *
+	 * A named duplicate or import made before 8.0.39 kept a `%HH` slug whose
+	 * file is another feed's: both generations write one file. The feed is
+	 * moved to a fresh slug from its display name (`slug_from_name()`, made
+	 * unique against options AND files, so `-2` when the shared name is
+	 * taken); its config, auto-update choice and schedule move with it, its
+	 * stored URL is cleared (it pointed at the shared file) and a
+	 * generation is scheduled. The other feed keeps the file and its URL.
+	 *
+	 * @since 8.0.40
+	 *
+	 * @param \WP_REST_Request $request REST request object.
+	 * @return \WP_REST_Response
+	 */
+	public function split_shared_file( \WP_REST_Request $request ): \WP_REST_Response {
+		$feed_data = $this->find_feed_raw( $request->get_param( 'id' ) );
+		if ( ! $feed_data ) {
+			return $this->error( __( 'Feed not found.', 'woo-feed' ), 404 );
+		}
+
+		$old_slug = substr( (string) $feed_data['option_name'], strlen( 'wf_feed_' ) );
+		$feed     = \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( $feed_data['option_value'] ) );
+		$rules    = is_array( $feed ) && isset( $feed['feedrules'] ) && is_array( $feed['feedrules'] ) ? $feed['feedrules'] : null;
+		if ( null === $rules ) {
+			return $this->error( __( 'This feed has no configuration.', 'woo-feed' ), 400 );
+		}
+
+		$shares_with = \CTXFeed\V8\Feed\SharedFeedFile::other_owners( $old_slug, $rules );
+		if ( empty( $shares_with ) ) {
+			\CTXFeed\V8\Feed\SharedFeedFile::forget();
+			return $this->error( __( 'This feed already has its own feed file.', 'woo-feed' ), 409 );
+		}
+
+		$base = self::slug_from_name( (string) ( $rules['filename'] ?? '' ) );
+		if ( '' === $base ) {
+			$base = self::cap_slug( sanitize_file_name( $old_slug ) );
+		}
+		$taken    = self::slug_taken_predicate( $rules );
+		$new_slug = $base;
+		$counter  = 1;
+		while ( $taken( $new_slug ) ) {
+			++$counter;
+			$new_slug = $base . '-' . $counter;
+		}
+
+		// The stored URL is the shared file's; last_updated stays, so the
+		// first generation under the new slug keeps the user's auto-update
+		// choice (promote_feed() activates only never-generated feeds).
+		$feed['url'] = '';
+		update_option( 'wf_feed_' . $new_slug, $feed, false );
+		$config_copy = get_option( 'wf_config' . $old_slug );
+		if ( false !== $config_copy ) {
+			update_option( 'wf_config' . $new_slug, $config_copy, false );
+		}
+
+		$this->sync_feed_schedule( 'wf_feed_' . $old_slug, array( 'status' => 0 ) );
+		$this->stop_deleted_feed( $old_slug );
+		delete_option( 'wf_feed_' . $old_slug );
+		delete_option( 'wf_config' . $old_slug );
+		( new \CTXFeed\V8\Utility\FeedLogger() )->delete( $old_slug );
+
+		$this->sync_feed_schedule( 'wf_feed_' . $new_slug, $feed );
+		\CTXFeed\V8\Feed\SharedFeedFile::forget();
+		$warnings = $this->maybe_auto_generate( $new_slug, 'split' );
+
+		return $this->success(
+			array(
+				'old_slug'    => $old_slug,
+				'slug'        => $new_slug,
+				'shares_with' => array_values( $shares_with ),
+				'warnings'    => $warnings,
+			)
+		);
 	}
 
 	/**
@@ -2073,8 +2168,11 @@ class FeedEndpoint extends RestController {
 						$config    = \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( \CTXFeed\V8\Utility\Sanitizer::safe_unserialize( $feed_data['option_value'] ) );
 						$feed_slug = str_replace( 'wf_feed_', '', $feed_data['option_name'] );
 
-						// Delete generated feed file if it exists.
-						if ( is_array( $config ) && ! empty( $config['url'] ) ) {
+						// Delete generated feed file if it exists — unless
+						// another feed still writes it (CBT-835).
+						$bulk_rules = is_array( $config ) && isset( $config['feedrules'] ) && is_array( $config['feedrules'] ) ? $config['feedrules'] : array();
+						\CTXFeed\V8\Feed\SharedFeedFile::forget();
+						if ( is_array( $config ) && ! empty( $config['url'] ) && empty( \CTXFeed\V8\Feed\SharedFeedFile::other_owners( $feed_slug, $bulk_rules ) ) ) {
 							$upload_dir = wp_upload_dir();
 							$file_path  = str_replace( $upload_dir['baseurl'], $upload_dir['basedir'], $config['url'] );
 							if ( file_exists( $file_path ) ) {
@@ -2792,13 +2890,14 @@ class FeedEndpoint extends RestController {
 				// byte-preserving like other literals (CBT-586), trimmed as
 				// before (CBT-812).
 				$compare = isset( $sub['compare'] ) ? trim( Sanitizer::preserve_whitespace( $sub['compare'] ) ) : '';
-				// A blank "contains" / "does not contain" row is incomplete:
-				// dropped, as the editor says ("incomplete and ignored"). Its
-				// answer depended on the PHP version — every product on one,
-				// none on the other (owner decision #1, CBT-821 J2). Pro skips
-				// such rows that are already stored; they are never rewritten
-				// in bulk.
-				if ( '' === $compare && ( 'contains' === $op || 'nContains' === $op ) ) {
+				// A blank compare is incomplete for every operator except
+				// == / != ("is empty" / "is not empty", real rules): dropped,
+				// as the editor says ("incomplete and ignored"). Blank contains
+				// depended on the PHP version (CBT-821 J2); a blank between
+				// rejected EVERY product and a blank < every product with a
+				// value (CBT-839). Pro skips such rows that are already
+				// stored; they are never rewritten in bulk.
+				if ( '' === $compare && ! in_array( $op, array( '==', '!=' ), true ) ) {
 					continue;
 				}
 				$sub_concat = isset( $sub['operator'] ) ? strtoupper( (string) $sub['operator'] ) : 'AND';

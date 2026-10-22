@@ -912,13 +912,13 @@ class FeedGenerator {
 						// GroupedAttributeBuilder works with internal names and outputs nested groups
 						// with merchant-specific sub-element names. @implements TMPL-FRD-4.5.
 						if ( $this->grouped_builder && $is_xml ) {
-							$transformed = $this->grouped_builder->build( $transformed, $provider );
+							$transformed = $this->grouped_builder->build( $transformed, $provider, $config->get_feed_country() );
 						} elseif ( $this->grouped_builder && in_array( $format_lower, array( 'csv', 'tsv', 'txt' ), true ) ) {
 							// Delimited formats: collapse each nested group into one
 							// colon-joined column value ("US:CA:8.25:y"), repeated
 							// instances comma-joined — Google delimited spec + V5
 							// GoogleStructure::get_csv_structure() parity.
-							$transformed = $this->grouped_builder->build_delimited( $transformed, $provider );
+							$transformed = $this->grouped_builder->build_delimited( $transformed, $provider, $config->get_feed_country() );
 						}
 
 						// Structured-only attributes (e.g. Facebook `video`) have no

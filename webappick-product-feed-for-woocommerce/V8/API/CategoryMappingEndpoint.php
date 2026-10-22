@@ -84,7 +84,13 @@ class CategoryMappingEndpoint extends RestController {
 	/**
 	 * Templates that search the bundled Google product taxonomy.
 	 *
+	 * Every entry must be a real template key (picker, TemplateDefaults or
+	 * a Channel ID) — a misspelt key silently does nothing (CBT-851).
+	 * PriceSpy and idealo stay off: their specs take the shop's own
+	 * category path, not Google's list.
+	 *
 	 * @since 8.0.23
+	 * @since 8.0.40 Dead keys removed (CBT-851).
 	 * @var string[]
 	 */
 	const GOOGLE_TAXONOMY_TEMPLATES = array(
@@ -92,17 +98,12 @@ class CategoryMappingEndpoint extends RestController {
 		'google_shopping',
 		'google_local',
 		'google_local_inventory',
-		'google_shopping_promotions',
-		'google_dynamic_search_ads',
-		'google_manufacturer',
 		'pinterest',
 		'pinterest_rss',
 		'bing',
 		'bing_shopping',
 		'snapchat',
 		'tiktok',
-		'ideal',
-		'pricepy',
 		'become',
 	);
 
@@ -110,12 +111,12 @@ class CategoryMappingEndpoint extends RestController {
 	 * Templates that search the bundled Facebook product taxonomy.
 	 *
 	 * @since 8.0.23
+	 * @since 8.0.40 Dead 'instagram' key removed (CBT-851).
 	 * @var string[]
 	 */
 	const FACEBOOK_TAXONOMY_TEMPLATES = array(
 		'facebook',
 		'facebook_catalog',
-		'instagram',
 	);
 
 	/**
