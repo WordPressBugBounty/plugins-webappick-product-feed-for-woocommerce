@@ -220,6 +220,12 @@ final class NumberFormat {
 			return '';
 		}
 
+		// PHP 8.5 warns "unexpected NAN value was coerced to string" on every
+		// NAN cast; return the same text the cast gives without it (CBT-849).
+		if ( is_nan( $value ) ) {
+			return 'NAN';
+		}
+
 		// Inline fast path (one ini_get): the default precision casts as is.
 		if ( null === self::$can_pin_precision ) {
 			self::$can_pin_precision = function_exists( 'ini_get' ) && function_exists( 'ini_set' );

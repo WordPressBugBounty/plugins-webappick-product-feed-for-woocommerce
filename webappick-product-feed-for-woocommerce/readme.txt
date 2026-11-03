@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.40
+Stable tag: 8.0.41
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -492,6 +492,11 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.41 =
+* Removed: the Halloween sale banner. The CTX Feed Pro card is back in the dashboard side panel.
+* Removed: the Watch tutorials / Read documentation card from the side panel.
+* Fix: no PHP 8.5 warning when a price or number calculation gives an invalid result.
+
 = Version 8.0.40 =
 * Fix: repeated attribute rows (for example several Image or Custom Label rows) keep their own prefix, suffix, output type and search-and-replace.
 * Fix: the Vendors field takes several vendors and can be cleared again, so a feed can go back to all vendors.
@@ -550,14 +555,10 @@ If your feed fails to generate:
 * Fix: Dynamic Attribute names show in the feed editor as you typed them, including after a rename. Needs CTX Feed Pro 8.0.26.
 * Fix: the License page points to My Account → Downloads to download CTX Feed Pro.
 
-= Version 8.0.34 =
-* Fix: a feed no longer lists the same products twice. On some servers two background processes could build the same feed at once; now only one can.
-* Fix: an update that is still copying its files no longer causes a "critical error" on the site. CTX Feed waits until the update has finished and shows administrators a short notice meanwhile.
-* Fix: FTP and SFTP uploads go straight to the feed's real file name. Google Merchant Center's SFTP no longer reports a ".part" file.
-* Added: FTP/SFTP upload progress in the live log on Manage Feeds and in the feed log. A run is marked complete only after the upload has finished.
-* Fix: the live generation log on Manage Feeds always fits inside the page and no longer runs past the left or right edge.
-
 == Upgrade Notice ==
+
+= 8.0.41 =
+CTX Feed is going through a major update. Back up your site, update CTX Feed first, then CTX Feed Pro, and regenerate your feeds. Removes the Halloween sale banner and fixes a PHP 8.5 warning.
 
 = 8.0.40 =
 Fixes repeated attribute rows, discount and currency switcher prices, vendor feeds and a false warning after updates. If your feeds work well, there is no need to update now. When you update, update CTX Feed first, then CTX Feed Pro, and regenerate your feeds.
