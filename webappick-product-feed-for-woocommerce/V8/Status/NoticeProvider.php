@@ -93,6 +93,7 @@ class NoticeProvider {
 		$notices = array_merge( $notices, $this->pro_integration_notices() );
 		$notices = array_merge( $notices, $this->unsupported_product_types_notice() );
 		$notices = array_merge( $notices, $this->shared_feed_file_notices() );
+		$notices = array_merge( $notices, $this->custom2_code_review_notice() );
 
 		/**
 		 * Registry filter for admin notices shown in the React app.
@@ -305,6 +306,50 @@ class NoticeProvider {
 					'url'   => LegacyPro::DOWNLOAD_URL,
 				),
 				'dismissible' => false,
+			),
+		);
+	}
+
+	/**
+	 * Notice listing feeds whose code was approved by the upgrade scan.
+	 *
+	 * @since 8.0.42
+	 *
+	 * @return array
+	 */
+	private function custom2_code_review_notice(): array {
+		$approval = '\\CTXFeed\\V8\\Feed\\Custom2CodeApproval';
+		if ( ! class_exists( $approval ) || ! $approval::can_author() ) {
+			return array();
+		}
+
+		$review = $approval::review();
+		if ( $review['count'] < 1 ) {
+			return array();
+		}
+
+		return array(
+			array(
+				'id'          => 'ctxfeed_custom2_code_review',
+				'severity'    => 'warning',
+				'priority'    => 30,
+				'title'       => __( 'Please review your Custom Template 2 code', 'woo-feed' ),
+				'message'     => sprintf(
+					/* translators: 1: number of feeds, 2: feed names. */
+					_n(
+						'Only administrators can now add code blocks {( … )} to a Custom Template 2. %1$d feed already had code, so it keeps working: %2$s. Check that you recognise the code, because a Shop Manager could add it before this change.',
+						'Only administrators can now add code blocks {( … )} to a Custom Template 2. %1$d feeds already had code, so they keep working: %2$s. Check that you recognise the code, because a Shop Manager could add it before this change.',
+						$review['count'],
+						'woo-feed'
+					),
+					$review['count'],
+					implode( ', ', $review['feeds'] )
+				),
+				'action'      => array(
+					'label' => __( 'Open feeds', 'woo-feed' ),
+					'url'   => '/feeds',
+				),
+				'dismissible' => true,
 			),
 		);
 	}

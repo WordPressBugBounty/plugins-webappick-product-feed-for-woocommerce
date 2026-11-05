@@ -16,7 +16,9 @@ namespace CTXFeed\V8\API;
 use CTXFeed\V8\Common\DropdownRegistry;
 use CTXFeed\V8\Channel\TemplateInfo;
 use CTXFeed\V8\Core\Container;
+use CTXFeed\V8\Feed\Custom2CodeApproval;
 use CTXFeed\V8\Feed\FeedLookup;
+use CTXFeed\V8\Feed\FeedValidator;
 use CTXFeed\V8\Feed\FeedScheduler;
 use CTXFeed\V8\Status\UpdateWaitNotice;
 use CTXFeed\V8\Utility\Ascii;
@@ -781,6 +783,15 @@ class FeedEndpoint extends RestController {
 			return $this->error( __( 'Template, file name, and file type are required.', 'woo-feed' ), 400 );
 		}
 
+		if ( ! FeedValidator::is_valid_format( (string) $form['fileType'] ) ) {
+			return $this->error( self::file_type_message(), 400 );
+		}
+
+		$ctx_code_error = self::custom2_code_error( $form );
+		if ( '' !== $ctx_code_error ) {
+			return $this->error( $ctx_code_error, 403 );
+		}
+
 		// Country sets the market whose tax rate and shipping zones the feed
 		// uses. Tax-inclusive price attributes (price_with_tax, …) resolve to
 		// ZERO tax when it is empty (FeedTaxLocation cannot override the tax
@@ -850,6 +861,8 @@ class FeedEndpoint extends RestController {
 			'last_updated' => '',
 			'status'       => 0,
 		);
+
+		Custom2CodeApproval::approve_template( (string) ( $feedrules['feed_config_custom2'] ?? '' ) );
 
 		update_option( 'wf_config' . $slug, $feedrules, false );
 		update_option( 'wf_feed_' . $slug, $feed_data, false );
@@ -954,6 +967,16 @@ class FeedEndpoint extends RestController {
 			return $this->error( __( 'Missing feed form data.', 'woo-feed' ), 400 );
 		}
 
+		// A feed already saved as XLS keeps its type; nothing new can pick it.
+		if ( isset( $form['fileType'] ) && ! FeedValidator::is_valid_format( (string) $form['fileType'] ) && ! self::keeps_legacy_file_type( (string) $form['fileType'], (string) ( $config['feedrules']['feedType'] ?? '' ) ) ) {
+			return $this->error( self::file_type_message(), 400 );
+		}
+
+		$ctx_code_error = self::custom2_code_error( $form );
+		if ( '' !== $ctx_code_error ) {
+			return $this->error( $ctx_code_error, 403 );
+		}
+
 		// Country is required on a full save for the same tax/shipping-market
 		// reason as create (see create_feed). Editing a legacy country-less
 		// feed must set it before the config can be re-saved.
@@ -1014,6 +1037,8 @@ class FeedEndpoint extends RestController {
 		);
 
 		// Direct update — V8 handles its own persistence.
+		Custom2CodeApproval::approve_template( (string) ( $feedrules['feed_config_custom2'] ?? '' ) );
+
 		$config['feedrules']    = $feedrules;
 		$config['last_updated'] = current_time( 'mysql' );
 
@@ -1450,11 +1475,19 @@ class FeedEndpoint extends RestController {
 			return $this->error( __( 'Invalid or corrupted feed configuration.', 'woo-feed' ), 400 );
 		}
 
+		$ctx_import_type = strtolower( (string) ( $feed_rules['feedType'] ?? 'xml' ) );
+		if ( ! FeedValidator::is_valid_format( $ctx_import_type ) && ! self::keeps_legacy_file_type( $ctx_import_type, $ctx_import_type ) ) {
+			return $this->error( self::file_type_message(), 400 );
+		}
+
 		// Custom Template 2 `{(…)}` blocks run PHP when the feed generates.
 		// A file from elsewhere may only bring them in through an
-		// administrator; for anyone else they are removed (CBT-718).
+		// administrator; for anyone else they are removed (CBT-718, CBT-863).
 		$eval_removed = 0;
-		if ( ! current_user_can( 'manage_options' ) ) {
+		if ( Custom2CodeApproval::can_author() ) {
+			$ctx_import_body = $feed_rules['feed_config_custom2'] ?? '';
+			Custom2CodeApproval::approve_template( is_string( $ctx_import_body ) ? $ctx_import_body : '' );
+		} else {
 			$eval_removed = self::strip_ct2_eval( $feed_rules );
 		}
 
@@ -1539,23 +1572,77 @@ class FeedEndpoint extends RestController {
 
 	/**
 	 * Remove Custom Template 2 code blocks — `{(return …)}`, `{(php …)}` and
-	 * any other `{( … )}` — that the Pro engine evaluates with eval().
+	 * any other `{( … )}` — that the Pro engine evaluates with eval(), unless
+	 * an administrator already approved them.
 	 *
 	 * @since 8.0.32
+	 * @since 8.0.42 Also removes forms hidden from a single pass (CBT-863).
 	 *
 	 * @param array $feed_rules Feed rules (modified in place).
 	 * @return int Blocks removed.
 	 */
 	public static function strip_ct2_eval( array &$feed_rules ): int {
 		$template = $feed_rules['feed_config_custom2'] ?? '';
-		if ( ! is_string( $template ) || false === strpos( $template, '{(' ) ) {
+		if ( ! is_string( $template ) ) {
 			return 0;
 		}
 
-		$count                             = 0;
-		$feed_rules['feed_config_custom2'] = (string) preg_replace( '/\{\(.*?\)\}/s', '', $template, -1, $count );
+		$count = Custom2CodeApproval::strip_unapproved( $template );
+		if ( $count > 0 ) {
+			$feed_rules['feed_config_custom2'] = $template;
+		}
 
-		return (int) $count;
+		return $count;
+	}
+
+	/**
+	 * Why this user may not save the form's Custom Template 2 body.
+	 *
+	 * @since 8.0.42
+	 *
+	 * @param array $form Make Feed form.
+	 * @return string Error message; '' when the save may go ahead.
+	 */
+	private static function custom2_code_error( array $form ): string {
+		$template = $form['feedConfigCustom2'] ?? '';
+		if ( ! is_string( $template ) || '' === $template || Custom2CodeApproval::can_author() ) {
+			return '';
+		}
+
+		if ( ! Custom2CodeApproval::has_unapproved( wp_unslash( $template ) ) ) {
+			return '';
+		}
+
+		return is_multisite()
+			? __( 'Only a network administrator can add or change code blocks {( … )} in a Custom Template 2. Remove the new code, or ask a network administrator to save this feed.', 'woo-feed' )
+			: __( 'Only an administrator can add or change code blocks {( … )} in a Custom Template 2. Remove the new code, or ask an administrator to save this feed.', 'woo-feed' );
+	}
+
+	/**
+	 * Whether a feed may keep a spreadsheet type it was already saved with.
+	 * TemplateEngine still renders these as CSV; new feeds cannot choose them.
+	 *
+	 * @since 8.0.42
+	 *
+	 * @param string $type  Requested type.
+	 * @param string $saved The feed's saved type.
+	 * @return bool
+	 */
+	private static function keeps_legacy_file_type( string $type, string $saved ): bool {
+		$type = strtolower( $type );
+
+		return in_array( $type, array( 'xls', 'xlsx' ), true ) && strtolower( $saved ) === $type;
+	}
+
+	/**
+	 * Error for an unsupported feed file type.
+	 *
+	 * @since 8.0.42
+	 *
+	 * @return string
+	 */
+	private static function file_type_message(): string {
+		return __( 'Unsupported file type. Choose XML, CSV, TSV, TXT or JSON.', 'woo-feed' );
 	}
 
 	/**

@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.2
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.41
+Stable tag: 8.0.42
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -492,6 +492,11 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.42 =
+* Security: only administrators can add code blocks to Custom Template 2 templates. A Shop Manager can't add them, imports remove unapproved ones, and code in templates saved before this update keeps working and is listed once for an administrator to review (CVE-2026-87964).
+* Fix: the Contact support form keeps your name, email, message and attachments when a firewall or CDN blocks the first send. If attachments still can't get through, the form says so and keeps what you typed.
+* Fix: importing a feed file works behind a firewall or CDN that blocks the first request.
+
 = Version 8.0.41 =
 * Removed: the Halloween sale banner. The CTX Feed Pro card is back in the dashboard side panel.
 * Removed: the Watch tutorials / Read documentation card from the side panel.
@@ -556,6 +561,9 @@ If your feed fails to generate:
 * Fix: the License page points to My Account → Downloads to download CTX Feed Pro.
 
 == Upgrade Notice ==
+
+= 8.0.42 =
+Security fix: only administrators can add code to Custom Template 2 templates. Also fixes the support form and feed import behind a firewall. Please update CTX Feed first, then CTX Feed Pro, and regenerate your feeds.
 
 = 8.0.41 =
 CTX Feed is going through a major update. Back up your site, update CTX Feed first, then CTX Feed Pro, and regenerate your feeds. Removes the Halloween sale banner and fixes a PHP 8.5 warning.

@@ -49,6 +49,18 @@ class FeedValidator {
 	private static $custom2_providers = array( 'custom2', 'admarkt', 'yandex_xml', 'glami' );
 
 	/**
+	 * Whether a feed file type is one the engine can write.
+	 *
+	 * @since 8.0.42
+	 *
+	 * @param string $format Feed type.
+	 * @return bool
+	 */
+	public static function is_valid_format( string $format ): bool {
+		return in_array( strtolower( $format ), self::$valid_formats, true );
+	}
+
+	/**
 	 * Validate feed configuration before generation.
 	 *
 	 * Performs 4 checks per FEED-FRD-4.1:

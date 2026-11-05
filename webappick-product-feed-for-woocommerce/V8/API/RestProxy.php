@@ -138,10 +138,21 @@ class RestProxy {
 			}
 		}
 
+		// Multipart upload — hand the route its fields and files the way the
+		// REST server does over HTTP, minus the proxy's own fields (CBT-864).
 		// JSON body for write methods — reproduce a real application/json
 		// request so each route reads its params exactly as it would over HTTP.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- nonce verified above.
-		if ( isset( $_REQUEST['ctxfeed_body'] ) ) {
+		if ( isset( $_REQUEST['ctxfeed_multipart'] ) ) {
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- nonce verified above; the target REST route sanitises its own params.
+			$fields = wp_unslash( $_POST );
+			$fields = is_array( $fields ) ? $fields : array();
+			unset( $fields['action'], $fields['_wpnonce'], $fields['ctxfeed_route'], $fields['ctxfeed_method'], $fields['ctxfeed_query'], $fields['ctxfeed_multipart'] );
+			$request->set_body_params( $fields );
+			// phpcs:ignore WordPress.Security.NonceVerification.Missing, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- nonce verified above; the target route validates each upload.
+			$request->set_file_params( $_FILES );
+			// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- nonce verified above.
+		} elseif ( isset( $_REQUEST['ctxfeed_body'] ) ) {
 			// phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- forwarded verbatim as the JSON body; the target REST route sanitises its own params.
 			$raw = (string) wp_unslash( $_REQUEST['ctxfeed_body'] );
 			$request->set_header( 'Content-Type', 'application/json' );
