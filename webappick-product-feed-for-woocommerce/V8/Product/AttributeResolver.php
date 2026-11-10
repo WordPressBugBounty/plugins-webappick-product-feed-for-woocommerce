@@ -1451,7 +1451,7 @@ class AttributeResolver {
 				// which resolves both types. Falls back to parent for variations.
 				// @implements PROD-FRD-4.2.
 				if ( 0 === strpos( $attr, 'wf_attr_' ) ) {
-					return $this->resolve_wc_product_attribute( $product, $attr, $config );
+					return $this->resolve_wc_product_attribute( $product, $attr, $config, $merchant_attr );
 				}
 
 				// WooCommerce custom fields / post meta (wf_cattr_* prefix).
@@ -1784,10 +1784,11 @@ class AttributeResolver {
 	 * @param \WC_Product $product WooCommerce product.
 	 * @param string      $attr    Full attribute key with prefix (e.g., "wf_attr_color").
 	 * @param Config      $config  Feed configuration.
+	 * @param string      $merchant_attr Channel field name (e.g. "size"); forwarded to the filter (CBT-869).
 	 *
 	 * @return string Resolved attribute value or empty string.
 	 */
-	private function resolve_wc_product_attribute( \WC_Product $product, string $attr, Config $config ): string {
+	private function resolve_wc_product_attribute( \WC_Product $product, string $attr, Config $config, string $merchant_attr = '' ): string {
 		// Strip the wf_attr_ prefix to get the bare attribute name, then a
 		// pa_ prefix (V5 compat for WC 3.6+) — only as LEADING prefixes, never
 		// from inside the name: `spa_size` stays `spa_size` (CBT-827).
@@ -1852,8 +1853,9 @@ class AttributeResolver {
 		 * @param string      $attr_name Bare attribute name (without prefix).
 		 * @param \WC_Product $product WooCommerce product instance.
 		 * @param Config      $config  Feed configuration.
+		 * @param string      $merchant_attr Channel field name the row maps to (e.g. "size"); '' when unknown. Since 8.0.43 (CBT-869).
 		 */
-		return apply_filters( 'woo_feed_filter_product_attribute', $value, $attr_name, $product, $config );
+		return apply_filters( 'woo_feed_filter_product_attribute', $value, $attr_name, $product, $config, $merchant_attr );
 	}
 
 	/**
