@@ -2,10 +2,10 @@
 Contributors: wahid0003, webappick
 Donate link: https://webappick.com
 Tags: woocommerce, product feed, google shopping, facebook Catalog, google listings
-Requires at least: 6.2
+Requires at least: 6.6
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.43
+Stable tag: 8.0.44
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -492,6 +492,10 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.44 =
+* Change: CTX Feed now requires WordPress 6.6 or newer. The admin pages use the React that ships with WordPress instead of bundling their own copy, so they load faster. On an older WordPress the CTX Feed page says to update WordPress instead of showing a blank screen.
+* Fix: the plugin header no longer repeats the "Tested up to" WordPress version; readme.txt keeps it.
+
 = Version 8.0.43 =
 * Fix: a custom field that a theme stores as a group of settings (for example the Flatsome product video) ships its real value instead of "0".
 * Developer: the woo_feed_filter_product_attribute filter receives the feed field name (for example size) as a fifth argument.
@@ -565,6 +569,9 @@ If your feed fails to generate:
 * Fix: the License page points to My Account → Downloads to download CTX Feed Pro.
 
 == Upgrade Notice ==
+
+= 8.0.44 =
+CTX Feed now requires WordPress 6.6 or newer. CTX Feed is going through a major update: back up your site, update CTX Feed first, then CTX Feed Pro, and regenerate your feeds.
 
 = 8.0.43 =
 Fixes theme custom fields stored as a group of settings (such as the Flatsome product video) exporting 0. Please update CTX Feed first, then CTX Feed Pro, and regenerate your feeds.

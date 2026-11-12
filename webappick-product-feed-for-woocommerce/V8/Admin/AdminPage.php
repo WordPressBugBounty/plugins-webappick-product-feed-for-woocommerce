@@ -97,6 +97,18 @@ class AdminPage {
 	 * @return void
 	 */
 	public function render_app(): void {
+		// The admin takes React from WordPress 6.6+ (CBT-871). On an older
+		// WordPress the app can't start: say why instead of a blank page.
+		// Guarded: mid-update Assets.php can be briefly gone (CBT-806).
+		if ( class_exists( Assets::class ) && method_exists( Assets::class, 'wordpress_react_available' ) && ! Assets::wordpress_react_available() ) {
+			printf(
+				'<div class="wrap"><div class="notice notice-error"><p><strong>%1$s</strong> %2$s</p></div></div>',
+				esc_html__( 'CTX Feed needs a newer WordPress.', 'woo-feed' ),
+				esc_html__( 'These settings pages need WordPress 6.6 or newer. Your feeds keep generating; please update WordPress to manage them.', 'woo-feed' )
+			);
+			return;
+		}
+
 		echo '<div id="ctxfeed-v8-app"></div>';
 	}
 

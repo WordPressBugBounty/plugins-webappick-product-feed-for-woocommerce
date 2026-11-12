@@ -31,6 +31,39 @@ use CTXFeed\V8\Core\FeatureGate;
 class Assets {
 
 	/**
+	 * WordPress script handles the admin bundle takes React from (CBT-871).
+	 * The bundle no longer inlines React: webpack.mix.js maps `react`,
+	 * `react-dom`, `react-dom/client` and `react/jsx-runtime` to these
+	 * globals. `react-jsx-runtime` is registered from WordPress 6.6.
+	 *
+	 * @since 8.0.44
+	 * @var string[]
+	 */
+	const REACT_HANDLES = array( 'react', 'react-dom', 'react-jsx-runtime' );
+
+	/**
+	 * Whether WordPress registers every React script the bundle needs.
+	 * False on WordPress < 6.6 (no `react-jsx-runtime`): the app could not
+	 * start there, so the page shows a message instead (AdminPage::render_app()).
+	 *
+	 * @since 8.0.44
+	 *
+	 * @return bool
+	 */
+	public static function wordpress_react_available(): bool {
+		if ( ! function_exists( 'wp_script_is' ) ) {
+			return false;
+		}
+		foreach ( self::REACT_HANDLES as $handle ) {
+			if ( ! wp_script_is( $handle, 'registered' ) ) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
 	 * Enqueue admin scripts and styles.
 	 *
 	 * Hooked to `admin_enqueue_scripts` by AdminServiceProvider::boot().
@@ -97,6 +130,12 @@ class Assets {
 			return;
 		}
 
+		// The bundle takes React from WordPress (CBT-871); without it the app
+		// can't start — AdminPage::render_app() explains instead.
+		if ( ! self::wordpress_react_available() ) {
+			return;
+		}
+
 		// Enqueue WordPress's bundled CodeMirror 5 for the Custom Template 2
 		// (XML) editor in the Feed Config tab. `wp_enqueue_code_editor()`
 		// loads CodeMirror + the XML mode + the linter; it returns the
@@ -126,12 +165,13 @@ class Assets {
 
 		// Enqueue React app bundle.
 		// Implements ADM-FRD-3.2.
-		// V8 bundles its own React 18 — do NOT depend on wp-element
-		// (which ships React 17). Two React instances break hooks.
-		// Also depend on `wp-codemirror` so CodeMirror's globals are on
-		// the page before React mounts. The dependency is a no-op when
-		// CodeMirror was filtered off (the handle simply doesn't exist).
-		$react_deps = array( 'wp-i18n' );
+		// React comes from WordPress (CBT-871, WordPress 6.6+): the bundle
+		// maps react / react-dom / react/jsx-runtime to core's globals, so
+		// there is exactly one React on the page. Also depend on
+		// `wp-codemirror` so CodeMirror's globals are on the page before
+		// React mounts. The dependency is a no-op when CodeMirror was
+		// filtered off (the handle simply doesn't exist).
+		$react_deps = array_merge( self::REACT_HANDLES, array( 'wp-i18n' ) );
 		if ( false !== $code_editor_settings && wp_script_is( 'wp-codemirror', 'registered' ) ) {
 			$react_deps[] = 'wp-codemirror';
 		}
