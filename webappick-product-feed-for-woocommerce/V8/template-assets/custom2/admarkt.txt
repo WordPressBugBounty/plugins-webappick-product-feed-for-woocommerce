@@ -11,7 +11,9 @@
         <admarkt:price>{price}</admarkt:price>
         <admarkt:priceType>FIXED_PRICE</admarkt:priceType>
         <admarkt:media>
+            {{each image start}}
             <admarkt:image url="{image}"/>
+            {{each image end}}
         </admarkt:media>
         <admarkt:budget>
             <admarkt:totalBudget></admarkt:totalBudget>

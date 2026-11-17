@@ -5,7 +5,7 @@ Tags: woocommerce, product feed, google shopping, facebook Catalog, google listi
 Requires at least: 6.6
 Tested Up To: 7.1
 Requires PHP: 7.4
-Stable tag: 8.0.44
+Stable tag: 8.0.45
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -492,6 +492,10 @@ If your feed fails to generate:
 
 == Changelog ==
 
+= Version 8.0.45 =
+* New: a Black Friday + Cyber Monday sale banner in the CTX Feed side panel and the WordPress dashboard widget, until November 30. No coupon needed. Hide it with the ctxfeed_show_sale_campaign filter.
+* Fix: new Admarkt feeds list every product image (featured and gallery), not only the featured image.
+
 = Version 8.0.44 =
 * Change: CTX Feed now requires WordPress 6.6 or newer. The admin pages use the React that ships with WordPress instead of bundling their own copy, so they load faster. On an older WordPress the CTX Feed page says to update WordPress instead of showing a blank screen.
 * Fix: the plugin header no longer repeats the "Tested up to" WordPress version; readme.txt keeps it.
@@ -569,6 +573,9 @@ If your feed fails to generate:
 * Fix: the License page points to My Account → Downloads to download CTX Feed Pro.
 
 == Upgrade Notice ==
+
+= 8.0.45 =
+Adds the Black Friday + Cyber Monday sale banner and lists every product image in new Admarkt feeds. CTX Feed is going through a major update: back up your site, update CTX Feed first, then CTX Feed Pro, and regenerate your feeds.
 
 = 8.0.44 =
 CTX Feed now requires WordPress 6.6 or newer. CTX Feed is going through a major update: back up your site, update CTX Feed first, then CTX Feed Pro, and regenerate your feeds.

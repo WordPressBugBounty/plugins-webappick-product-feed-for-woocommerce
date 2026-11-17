@@ -198,41 +198,43 @@ class Assets {
 		// Build localised data for the React app.
 		// Implements ADM-FRD-3.4.
 		$data = array(
-			'rest_url'     => rest_url( 'ctxfeed/v8/' ),
-			'nonce'        => wp_create_nonce( 'wp_rest' ),
-			'features'     => FeatureGate::get_all_features(),
-			'is_pro'       => FeatureGate::is_pro(),
+			'rest_url'      => rest_url( 'ctxfeed/v8/' ),
+			'nonce'         => wp_create_nonce( 'wp_rest' ),
+			'features'      => FeatureGate::get_all_features(),
+			'is_pro'        => FeatureGate::is_pro(),
 			// Installed plugin version — shown on the Version Control page.
-			'version'      => defined( 'WOO_FEED_FREE_VERSION' ) ? WOO_FEED_FREE_VERSION : '',
-			'admin_url'    => admin_url(),
-			'plugin_url'   => plugin_dir_url( dirname( __DIR__ ) ),
+			'version'       => defined( 'WOO_FEED_FREE_VERSION' ) ? WOO_FEED_FREE_VERSION : '',
+			'admin_url'     => admin_url(),
+			'plugin_url'    => plugin_dir_url( dirname( __DIR__ ) ),
 			// CodeMirror init settings for the Custom Template 2 (XML)
 			// editor. `false` when the WP user disabled syntax highlighting
 			// in their profile or when wp_enqueue_code_editor isn't
 			// available — XmlEditor falls back to a plain <textarea>.
-			'code_editor'  => $code_editor_settings,
+			'code_editor'   => $code_editor_settings,
 			// Server FTP/SFTP capability so the Make Feed FTP tab can warn
 			// when the required PHP extension is missing — V5 parity with
 			// checkFTP_connection() / checkSFTP_connection() in
 			// includes/helper.php.
-			'ftp_enabled'  => ( extension_loaded( 'ftp' ) || function_exists( 'ftp_connect' ) ),
-			'ssh2_enabled' => ( extension_loaded( 'ssh2' ) || function_exists( 'ssh2_connect' ) ),
+			'ftp_enabled'   => ( extension_loaded( 'ftp' ) || function_exists( 'ftp_connect' ) ),
+			'ssh2_enabled'  => ( extension_loaded( 'ssh2' ) || function_exists( 'ssh2_connect' ) ),
 			// First-install Setup wizard state. `pending` is set by the
 			// installer on genuinely fresh installs only and cleared by
 			// POST /setup/complete; the two capability/env flags let the
 			// wizard render honest requirement rows (no dead buttons).
-			'setup'        => array(
+			'setup'         => array(
 				'pending'           => ( 'yes' === get_option( 'ctxfeed_setup_pending' ) ),
 				'woocommerceActive' => class_exists( 'WooCommerce' ),
 				'canInstallPlugins' => current_user_can( 'install_plugins' ),
 			),
 			// Pro plugin active / installed-but-inactive / missing, with the
 			// activation and upload links the License page offers (CBT-686).
-			'pro_plugin'   => ProPlugin::state(),
+			'pro_plugin'    => ProPlugin::state(),
 			// CTX Feed Pro prices known without a remote call (fresh copy,
 			// last webappick.com answer, or bundled); GET /pricing refreshes
 			// them (CBT-688).
-			'pro_pricing'  => ProPricing::snapshot(),
+			'pro_pricing'   => ProPricing::snapshot(),
+			// Black Friday + Cyber Monday 2026 slider (CBT-876): false hides it.
+			'sale_campaign' => (bool) apply_filters( 'ctxfeed_show_sale_campaign', true ),
 		);
 
 		// What an unset Shipping/Tax country scope means on this site (the
